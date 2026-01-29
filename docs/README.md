@@ -10,6 +10,7 @@ Flywheel Crank is the deterministic write companion to Flywheel MCP. While Flywh
 |--------------|-----------|
 | Get started with Flywheel Crank | [configuration.md](configuration.md) |
 | Learn what tools are available | [tools-reference.md](tools-reference.md) |
+| Guide Claude to better tool choices | [guiding-claude.md](guiding-claude.md) |
 | Understand auto-wikilinks | [wikilinks.md](wikilinks.md) |
 | Know how my data is handled | [privacy.md](privacy.md) |
 | Run tests or contribute | [testing.md](testing.md) |
@@ -27,6 +28,11 @@ Complete reference for all 11 MCP tools with visual examples, decision guides, a
 MCP server setup for Claude Code, environment variables, tool parameters, git commit prefixes, and permission models. Includes examples for Unix, Windows native, and WSL environments.
 
 **Read when:** Setting up Flywheel Crank for the first time or troubleshooting configuration.
+
+### [guiding-claude.md](guiding-claude.md)
+How to give feedback when Claude picks the wrong tool, teach Claude your vault's patterns through CLAUDE.md, and verify mutations. Covers the iterative feedback loop and common corrections.
+
+**Read when:** Claude makes tool choices you want to refine, or you want to improve Claude's defaults for your vault.
 
 ### [wikilinks.md](wikilinks.md)
 Explains how Crank automatically links known entities (people, projects, technologies) as you write. Covers the feedback loop, entity inference rules, excluded folders, and how to control linking behavior.
@@ -50,7 +56,8 @@ Automated test suite overview (242 tests), manual MCP testing procedures, and gi
 **New users:**
 1. [configuration.md](configuration.md) - Get set up
 2. [tools-reference.md](tools-reference.md) - Learn the tools
-3. [wikilinks.md](wikilinks.md) - Understand auto-linking
+3. [guiding-claude.md](guiding-claude.md) - Master the feedback loop
+4. [wikilinks.md](wikilinks.md) - Understand auto-linking
 
 **Privacy-focused users:**
 1. [privacy.md](privacy.md) - Understand data flow
