@@ -331,14 +331,19 @@ export function suggestRelatedLinks(
   const scoredEntities: Array<{ name: string; score: number }> = [];
 
   for (const entity of entities) {
+    // Handle both string entities (from scanVaultEntities) and
+    // object entities with .name property (from cache format)
+    const entityName = typeof entity === 'string' ? entity : (entity as { name?: string }).name;
+    if (!entityName) continue;
+
     // Skip if already linked
-    if (linkedEntities.has(entity.name.toLowerCase())) {
+    if (linkedEntities.has(entityName.toLowerCase())) {
       continue;
     }
 
-    const score = scoreEntity(entity.name, contentTokens);
+    const score = scoreEntity(entityName, contentTokens);
     if (score > 0) {
-      scoredEntities.push({ name: entity.name, score });
+      scoredEntities.push({ name: entityName, score });
     }
   }
 

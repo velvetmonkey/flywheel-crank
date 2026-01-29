@@ -19,142 +19,11 @@ import {
   createTempVault,
   cleanupTempVault,
   createTestNote,
+  createVaultWithEntities,
+  createEntityCache,
 } from '../helpers/testUtils.js';
 import { mkdir, writeFile, readFile } from 'fs/promises';
 import path from 'path';
-
-// ========================================
-// Test Fixtures
-// ========================================
-
-/**
- * Create a minimal vault structure with entity-rich notes
- */
-async function createVaultWithEntities(vaultPath: string): Promise<void> {
-  // Create .claude directory for cache
-  await mkdir(path.join(vaultPath, '.claude'), { recursive: true });
-
-  // Create a person note
-  await createTestNote(
-    vaultPath,
-    'people/Jordan Smith.md',
-    `---
-type: person
-tags:
-  - team-member
----
-# Jordan Smith
-
-Senior engineer working on [[MCP Server]].
-`
-  );
-
-  // Create a project note
-  await createTestNote(
-    vaultPath,
-    'projects/MCP Server.md',
-    `---
-type: project
-tags:
-  - active
----
-# MCP Server
-
-Model Context Protocol server implementation.
-`
-  );
-
-  // Create a technology note
-  await createTestNote(
-    vaultPath,
-    'technologies/TypeScript.md',
-    `---
-type: technology
-tags:
-  - language
----
-# TypeScript
-
-JavaScript with static types.
-`
-  );
-
-  // Create an acronym note
-  await createTestNote(
-    vaultPath,
-    'glossary/API.md',
-    `---
-type: acronym
-aliases:
-  - Application Programming Interface
----
-# API
-
-Application Programming Interface.
-`
-  );
-}
-
-/**
- * Create a pre-populated entity cache file
- */
-async function createEntityCache(
-  vaultPath: string,
-  entities: {
-    people?: string[];
-    projects?: string[];
-    technologies?: string[];
-    acronyms?: string[];
-    other?: string[];
-  },
-  generatedAt?: Date
-): Promise<void> {
-  const cacheDir = path.join(vaultPath, '.claude');
-  await mkdir(cacheDir, { recursive: true });
-
-  const cache = {
-    _metadata: {
-      generated_at: (generatedAt || new Date()).toISOString(),
-      vault_path: vaultPath,
-      total_entities:
-        (entities.people?.length || 0) +
-        (entities.projects?.length || 0) +
-        (entities.technologies?.length || 0) +
-        (entities.acronyms?.length || 0) +
-        (entities.other?.length || 0),
-    },
-    people: (entities.people || []).map((name) => ({
-      name,
-      path: `people/${name}.md`,
-      aliases: [],
-    })),
-    projects: (entities.projects || []).map((name) => ({
-      name,
-      path: `projects/${name}.md`,
-      aliases: [],
-    })),
-    technologies: (entities.technologies || []).map((name) => ({
-      name,
-      path: `technologies/${name}.md`,
-      aliases: [],
-    })),
-    acronyms: (entities.acronyms || []).map((name) => ({
-      name,
-      path: `glossary/${name}.md`,
-      aliases: [],
-    })),
-    other: (entities.other || []).map((name) => ({
-      name,
-      path: `other/${name}.md`,
-      aliases: [],
-    })),
-  };
-
-  await writeFile(
-    path.join(cacheDir, 'wikilink-entities.json'),
-    JSON.stringify(cache, null, 2)
-  );
-}
 
 // ========================================
 // Entity Index State Tests
@@ -900,5 +769,33 @@ describe('suggestRelatedLinks integration', () => {
     const result = suggestRelatedLinks('Some content about programming');
 
     expect(result.suggestions.length).toBeGreaterThanOrEqual(0);
+  });
+
+  it('should handle string entities from getAllEntities (regression test)', async () => {
+    // Regression test for bug where code treated entities as objects with .name
+    // but getAllEntities() returns string[] not {name: string}[]
+    // See: observation #831 - "Cannot read properties of undefined (reading 'toLowerCase')"
+    await createEntityCache(tempVault, {
+      technologies: ['TypeScript', 'Python'],
+      people: ['Jordan Smith', 'Jane Smith'],
+      projects: ['MCP Server'],
+    });
+
+    await initializeEntityIndex(tempVault);
+
+    // This call should NOT throw TypeError: Cannot read properties of undefined
+    const result = suggestRelatedLinks('Working on TypeScript with Jordan Smith');
+
+    // Should return valid result structure
+    expect(result).toHaveProperty('suggestions');
+    expect(result).toHaveProperty('suffix');
+    expect(Array.isArray(result.suggestions)).toBe(true);
+    expect(typeof result.suffix).toBe('string');
+
+    // If suggestions are returned, verify they are valid entity names
+    for (const suggestion of result.suggestions) {
+      expect(typeof suggestion).toBe('string');
+      expect(suggestion.length).toBeGreaterThan(0);
+    }
   });
 });

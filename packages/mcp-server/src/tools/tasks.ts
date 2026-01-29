@@ -224,8 +224,9 @@ export function registerTaskTools(
       commit: z.boolean().default(false).describe('If true, commit this change to git (creates undo point)'),
       skipWikilinks: z.boolean().default(false).describe('If true, skip auto-wikilink application (wikilinks are applied by default)'),
       suggestOutgoingLinks: z.boolean().default(true).describe('Append suggested outgoing wikilinks based on content (e.g., "→ [[AI]] [[Philosophy]]"). Set false to disable.'),
+      preserveListNesting: z.boolean().default(true).describe('Preserve indentation when inserting into nested lists. Default: true'),
     },
-    async ({ path: notePath, section, task, position, completed, commit, skipWikilinks, suggestOutgoingLinks }) => {
+    async ({ path: notePath, section, task, position, completed, commit, skipWikilinks, suggestOutgoingLinks, preserveListNesting }) => {
       try {
         // 1. Check if file exists
         const fullPath = path.join(vaultPath, notePath);
@@ -276,7 +277,8 @@ export function registerTaskTools(
           fileContent,
           sectionBoundary,
           taskLine,
-          position as Position
+          position as Position,
+          { preserveListNesting }
         );
 
         // 7. Write file

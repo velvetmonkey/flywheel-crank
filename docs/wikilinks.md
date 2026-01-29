@@ -12,6 +12,7 @@ Crank automatically links known entities as you write, creating a self-reinforci
 - [Excluded Folders](#excluded-folders)
 - [Template Placeholder Handling](#template-placeholder-handling)
 - [Controlling Wikilinks](#controlling-wikilinks)
+- [Suggested Outgoing Links](#suggested-outgoing-links)
 
 ---
 
@@ -279,6 +280,83 @@ mcp__flywheel-crank__vault_add_to_section({
 | `mcp__flywheel-crank__vault_update_frontmatter` | No | N/A |
 | `mcp__flywheel-crank__vault_create_note` | No | N/A |
 | `mcp__flywheel-crank__vault_delete_note` | No | N/A |
+
+---
+
+## Suggested Outgoing Links
+
+Mutation tools can automatically suggest contextual wikilinks based on the content you're adding. This helps capture implicit connections between your notes.
+
+### How It Works
+
+When you add content via `vault_add_to_section`, `vault_replace_in_section`, or `vault_add_task`, Crank analyzes the text and appends relevant entity suggestions in a suffix format:
+
+```
+Your content here → [[Related Entity]] [[Another Entity]]
+```
+
+### The Suggestion Algorithm
+
+1. **Tokenization**: Content is split into significant words (4+ characters, excluding stopwords like "the", "and", "with")
+2. **Entity Scoring**: Each entity in your vault is scored by word overlap with the content
+3. **Exclusion**: Entities already linked in the content are excluded
+4. **Selection**: Top 3 scoring entities are suggested (configurable)
+
+### Example
+
+**Input:**
+```javascript
+mcp__flywheel-crank__vault_add_to_section({
+  path: "daily-notes/2026-01-28.md",
+  section: "Log",
+  content: "Discussed TypeScript migration with the team",
+  format: "timestamp-bullet"
+})
+```
+
+**Output:**
+```markdown
+## Log
+- **14:32** Discussed TypeScript migration with the team → [[TypeScript]] [[Migration Plan]]
+```
+
+### Controlling Suggestions
+
+**Disable per-call:**
+```javascript
+mcp__flywheel-crank__vault_add_to_section({
+  content: "Plain content without suggestions",
+  suggestOutgoingLinks: false  // No suffix added
+})
+```
+
+**Default behavior:** `suggestOutgoingLinks: true` (suggestions enabled)
+
+### Idempotency
+
+Crank detects if content already has a suggestion suffix and won't duplicate:
+
+```markdown
+// First add:
+Content here → [[Entity1]] [[Entity2]]
+
+// Second add with same content:
+// Won't add another → suffix (detects existing)
+```
+
+### Supported Tools
+
+| Tool | Suggestions | Parameter |
+|------|-------------|-----------|
+| `mcp__flywheel-crank__vault_add_to_section` | Yes | `suggestOutgoingLinks: boolean` |
+| `mcp__flywheel-crank__vault_replace_in_section` | Yes | `suggestOutgoingLinks: boolean` |
+| `mcp__flywheel-crank__vault_add_task` | Yes | `suggestOutgoingLinks: boolean` |
+
+### When to Disable
+
+- **Already have wikilinks**: Content like "Working with [[Sam Chen]]" doesn't need more suggestions
+- **Technical content**: Code snippets or logs where suggestions would be noise
+- **Bulk operations**: When adding many items programmatically
 
 ---
 

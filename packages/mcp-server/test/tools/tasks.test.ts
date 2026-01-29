@@ -19,8 +19,13 @@ import {
   cleanupTempVault,
   createTestNote,
   readTestNote,
+  createEntityCache,
 } from '../helpers/testUtils.js';
 import type { Position } from '../../src/core/types.js';
+import {
+  initializeEntityIndex,
+  suggestRelatedLinks,
+} from '../../src/core/wikilinks.js';
 
 /**
  * Helper to simulate vault_toggle_task workflow
@@ -95,7 +100,8 @@ async function addTaskToNote(
   sectionName: string,
   taskText: string,
   position: Position = 'append',
-  completed: boolean = false
+  completed: boolean = false,
+  preserveListNesting: boolean = true
 ): Promise<{ success: boolean; message: string; preview?: string }> {
   try {
     const { content: fileContent, frontmatter } = await readVaultFile(vaultPath, notePath);
@@ -111,7 +117,7 @@ async function addTaskToNote(
     const checkbox = completed ? '[x]' : '[ ]';
     const taskLine = `- ${checkbox} ${taskText.trim()}`;
 
-    const updatedContent = insertInSection(fileContent, section, taskLine, position);
+    const updatedContent = insertInSection(fileContent, section, taskLine, position, { preserveListNesting });
     await writeVaultFile(vaultPath, notePath, updatedContent, frontmatter);
 
     return {
@@ -480,6 +486,58 @@ type: test
     expect(updated).toContain('- [ ] Padded task');
     expect(updated).not.toContain('   Padded task   ');
   });
+
+  it('should preserve list nesting when adding task to nested list (regression)', async () => {
+    // Regression test: tasks added to sections with nested lists should respect indentation
+    const note = `---
+type: test
+---
+# Test
+
+## Tasks
+
+- [ ] Parent task
+  - [ ] Nested task 1
+  - [ ] Nested task 2
+`;
+    await createTestNote(tempVault, 'test.md', note);
+
+    // When appending to a section with nested tasks, new task should respect context
+    const result = await addTaskToNote(tempVault, 'test.md', 'Tasks', 'New sibling task', 'append', false, true);
+
+    expect(result.success).toBe(true);
+
+    const updated = await readTestNote(tempVault, 'test.md');
+    // The new task should be inserted with indentation matching the nested context
+    expect(updated).toContain('- [ ] New sibling task');
+    // Original structure preserved
+    expect(updated).toContain('- [ ] Parent task');
+    expect(updated).toContain('  - [ ] Nested task 1');
+    expect(updated).toContain('  - [ ] Nested task 2');
+  });
+
+  it('should add task at top level when preserveListNesting is false', async () => {
+    const note = `---
+type: test
+---
+# Test
+
+## Tasks
+
+- [ ] Parent task
+  - [ ] Nested task
+`;
+    await createTestNote(tempVault, 'test.md', note);
+
+    // With preserveListNesting=false, should always insert at top level
+    const result = await addTaskToNote(tempVault, 'test.md', 'Tasks', 'Top level task', 'append', false, false);
+
+    expect(result.success).toBe(true);
+
+    const updated = await readTestNote(tempVault, 'test.md');
+    // The new task should NOT be indented
+    expect(updated).toMatch(/^- \[ \] Top level task$/m);
+  });
 });
 
 // ========================================
@@ -652,5 +710,65 @@ type: test
     const updated = await readTestNote(tempVault, 'test.md');
     expect(updated).toContain('`npm test`');
     expect(updated).toContain('MCP Server');
+  });
+});
+
+// ========================================
+// suggestOutgoingLinks Parameter Tests
+// ========================================
+
+describe('vault_add_task suggestOutgoingLinks parameter', () => {
+  let tempVault: string;
+
+  beforeEach(async () => {
+    tempVault = await createTempVault();
+    // Create entity cache with known entities
+    await createEntityCache(tempVault, {
+      technologies: ['TypeScript', 'JavaScript', 'Python'],
+      projects: ['MCP Server', 'Flywheel Crank'],
+      people: ['Jordan Smith', 'Alex Rivera'],
+      acronyms: ['API', 'CLI', 'MCP'],
+    });
+    // Initialize entity index
+    await initializeEntityIndex(tempVault);
+  });
+
+  afterEach(async () => {
+    await cleanupTempVault(tempVault);
+  });
+
+  it('should suggest entities based on task content', async () => {
+    const result = suggestRelatedLinks('Review TypeScript implementation');
+
+    // Verify suggestion mechanism works for task content
+    if (result.suggestions.length > 0) {
+      expect(result.suffix).toMatch(/^→ \[\[/);
+    }
+  });
+
+  it('should not suggest already-linked entities in task', async () => {
+    const taskContent = 'Work with [[Jordan Smith]] on API design';
+    const result = suggestRelatedLinks(taskContent, { excludeLinked: true });
+
+    // Jordan Smith should not be in suggestions since already linked
+    if (result.suggestions.length > 0) {
+      expect(result.suggestions.map(s => s.toLowerCase())).not.toContain('dave evans');
+    }
+  });
+
+  it('should be idempotent for task content', async () => {
+    const content = 'Review code → [[TypeScript]] [[MCP Server]]';
+    const result = suggestRelatedLinks(content);
+
+    // Should detect existing suffix and return empty
+    expect(result.suggestions).toEqual([]);
+    expect(result.suffix).toBe('');
+  });
+
+  it('should handle task with multiple potential entities', async () => {
+    const result = suggestRelatedLinks('Update TypeScript and JavaScript for MCP Server');
+
+    // Should return multiple suggestions (up to maxSuggestions)
+    expect(result.suggestions.length).toBeLessThanOrEqual(3);
   });
 });

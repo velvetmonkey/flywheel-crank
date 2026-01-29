@@ -341,8 +341,328 @@ The MCP layer is local—data only leaves your machine when included in Claude's
 
 ---
 
+## Flywheel-Crank Specific Privacy Considerations
+
+### Mutation Data in Tool Responses
+
+**What goes to Claude API:**
+
+When Crank mutates your vault:
+```
+Tool: vault_add_to_section
+Input: {note: "daily.md", section: "## Log", content: "Met with client"}
+Response: {success: true, mutation_id: "abc123"}
+```
+
+**Both input AND response sent to Claude API.**
+
+**Privacy impact:**
+- ⚠️ **Content you're adding is visible to Claude** (it's in the tool parameter)
+- ⚠️ **Mutation details logged** (file path, section, operation)
+- ✅ **Existing file content NOT sent** (unless explicitly read first)
+
+---
+
+### Sensitive Data in Mutations
+
+**Scenario:** Adding API keys or passwords via Crank.
+
+❌ **Dangerous:**
+```
+"Add my AWS key to notes.md"
+→ vault_add_to_section(content: "AWS_KEY=sk-1234...")
+→ API key sent to Claude API
+→ Now in Claude's logs/training data (per Anthropic's policy)
+```
+
+**Safe alternatives:**
+1. **Don't store secrets in vault** (use credential managers)
+2. **If you must:** Add manually, not via AI mutations
+3. **Encrypted notes:** Use Obsidian's encryption feature (not readable by Crank)
+
+---
+
+### Git Commit Messages and Privacy
+
+**Auto-commit messages:**
+```
+crank: add to daily-notes/2026-01-29.md section ## Log
+```
+
+**Privacy impact:**
+- ✅ Commit messages are local (in your git repo)
+- ⚠️ If you push to GitHub/GitLab: Commit messages are public (if public repo)
+- ⚠️ Commit message includes file path and section name
+
+**Sensitive scenario:**
+```
+File: clients/acme-corp-confidential.md
+Commit: "crank: add to clients/acme-corp-confidential.md"
+→ Reveals client name in commit history
+```
+
+**Mitigations:**
+- Use generic folder names (`clients/client-001.md` not `clients/acme-corp.md`)
+- Use private git repos
+- Or don't auto-commit sensitive mutations
+
+---
+
+### Encrypted Vault Support
+
+**Obsidian's encryption feature:**
+
+| Aspect | Compatibility |
+|--------|--------------|
+| **Whole-vault encryption** | ✅ Works (if vault decrypted when Crank runs) |
+| **Per-note encryption** | ❌ Crank can't read/write encrypted notes |
+| **Password prompts** | ❌ Not supported (Crank is headless) |
+
+**Best practice:** 
+- Keep vault decrypted while Crank runs
+- Or keep sensitive notes outside vault
+- Or use OS-level encryption (FileVault, VeraCrypt)
+
+---
+
+### Wikilink Entity Cache Privacy
+
+**File:** `.claude/wikilink-entities.json`
+
+**Contains:**
+- All note titles
+- All note aliases
+- File paths
+
+**Privacy impact:**
+- ⚠️ Reveals vault structure (note names, organization)
+- ⚠️ Written to disk unencrypted
+- ✅ Doesn't contain file contents
+
+**If vault is encrypted:** Entity cache inherits encryption.
+
+**If paranoid:** Delete after use:
+```bash
+rm /vault/.claude/wikilink-entities.json
+```
+(Regenerated on next use)
+
+---
+
+### API Keys & Passwords in Frontmatter
+
+**Bad practice:**
+```yaml
+---
+api_key: sk-abc123
+password: hunter2
+---
+```
+
+**Why dangerous with Crank:**
+1. `vault_update_frontmatter` reads frontmatter
+2. Returns updated frontmatter in response
+3. **API key sent to Claude API**
+
+**Safe practice:**
+- **Never store secrets in frontmatter**
+- Use environment variables
+- Use credential managers (1Password, etc.)
+
+---
+
+### Audit Trail via Git
+
+**Git provides mutation audit:**
+
+```bash
+# See all AI mutations
+git log --grep="crank:"
+
+# See what changed
+git show <commit-hash>
+
+# Who did it
+git log --author="Crank"
+```
+
+**Privacy benefit:** Full audit trail of what AI changed.
+
+**Privacy risk:** If git repo pushed to cloud, history is exposed.
+
+---
+
+### Mutation Undo Privacy
+
+**When you undo:**
+```
+vault_undo_last_mutation()
+→ Git reverts last commit
+→ Creates new commit: "Revert: crank: add to note.md"
+```
+
+**Privacy impact:**
+- ✅ Original change is undone
+- ⚠️ Undo commit reveals there WAS a change (commit history)
+- ⚠️ Original commit still in git history (not deleted, just reverted)
+
+**To fully erase:**
+```bash
+git reset --hard HEAD~2  # Remove last 2 commits (original + revert)
+# WARNING: Destructive, can't undo
+```
+
+---
+
+### Safe Mutation Patterns
+
+**1. Two-step: Read, then write**
+```
+1. Flywheel reads current state (minimal data to Claude)
+2. Plan mutation (Claude decides what to write)
+3. Crank writes (only new content sent to Claude)
+```
+
+**2. Avoid echoing sensitive data**
+```
+❌ "Add the API key I just told you to notes.md"
+   → API key in conversation history
+
+✅ "Add placeholder for API key to notes.md"
+   → Fill in manually later
+```
+
+**3. Review before push**
+```
+git diff  # See what Crank changed
+# If sensitive data exposed: git reset --hard
+```
+
+---
+
+## Privacy Best Practices (Crank)
+
+### 1. Don't Mutate Sensitive Notes via AI
+
+**Keep separate:**
+- Passwords → credential manager
+- API keys → environment variables
+- Financial data → encrypted files outside vault
+- Legal documents → secure storage
+
+**AI mutations are for:**
+- Tasks, logs, meeting notes
+- Non-sensitive knowledge work
+- Daily notes, journals (if not deeply personal)
+
+---
+
+### 2. Use Private Git Repos
+
+If using git integration:
+- ✅ GitHub private repo
+- ✅ Self-hosted GitLab
+- ❌ Public GitHub repo (commit history visible)
+
+---
+
+### 3. Review Mutations Before Commit
+
+```
+Crank: commit: false (mutations don't auto-commit)
+You: git diff (review changes)
+If sensitive: git reset --hard
+If good: git add -A && git commit
+```
+
+---
+
+### 4. Exclude Sensitive Folders
+
+Even though Crank doesn't index, good practice:
+```json
+{
+  "env": {
+    "CRANK_EXCLUDE_PATTERNS": "_private/,secrets/,work-confidential/"
+  }
+}
+```
+(Not currently implemented - TODO feature request)
+
+---
+
+### 5. Use OS-Level Encryption
+
+**Best protection:**
+- FileVault (macOS)
+- BitLocker (Windows)
+- LUKS (Linux)
+
+**Effect:** Entire vault encrypted at rest.
+
+**Crank compatibility:** ✅ Works seamlessly (accesses decrypted files)
+
+---
+
+## Privacy Comparison
+
+### Crank vs. Manual Editing
+
+| Aspect | Manual Editing | With Crank |
+|--------|---------------|------------|
+| **Data to AI** | None (local only) | Mutation parameters + response |
+| **Audit trail** | Manual git commits | Auto-commit with consistent messages |
+| **Wikilinks** | Manual | Auto-detected (may expose more notes) |
+
+**Manual editing is more private** (no data to AI).
+
+**Crank is more convenient** (AI-driven mutations).
+
+---
+
+### Crank vs. Obsidian Plugins
+
+| Aspect | Obsidian Plugins | Crank |
+|--------|-----------------|-------|
+| **Data to cloud** | Depends on plugin | Tool responses to Claude API |
+| **Runs where** | Inside Obsidian | Standalone (MCP) |
+| **Audit** | Varies | Git-based |
+
+**Both expose data to some extent.** Choose based on trust model.
+
+---
+
+## Summary (Crank-Specific)
+
+**Crank's privacy characteristics:**
+
+1. ✅ **Local mutations** - No cloud servers, files stay on disk
+2. ⚠️ **Mutation data sent to Claude** - Tool parameters include content
+3. ✅ **Git audit trail** - Full history of what changed
+4. ⚠️ **Wikilink entity cache** - Note titles written to disk
+5. ✅ **No telemetry** - No analytics or tracking
+
+**Key risks:**
+
+1. ❌ **Secrets in mutations** - API keys, passwords sent to Claude
+2. ⚠️ **Git history** - If pushed to public repos, exposes changes
+3. ⚠️ **Entity cache** - Reveals vault structure
+
+**Mitigation:**
+
+- Don't store secrets in vault
+- Use private git repos
+- Use OS-level encryption
+- Review changes before push
+- Keep sensitive notes outside vault
+
+**Bottom line:** Crank is reasonably private for everyday knowledge work, but NOT for highly sensitive data (secrets, financial, medical, legal). Use secure tools for that.
+
+---
+
 ## See Also
 
 - [Configuration](./configuration.md) - Permission settings
 - [Tools Reference](./tools-reference.md) - What each tool returns
 - [Wikilinks](./wikilinks.md) - Entity data handling
+- [Troubleshooting](./TROUBLESHOOTING.md) - Encrypted vault issues

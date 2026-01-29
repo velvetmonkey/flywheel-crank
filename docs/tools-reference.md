@@ -86,6 +86,7 @@ Add content to a markdown section with automatic formatting.
 | `format` | FormatType | No | Formatting style (default: `plain`) |
 | `commit` | boolean | No | Git commit after mutation |
 | `skipWikilinks` | boolean | No | Disable auto-wikilinks (default: `false`) |
+| `suggestOutgoingLinks` | boolean | No | Append entity suggestions (default: `true`) |
 
 **Format Types:**
 | Format | Output Example |
@@ -164,6 +165,7 @@ Replace content in a section (supports regex capture groups).
 | `useRegex` | boolean | No | Treat search as regex (default: `false`) |
 | `commit` | boolean | No | Git commit after mutation |
 | `skipWikilinks` | boolean | No | Disable auto-wikilinks on replacement |
+| `suggestOutgoingLinks` | boolean | No | Append entity suggestions (default: `true`) |
 
 **Example with Regex Capture:**
 
@@ -232,6 +234,7 @@ Add a new task to a section.
 | `completed` | boolean | No | Start as completed (default: `false`) |
 | `commit` | boolean | No | Git commit after mutation |
 | `skipWikilinks` | boolean | No | Disable auto-wikilinks |
+| `suggestOutgoingLinks` | boolean | No | Append entity suggestions (default: `true`) |
 
 **Example:**
 
