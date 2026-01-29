@@ -176,14 +176,15 @@ export function insertInSection(
       // Replace the placeholder with the new content
       lines[lastContentLineIdx] = formattedContent;
     } else {
-      // Normal append behavior
-      let insertLine = section.endLine + 1;
+      // Normal append behavior - insert after last non-blank line to avoid
+      // accumulating blank lines between entries
+      let insertLine: number;
 
-      // If section has content, add after it
-      if (section.contentStartLine <= section.endLine) {
-        insertLine = section.endLine + 1;
+      if (lastContentLineIdx >= section.contentStartLine) {
+        // Insert right after the last non-blank content line
+        insertLine = lastContentLineIdx + 1;
       } else {
-        // Empty section, add right after heading
+        // Empty section (no non-blank content), add right after heading
         insertLine = section.contentStartLine;
       }
 

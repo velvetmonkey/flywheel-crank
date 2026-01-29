@@ -6,6 +6,28 @@ Flywheel Crank is an MCP server that provides surgical, predictable mutations fo
 
 ---
 
+## Quick Start
+
+```json
+{
+  "mcpServers": {
+    "flywheel-crank": {
+      "command": "npx",
+      "args": ["-y", "@velvetmonkey/flywheel-crank"],
+      "env": {
+        "PROJECT_PATH": "/path/to/vault"
+      }
+    }
+  }
+}
+```
+
+> **Windows:** Use `"command": "cmd", "args": ["/c", "npx", "-y", "@velvetmonkey/flywheel-crank"]`
+
+See [Installation](#installation) for full setup options.
+
+---
+
 ## The Eyes and Hands Architecture
 
 Flywheel and Flywheel-Crank form a **complementary pair** for AI-assisted vault management:
