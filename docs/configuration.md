@@ -139,7 +139,7 @@ When `FLYWHEEL_WATCH=true`:
 |-----------|------|---------|-------|-------------|
 | `skipWikilinks` | boolean | `false` | add/replace/task | Disable auto-wikilinks for this call |
 | `position` | `"append"` / `"prepend"` | `"append"` | add tools | Where to insert content |
-| `format` | FormatType | `"plain"` | `vault_add_to_section` | Output format |
+| `format` | FormatType | `"plain"` | `mcp__flywheel-crank__vault_add_to_section` | Output format |
 | `mode` | `"first"` / `"last"` / `"all"` | `"first"` | remove/replace | Match mode |
 | `useRegex` | boolean | `false` | remove/replace | Treat pattern as regex |
 
@@ -157,7 +157,7 @@ When `FLYWHEEL_WATCH=true`:
 
 | Parameter | Type | Default | Tools | Description |
 |-----------|------|---------|-------|-------------|
-| `confirm` | boolean | **required** | `vault_delete_note` | Must be `true` to confirm deletion |
+| `confirm` | boolean | **required** | `mcp__flywheel-crank__vault_delete_note` | Must be `true` to confirm deletion |
 
 ---
 
@@ -167,13 +167,13 @@ All Crank mutations use consistent git commit prefixes for audit trails:
 
 | Prefix | Tools | Description |
 |--------|-------|-------------|
-| `[Crank:Add]` | `vault_add_to_section` | Content added to section |
-| `[Crank:Remove]` | `vault_remove_from_section` | Content removed from section |
-| `[Crank:Replace]` | `vault_replace_in_section` | Content replaced in section |
-| `[Crank:Task]` | `vault_toggle_task`, `vault_add_task` | Task operations |
-| `[Crank:FM]` | `vault_update_frontmatter`, `vault_add_frontmatter_field` | Frontmatter changes |
-| `[Crank:Create]` | `vault_create_note` | Note created |
-| `[Crank:Delete]` | `vault_delete_note` | Note deleted |
+| `[Crank:Add]` | `mcp__flywheel-crank__vault_add_to_section` | Content added to section |
+| `[Crank:Remove]` | `mcp__flywheel-crank__vault_remove_from_section` | Content removed from section |
+| `[Crank:Replace]` | `mcp__flywheel-crank__vault_replace_in_section` | Content replaced in section |
+| `[Crank:Task]` | `mcp__flywheel-crank__vault_toggle_task`, `mcp__flywheel-crank__vault_add_task` | Task operations |
+| `[Crank:FM]` | `mcp__flywheel-crank__vault_update_frontmatter`, `mcp__flywheel-crank__vault_add_frontmatter_field` | Frontmatter changes |
+| `[Crank:Create]` | `mcp__flywheel-crank__vault_create_note` | Note created |
+| `[Crank:Delete]` | `mcp__flywheel-crank__vault_delete_note` | Note deleted |
 
 **Example commit message:**
 ```
@@ -224,13 +224,13 @@ Start conservative, expand as needed:
 Day 1:  Only allow read tools (Flywheel)
         → Learn what Claude can see
 
-Day 7:  Allow vault_add_task, vault_toggle_task
+Day 7:  Allow mcp__flywheel-crank__vault_add_task, mcp__flywheel-crank__vault_toggle_task
         → Low-risk mutations, test the pattern
 
-Day 14: Allow vault_add_to_section
+Day 14: Allow mcp__flywheel-crank__vault_add_to_section
         → Content additions with auto-wikilinks
 
-Day 30: Allow vault_replace_in_section, vault_update_frontmatter
+Day 30: Allow mcp__flywheel-crank__vault_replace_in_section, mcp__flywheel-crank__vault_update_frontmatter
         → Full mutation capabilities
 
 Never:  Allow Write(**) or Edit(**)
@@ -379,7 +379,7 @@ For users comfortable with all Crank operations:
 
 - Auto-refreshes if >1 hour old
 - Contains all entities from vault (people, projects, technologies, acronyms)
-- Used by `vault_add_to_section`, `vault_replace_in_section`, `vault_add_task`
+- Used by `mcp__flywheel-crank__vault_add_to_section`, `mcp__flywheel-crank__vault_replace_in_section`, `mcp__flywheel-crank__vault_add_task`
 
 **Example:**
 ```json

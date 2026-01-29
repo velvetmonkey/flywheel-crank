@@ -9,7 +9,7 @@ Success with Flywheel + Crank comes from **iterative feedback**. Claude makes go
 Working with Claude follows a natural rhythm:
 
 1. **Claude suggests a tool** → Review the choice
-2. **Refine if needed** → "Use vault_add_to_section instead"
+2. **Refine if needed** → "Use mcp__flywheel-crank__vault_add_to_section instead"
 3. **Approve execution** → Tool runs
 4. **Verify result** → "Show me the updated note"
 
@@ -24,8 +24,8 @@ When Claude picks the wrong tool, a quick correction gets you back on track:
 | Claude Does | You Say |
 |-------------|---------|
 | Tries to use Write tool directly | "Use flywheel-crank tools to mutate" |
-| Picks the wrong section tool | "Use get_section_content first to read" |
-| Skips verification | "Verify with get_note_metadata" |
+| Picks the wrong section tool | "Use mcp__flywheel__get_section_content first to read" |
+| Skips verification | "Verify with mcp__flywheel__get_note_metadata" |
 | Modifies too much | "Just add to Log section, don't rewrite" |
 | Reads whole file unnecessarily | "Use flywheel to query the index instead" |
 | Creates new file when append would work | "Append to the existing note" |
@@ -85,19 +85,19 @@ After mutations, verify the result:
 ### Quick Verification
 ```
 You: "Show me the updated section"
-Claude: [uses get_section_content]
+Claude: [uses mcp__flywheel__get_section_content]
 ```
 
 ### Full Note Check
 ```
 You: "Read back the whole note"
-Claude: [uses get_note_metadata + get_section_content]
+Claude: [uses mcp__flywheel__get_note_metadata + mcp__flywheel__get_section_content]
 ```
 
 ### Graph Verification
 ```
 You: "Did that create the right links?"
-Claude: [uses get_forward_links on the modified note]
+Claude: [uses mcp__flywheel__get_forward_links on the modified note]
 ```
 
 ---
@@ -110,7 +110,7 @@ When Claude makes good tool choices, the workflow is seamless:
 You: "Add 'finished API review' to today's log"
 
 Claude: I'll add that to today's daily note.
-[uses vault_add_to_section with section="Log"]
+[uses mcp__flywheel-crank__vault_add_to_section with section="Log"]
 
 Added to daily-notes/2026-01-29.md:
   ## Log

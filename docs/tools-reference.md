@@ -10,9 +10,9 @@ Complete reference for all Flywheel Crank MCP tools with visual examples, decisi
 ┌─────────────────────────────────────────────────────────────────┐
 │                    Read-Write-Verify Pattern                    │
 ├─────────────────────────────────────────────────────────────────┤
-│  1. READ (Flywheel)     │  2. WRITE (Crank)    │  3. VERIFY    │
-│  get_section_content()  │  vault_add_section() │  re-read      │
-│  ~50 tokens             │  atomic mutation     │  confirm      │
+│  1. READ (Flywheel)                │  2. WRITE (Crank)                    │  3. VERIFY    │
+│  mcp__flywheel__get_section_content()  │  mcp__flywheel-crank__vault_add_to_section() │  re-read      │
+│  ~50 tokens                        │  atomic mutation                     │  confirm      │
 └─────────────────────────────────────────────────────────────────┘
 
 Why this pattern?
@@ -40,31 +40,31 @@ Why this pattern?
 ```
 Should I use Flywheel-Crank or Edit tool?
 │
-├─ Adding to a section? ──────────────────────► vault_add_to_section
+├─ Adding to a section? ──────────────────────► mcp__flywheel-crank__vault_add_to_section
 │   "Add a log entry"                            (timestamp-bullet format)
 │
-├─ Toggling a task checkbox? ─────────────────► vault_toggle_task
+├─ Toggling a task checkbox? ─────────────────► mcp__flywheel-crank__vault_toggle_task
 │   "Mark the groceries task done"               (finds by partial match)
 │
-├─ Adding a new task? ────────────────────────► vault_add_task
+├─ Adding a new task? ────────────────────────► mcp__flywheel-crank__vault_add_task
 │   "Add a task to review the PR"                (auto-formats checkbox)
 │
-├─ Updating frontmatter? ─────────────────────► vault_update_frontmatter
+├─ Updating frontmatter? ─────────────────────► mcp__flywheel-crank__vault_update_frontmatter
 │   "Set status to complete"                     (preserves other fields)
 │
-├─ Removing specific lines? ──────────────────► vault_remove_from_section
+├─ Removing specific lines? ──────────────────► mcp__flywheel-crank__vault_remove_from_section
 │   "Remove all TODO items"                      (regex support)
 │
-├─ Replacing content? ────────────────────────► vault_replace_in_section
+├─ Replacing content? ────────────────────────► mcp__flywheel-crank__vault_replace_in_section
 │   "Change PENDING to DONE"                     (first/last/all modes)
 │
-├─ Creating a new note? ──────────────────────► vault_create_note
+├─ Creating a new note? ──────────────────────► mcp__flywheel-crank__vault_create_note
 │   "Create a meeting note"                      (with frontmatter template)
 │
 ├─ Free-form prose edit? ─────────────────────► Consider Edit tool
 │   Paragraph rewriting, complex formatting      (escape hatch)
 │
-└─ Need to undo last change? ─────────────────► vault_undo_last_mutation
+└─ Need to undo last change? ─────────────────► mcp__flywheel-crank__vault_undo_last_mutation
     "Undo that last change"                      (git soft reset)
 ```
 
@@ -72,7 +72,7 @@ Should I use Flywheel-Crank or Edit tool?
 
 ## Mutation Tools
 
-### vault_add_to_section
+### mcp__flywheel-crank__vault_add_to_section
 
 Add content to a markdown section with automatic formatting.
 
@@ -99,7 +99,7 @@ Add content to a markdown section with automatic formatting.
 **Example:**
 
 ```
-┌─ MUTATION: vault_add_to_section ─────────────────┐
+┌─ MUTATION: mcp__flywheel-crank__vault_add_to_section ─────────────────┐
 │ Path:     notes/project-alpha.md                 │
 │ Section:  ## Progress                            │
 │ Content:  "Completed API integration"            │
@@ -119,7 +119,7 @@ Add content to a markdown section with automatic formatting.
 
 ---
 
-### vault_remove_from_section
+### mcp__flywheel-crank__vault_remove_from_section
 
 Remove lines matching a pattern from a section.
 
@@ -136,7 +136,7 @@ Remove lines matching a pattern from a section.
 **Example:**
 
 ```
-┌─ MUTATION: vault_remove_from_section ────────────┐
+┌─ MUTATION: mcp__flywheel-crank__vault_remove_from_section ────────────┐
 │ Path:     tasks/backlog.md                       │
 │ Section:  ## Done                                │
 │ Pattern:  ^- \[x\] .*2025.*$                     │
@@ -149,7 +149,7 @@ Remove lines matching a pattern from a section.
 
 ---
 
-### vault_replace_in_section
+### mcp__flywheel-crank__vault_replace_in_section
 
 Replace content in a section (supports regex capture groups).
 
@@ -168,7 +168,7 @@ Replace content in a section (supports regex capture groups).
 **Example with Regex Capture:**
 
 ```
-┌─ MUTATION: vault_replace_in_section ─────────────┐
+┌─ MUTATION: mcp__flywheel-crank__vault_replace_in_section ─────────────┐
 │ Path:     notes/tasks.md                         │
 │ Section:  ## Backlog                             │
 │ Search:   ^- Task: (.+)$                         │
@@ -185,7 +185,7 @@ Replace content in a section (supports regex capture groups).
 
 ## Task Tools
 
-### vault_toggle_task
+### mcp__flywheel-crank__vault_toggle_task
 
 Toggle a task checkbox between checked and unchecked.
 
@@ -205,7 +205,7 @@ Toggle a task checkbox between checked and unchecked.
 **Example:**
 
 ```
-┌─ MUTATION: vault_toggle_task ────────────────────┐
+┌─ MUTATION: mcp__flywheel-crank__vault_toggle_task ────────────────────┐
 │ Path:     daily-notes/2026-01-28.md              │
 │ Task:     "groceries"                            │
 │ Section:  ## Tasks                               │
@@ -218,7 +218,7 @@ Toggle a task checkbox between checked and unchecked.
 
 ---
 
-### vault_add_task
+### mcp__flywheel-crank__vault_add_task
 
 Add a new task to a section.
 
@@ -236,7 +236,7 @@ Add a new task to a section.
 **Example:**
 
 ```
-┌─ MUTATION: vault_add_task ───────────────────────┐
+┌─ MUTATION: mcp__flywheel-crank__vault_add_task ───────────────────────┐
 │ Path:     daily-notes/2026-01-28.md              │
 │ Section:  ## Tasks                               │
 │ Task:     "Review PR for MCP Server"             │
@@ -251,7 +251,7 @@ Add a new task to a section.
 
 ## Frontmatter Tools
 
-### vault_update_frontmatter
+### mcp__flywheel-crank__vault_update_frontmatter
 
 Update or merge fields in note frontmatter.
 
@@ -284,7 +284,7 @@ tags:                             tags:
 
 ---
 
-### vault_add_frontmatter_field
+### mcp__flywheel-crank__vault_add_frontmatter_field
 
 Add a new field to frontmatter (fails if field exists).
 
@@ -302,7 +302,7 @@ Add a new field to frontmatter (fails if field exists).
 
 ## Note Tools
 
-### vault_create_note
+### mcp__flywheel-crank__vault_create_note
 
 Create a new note with frontmatter and content.
 
@@ -317,7 +317,7 @@ Create a new note with frontmatter and content.
 **Example:**
 
 ```
-┌─ MUTATION: vault_create_note ────────────────────┐
+┌─ MUTATION: mcp__flywheel-crank__vault_create_note ────────────────────┐
 │ Path:     meetings/2026-01-28-standup.md         │
 │ Frontmatter:                                     │
 │   type: meeting                                  │
@@ -331,7 +331,7 @@ Create a new note with frontmatter and content.
 
 ---
 
-### vault_delete_note
+### mcp__flywheel-crank__vault_delete_note
 
 Delete a note from the vault.
 
@@ -348,7 +348,7 @@ Delete a note from the vault.
 
 ## System Tools
 
-### vault_list_sections
+### mcp__flywheel-crank__vault_list_sections
 
 List all headings in a note with levels.
 
@@ -375,7 +375,7 @@ List all headings in a note with levels.
 
 ---
 
-### vault_undo_last_mutation
+### mcp__flywheel-crank__vault_undo_last_mutation
 
 Undo the last git commit (soft reset to HEAD~1).
 
@@ -401,16 +401,16 @@ Crank automatically applies wikilinks to content containing known entities.
 
 | Tool | Auto-Wikilinks | Parameter |
 |------|----------------|-----------|
-| `vault_add_to_section` | Yes | `skipWikilinks: boolean` |
-| `vault_replace_in_section` | Yes | `skipWikilinks: boolean` |
-| `vault_add_task` | Yes | `skipWikilinks: boolean` |
-| `vault_remove_from_section` | No | N/A |
-| `vault_toggle_task` | No | N/A |
-| `vault_update_frontmatter` | No | N/A |
-| `vault_create_note` | No | N/A |
-| `vault_delete_note` | No | N/A |
-| `vault_list_sections` | No | N/A |
-| `vault_undo_last_mutation` | No | N/A |
+| `mcp__flywheel-crank__vault_add_to_section` | Yes | `skipWikilinks: boolean` |
+| `mcp__flywheel-crank__vault_replace_in_section` | Yes | `skipWikilinks: boolean` |
+| `mcp__flywheel-crank__vault_add_task` | Yes | `skipWikilinks: boolean` |
+| `mcp__flywheel-crank__vault_remove_from_section` | No | N/A |
+| `mcp__flywheel-crank__vault_toggle_task` | No | N/A |
+| `mcp__flywheel-crank__vault_update_frontmatter` | No | N/A |
+| `mcp__flywheel-crank__vault_create_note` | No | N/A |
+| `mcp__flywheel-crank__vault_delete_note` | No | N/A |
+| `mcp__flywheel-crank__vault_list_sections` | No | N/A |
+| `mcp__flywheel-crank__vault_undo_last_mutation` | No | N/A |
 
 ### Wikilink Behavior
 
@@ -531,7 +531,7 @@ interface MutationResult {
 ### 1. Use Section-Scoped Operations
 
 ```
-✅ vault_add_to_section(section: "## Log")
+✅ mcp__flywheel-crank__vault_add_to_section(section: "## Log")
    → Safe, reversible, predictable
 
 ❌ Edit tool for adding log entries
@@ -541,10 +541,10 @@ interface MutationResult {
 ### 2. Enable Git Commits
 
 ```
-✅ vault_add_to_section(..., commit: true)
+✅ mcp__flywheel-crank__vault_add_to_section(..., commit: true)
    → Full audit trail, easy undo
 
-❌ vault_add_to_section(..., commit: false)
+❌ mcp__flywheel-crank__vault_add_to_section(..., commit: false)
    → Changes not tracked
 ```
 
@@ -552,13 +552,13 @@ interface MutationResult {
 
 ```
 // When content already has wikilinks
-vault_add_task({
+mcp__flywheel-crank__vault_add_task({
   task: "Review [[Sam Chen]]'s PR",
   skipWikilinks: true  // Don't double-link
 })
 
 // When content should be auto-linked
-vault_add_task({
+mcp__flywheel-crank__vault_add_task({
   task: "Review Sam Chen's PR",
   skipWikilinks: false  // Auto-link Sam Chen
 })
@@ -568,13 +568,13 @@ vault_add_task({
 
 ```
 // 1. Read current state (Flywheel)
-const current = await flywheel.get_section_content({
+const current = await mcp__flywheel__get_section_content({
   path: "daily.md",
   heading: "Log"
 });
 
 // 2. Write mutation (Crank)
-await crank.vault_add_to_section({
+await mcp__flywheel-crank__vault_add_to_section({
   path: "daily.md",
   section: "Log",
   content: "New entry",
@@ -582,7 +582,7 @@ await crank.vault_add_to_section({
 });
 
 // 3. Verify (Flywheel)
-const updated = await flywheel.get_section_content({
+const updated = await mcp__flywheel__get_section_content({
   path: "daily.md",
   heading: "Log"
 });

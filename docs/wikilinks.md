@@ -64,7 +64,7 @@ You don't manually link everything. You just write naturally and Crank links for
 
 ### Example
 
-**Input (via `vault_add_to_section`):**
+**Input (via `mcp__flywheel-crank__vault_add_to_section`):**
 ```
 Met with Alex Rivera about the Turbopump delay
 ```
@@ -166,7 +166,7 @@ Daily notes contain references to people/projects but ARE NOT entities themselve
 
 ```javascript
 // This works - add to today's daily note
-vault_add_to_section({
+mcp__flywheel-crank__vault_add_to_section({
   path: "daily-notes/2026-01-28.md",
   section: "Log",
   content: "Met with Alex Rivera"
@@ -220,7 +220,7 @@ Templates like:
 
 ```javascript
 // Template has: "## Tasks\n- [ ]"
-vault_add_task({
+mcp__flywheel-crank__vault_add_task({
   path: "daily-notes/2026-01-28.md",
   section: "Tasks",
   task: "Review PR"
@@ -239,13 +239,13 @@ Use `skipWikilinks: true` to disable auto-linking for a specific call:
 
 ```javascript
 // With auto-wikilinks (default)
-vault_add_task({
+mcp__flywheel-crank__vault_add_task({
   task: "Review Sam Chen's PR"
 })
 // Result: "- [ ] Review [[Sam Chen]]'s PR"
 
 // Without auto-wikilinks
-vault_add_task({
+mcp__flywheel-crank__vault_add_task({
   task: "Review Sam Chen's PR",
   skipWikilinks: true
 })
@@ -261,7 +261,7 @@ vault_add_task({
 
 ```javascript
 // Content already has wikilinks - skip to avoid [[[[nested]]]]
-vault_add_to_section({
+mcp__flywheel-crank__vault_add_to_section({
   content: "Talked to [[Sam Chen]] about [[Project Alpha]]",
   skipWikilinks: true
 })
@@ -271,14 +271,14 @@ vault_add_to_section({
 
 | Tool | Auto-Wikilinks | Parameter |
 |------|----------------|-----------|
-| `vault_add_to_section` | Yes | `skipWikilinks: boolean` |
-| `vault_replace_in_section` | Yes | `skipWikilinks: boolean` |
-| `vault_add_task` | Yes | `skipWikilinks: boolean` |
-| `vault_remove_from_section` | No | N/A |
-| `vault_toggle_task` | No | N/A |
-| `vault_update_frontmatter` | No | N/A |
-| `vault_create_note` | No | N/A |
-| `vault_delete_note` | No | N/A |
+| `mcp__flywheel-crank__vault_add_to_section` | Yes | `skipWikilinks: boolean` |
+| `mcp__flywheel-crank__vault_replace_in_section` | Yes | `skipWikilinks: boolean` |
+| `mcp__flywheel-crank__vault_add_task` | Yes | `skipWikilinks: boolean` |
+| `mcp__flywheel-crank__vault_remove_from_section` | No | N/A |
+| `mcp__flywheel-crank__vault_toggle_task` | No | N/A |
+| `mcp__flywheel-crank__vault_update_frontmatter` | No | N/A |
+| `mcp__flywheel-crank__vault_create_note` | No | N/A |
+| `mcp__flywheel-crank__vault_delete_note` | No | N/A |
 
 ---
 

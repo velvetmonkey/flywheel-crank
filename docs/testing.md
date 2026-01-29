@@ -52,7 +52,7 @@ const vault = await createTestVault({
   'daily-notes/2026-01-28.md': dailyNoteFixture,
 });
 
-const result = await tool('vault_add_to_section', {
+const result = await tool('mcp__flywheel-crank__vault_add_to_section', {
   path: 'daily-notes/2026-01-28.md',
   section: '## Log',
   content: 'Test entry',
@@ -133,7 +133,7 @@ This test validates all mutation tools in sequence and demonstrates the git inte
 
 #### Detailed Input/Output Log
 
-**Step 1: vault_create_note**
+**Step 1: mcp__flywheel-crank__vault_create_note**
 
 ```json
 INPUT:
@@ -155,7 +155,7 @@ OUTPUT:
 }
 ```
 
-**Step 2: vault_list_sections**
+**Step 2: mcp__flywheel-crank__vault_list_sections**
 
 ```json
 INPUT:
@@ -175,7 +175,7 @@ OUTPUT:
 }
 ```
 
-**Step 3: vault_add_to_section**
+**Step 3: mcp__flywheel-crank__vault_add_to_section**
 
 ```json
 INPUT:
@@ -194,7 +194,7 @@ OUTPUT:
 }
 ```
 
-**Step 4: vault_add_task**
+**Step 4: mcp__flywheel-crank__vault_add_task**
 
 ```json
 INPUT:
@@ -212,7 +212,7 @@ OUTPUT:
 }
 ```
 
-**Step 5: vault_toggle_task**
+**Step 5: mcp__flywheel-crank__vault_toggle_task**
 
 ```json
 INPUT:
@@ -229,7 +229,7 @@ OUTPUT:
 }
 ```
 
-**Step 6: vault_update_frontmatter**
+**Step 6: mcp__flywheel-crank__vault_update_frontmatter**
 
 ```json
 INPUT:
@@ -246,7 +246,7 @@ OUTPUT:
 }
 ```
 
-**Step 7: vault_add_frontmatter_field**
+**Step 7: mcp__flywheel-crank__vault_add_frontmatter_field**
 
 ```json
 INPUT:
@@ -285,7 +285,7 @@ This is a test note for verifying flywheel-crank MCP operations.
 - **17:44** Testing flywheel-crank add_to_section operation
 ```
 
-**Step 9: vault_undo_last_mutation ⚠️ BUG DISCOVERED**
+**Step 9: mcp__flywheel-crank__vault_undo_last_mutation ⚠️ BUG DISCOVERED**
 
 ```json
 INPUT:
@@ -303,7 +303,7 @@ OUTPUT:
 
 **⚠️ BUG:** Undid an unrelated commit from the git history! The undo should have failed because `AUTO_COMMIT` was disabled, meaning no crank-specific commits existed to undo.
 
-**Step 10: vault_delete_note**
+**Step 10: mcp__flywheel-crank__vault_delete_note**
 
 ```json
 INPUT:
@@ -345,7 +345,7 @@ This test verifies the fix for the undo bug discovered in Test Session 1.
 
 #### Detailed Input/Output Log
 
-**Step 1: vault_create_note**
+**Step 1: mcp__flywheel-crank__vault_create_note**
 
 ```json
 INPUT:
@@ -362,7 +362,7 @@ OUTPUT:
 }
 ```
 
-**Step 2: vault_undo_last_mutation ✅ FIX VERIFIED**
+**Step 2: mcp__flywheel-crank__vault_undo_last_mutation ✅ FIX VERIFIED**
 
 ```json
 INPUT:
@@ -378,7 +378,7 @@ OUTPUT:
 }
 ```
 
-**Step 3: vault_delete_note**
+**Step 3: mcp__flywheel-crank__vault_delete_note**
 
 ```json
 INPUT:
@@ -400,15 +400,15 @@ OUTPUT:
 
 | Tool | Session 1 | Session 2 | Status |
 |------|-----------|-----------|--------|
-| vault_create_note | ✅ | ✅ | Working |
-| vault_list_sections | ✅ | - | Working |
-| vault_add_to_section | ✅ | - | Working |
-| vault_add_task | ✅ | - | Working |
-| vault_toggle_task | ✅ | - | Working |
-| vault_update_frontmatter | ✅ | - | Working |
-| vault_add_frontmatter_field | ✅ | - | Working |
-| vault_delete_note | ✅ | ✅ | Working |
-| vault_undo_last_mutation | ⚠️ Bug | ✅ Fixed | Fixed |
+| mcp__flywheel-crank__vault_create_note | ✅ | ✅ | Working |
+| mcp__flywheel-crank__vault_list_sections | ✅ | - | Working |
+| mcp__flywheel-crank__vault_add_to_section | ✅ | - | Working |
+| mcp__flywheel-crank__vault_add_task | ✅ | - | Working |
+| mcp__flywheel-crank__vault_toggle_task | ✅ | - | Working |
+| mcp__flywheel-crank__vault_update_frontmatter | ✅ | - | Working |
+| mcp__flywheel-crank__vault_add_frontmatter_field | ✅ | - | Working |
+| mcp__flywheel-crank__vault_delete_note | ✅ | ✅ | Working |
+| mcp__flywheel-crank__vault_undo_last_mutation | ⚠️ Bug | ✅ Fixed | Fixed |
 
 ---
 
@@ -442,7 +442,7 @@ The `AUTO_COMMIT` environment variable controls git integration behavior. Unders
 
 ### Why Undo Requires AUTO_COMMIT
 
-The `vault_undo_last_mutation` tool performs a soft reset to the previous commit:
+The `mcp__flywheel-crank__vault_undo_last_mutation` tool performs a soft reset to the previous commit:
 
 ```bash
 git reset --soft HEAD~1
@@ -492,7 +492,7 @@ This allows manual git commits or integration with external version control work
 
 **Discovered:** 2026-01-28 (Test Session 1)
 
-**Problem:** When `AUTO_COMMIT: "false"`, the `vault_undo_last_mutation` tool would undo arbitrary commits from the git history instead of failing gracefully.
+**Problem:** When `AUTO_COMMIT: "false"`, the `mcp__flywheel-crank__vault_undo_last_mutation` tool would undo arbitrary commits from the git history instead of failing gracefully.
 
 **Impact:** Risk of data loss by undoing unrelated commits.
 
