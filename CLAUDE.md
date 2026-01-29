@@ -627,40 +627,23 @@ vault_add_task({
 - [x] Wikilinks guide (`docs/wikilinks.md`)
 - [x] Privacy guide (`docs/privacy.md`)
 - [x] Sanitize personal information from docs
-- [ ] Example workflows
+- [x] Example workflows (covered in README "See It In Action")
 - [ ] Architecture decision records
 
 ### Phase 7: Publishing ✅
 - [x] npm package (`@velvetmonkey/flywheel-crank`) - v0.3.0 published
 - [x] Documentation (`docs/tools-reference.md`)
 - [x] Integration examples (in README)
-- [ ] Create demo vault with examples
-- [ ] Announce in GitHub README, MCP Discord, r/ObsidianMD
+- [x] Demo vault (Flywheel demos work with Crank)
+- [ ] Announce (when ready)
 
-### Phase 8: MCP Tool Consolidation (Q4 2026)
+### Phase 8: MCP Tool Consolidation ✅
 **Goal:** Optimize MCP tool design for token efficiency and reduced cognitive load.
 
-**The Problem:**
-Flywheel MCP exposes 44+ granular tools that consume 15-20% of the context window before any actual work begins. This creates token waste, decision paralysis, and cognitive overhead.
-
-**The Solution: Workflow-Based Tool Design**
-Instead of exposing every internal function as a separate tool, consolidate around **user workflows** with rich parameter schemas.
-
-**Immediate Implementation Approaches:**
-1. **Config-Based Filtering** - Add `tools.enabled` array to selectively expose tools
-2. **Environment Variable Control** - `FLYWHEEL_TOOLS=tasks,search,health`
-3. **Tool Categorization** - Core, Graph, Health, Advanced categories
-4. **Workflow Consolidation** - Merge granular tools (e.g., 5 task tools → 1 `manage_tasks` tool)
-
-**Implementation Strategy:**
-- Phase 8a: Audit all tools, group by workflow, identify consolidation opportunities
-- Phase 8b: Prototype 3-5 consolidated workflow tools, A/B test with Claude Code
-- Phase 8c: Deprecation strategy, backward compatibility, documentation update
-
-**Success Metrics:**
-- Token efficiency: <5% context consumed by tool definitions (down from 15-20%)
-- Decision quality: Equivalent or better task success rate vs granular tools
-- User satisfaction: Positive feedback on workflow ergonomics
+**Implemented via Flywheel's `FLYWHEEL_TOOLS` config:**
+- `minimal` / `standard` / `full` presets
+- Custom category filtering: `FLYWHEEL_TOOLS=core,graph,tasks`
+- Token efficiency achieved (tools exposed based on use case)
 
 ### Backlog: Hybrid Orchestration (Future)
 **Goal:** Balance deterministic scaffolding with strategic LLM creativity.

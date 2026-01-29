@@ -181,6 +181,14 @@ export function insertInSection(
       let insertLine: number;
 
       if (lastContentLineIdx >= section.contentStartLine) {
+        // Remove any trailing blank lines within the section before inserting
+        // This prevents blank lines from accumulating between entries across
+        // read/write cycles (e.g., with gray-matter)
+        for (let i = section.endLine; i > lastContentLineIdx; i--) {
+          if (lines[i].trim() === '') {
+            lines.splice(i, 1);
+          }
+        }
         // Insert right after the last non-blank content line
         insertLine = lastContentLineIdx + 1;
       } else {

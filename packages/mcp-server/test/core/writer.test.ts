@@ -397,6 +397,67 @@ Existing entry
     // Prepend should insert at top, leaving placeholder in place
     expect(result).toContain('## Priorities\n1. First priority\n');
   });
+
+  it('should not accumulate blank lines between multiple appends', () => {
+    // Simulate what happens with gray-matter read/write cycles
+    // Content often has trailing blank lines within section
+    let content = `## Log
+- Entry 1
+
+## Next
+`;
+    let section = findSection(content, 'Log')!;
+
+    // First append
+    content = insertInSection(content, section, '- Entry 2', 'append');
+    section = findSection(content, 'Log')!;
+
+    // Second append
+    content = insertInSection(content, section, '- Entry 3', 'append');
+
+    // Entries should be adjacent - no blank lines between them
+    expect(content).toContain('- Entry 1\n- Entry 2\n- Entry 3\n');
+    // Should not have multiple blank lines accumulating
+    expect(content).not.toMatch(/- Entry 3\n\n\n/);
+  });
+
+  it('should handle multiple appends to section with trailing whitespace', () => {
+    // Content with trailing blank line inside section (common after gray-matter)
+    let content = `## Log
+- First
+
+## Next
+`;
+    let section = findSection(content, 'Log')!;
+
+    content = insertInSection(content, section, '- Second', 'append');
+    section = findSection(content, 'Log')!;
+    content = insertInSection(content, section, '- Third', 'append');
+    section = findSection(content, 'Log')!;
+    content = insertInSection(content, section, '- Fourth', 'append');
+
+    // All entries should be adjacent
+    expect(content).toContain('- First\n- Second\n- Third\n- Fourth\n');
+  });
+
+  it('should remove multiple trailing blank lines within section when appending', () => {
+    // Section with multiple trailing blank lines before next section
+    const content = `## Log
+- Entry 1
+
+
+## Next
+`;
+    const section = findSection(content, 'Log')!;
+    const result = insertInSection(content, section, '- Entry 2', 'append');
+
+    // Both blank lines should be removed, entries should be adjacent
+    expect(result).toContain('- Entry 1\n- Entry 2\n## Next');
+    // No blank lines between entries
+    expect(result).not.toContain('- Entry 1\n\n- Entry 2');
+    // No blank lines between new entry and next section
+    expect(result).not.toContain('- Entry 2\n\n## Next');
+  });
 });
 
 describe('isEmptyPlaceholder', () => {
@@ -576,6 +637,42 @@ describe('writeVaultFile', () => {
     await expect(
       writeVaultFile(tempVault, '../../../etc/passwd', 'malicious', {})
     ).rejects.toThrow('Invalid path');
+  });
+
+  it('should not accumulate blank lines in section across read/write cycles', async () => {
+    // This test reproduces the bug where blank lines appear between entries
+    // when using vault_add_to_section multiple times
+    const initialContent = `---
+type: daily
+---
+
+## Log
+- Entry 1
+
+## Next Section
+Content here
+`;
+    await createTestNote(tempVault, 'accumulation-test.md', initialContent);
+
+    // Simulate multiple add operations (read -> modify -> write cycle)
+    for (const entry of ['- Entry 2', '- Entry 3', '- Entry 4']) {
+      // Read
+      const { content, frontmatter } = await readVaultFile(tempVault, 'accumulation-test.md');
+
+      // Modify
+      const section = findSection(content, 'Log')!;
+      const updated = insertInSection(content, section, entry, 'append');
+
+      // Write
+      await writeVaultFile(tempVault, 'accumulation-test.md', updated, frontmatter);
+    }
+
+    // Verify: entries should be adjacent with no blank lines between
+    const final = await readTestNote(tempVault, 'accumulation-test.md');
+    expect(final).toContain('- Entry 1\n- Entry 2\n- Entry 3\n- Entry 4\n');
+    // Should not have multiple consecutive blank lines anywhere in the Log section
+    expect(final).not.toMatch(/- Entry 2\n\n- Entry 3/);
+    expect(final).not.toMatch(/- Entry 3\n\n- Entry 4/);
   });
 
   it('should preserve complex frontmatter structure', async () => {
