@@ -13,16 +13,15 @@ Flywheel Crank is an MCP server that provides surgical, predictable mutations fo
   "mcpServers": {
     "flywheel-crank": {
       "command": "npx",
-      "args": ["-y", "@velvetmonkey/flywheel-crank"],
-      "env": {
-        "PROJECT_PATH": "/path/to/vault"
-      }
+      "args": ["-y", "@velvetmonkey/flywheel-crank"]
     }
   }
 }
 ```
 
 > **Windows:** Use `"command": "cmd", "args": ["/c", "npx", "-y", "@velvetmonkey/flywheel-crank"]`
+>
+> Vault auto-detected from `.obsidian` or `.claude` folder. See [Configuration](./docs/configuration.md) for options.
 
 See [Installation](#installation) for full setup options.
 
@@ -74,7 +73,7 @@ Flywheel and Flywheel-Crank form a **complementary pair** for AI-assisted vault 
                         ┌─────────────────────────────────────────────────────┐
                         │              Your Vault (65 notes)                  │
                         │                        · · ·                        │
-                        │    ·  Orphan  ·              ·  Orphan  ·           │
+                        │   · [[Orphan]] ·            · [[Orphan]] ·          │
                         │         ↓                        ↓                  │
                         └─────────────────────────────────────────────────────┘
                                                │
@@ -82,7 +81,7 @@ Flywheel and Flywheel-Crank form a **complementary pair** for AI-assisted vault 
                  │                             │                             │
                  ▼                             ▼                             ▼
     ┌────────────────────┐       ┌────────────────────┐       ┌────────────────────┐
-    │   PDR Review       │──────▶│    Team Roster     │◀──────│  Year End Review   │
+    │ [[PDR Review]]     │──────▶│  [[Team Roster]]   │◀──────│[[Year End Review]] │
     │   ───────────      │       │    ───────────     │       │   ──────────────   │
     │   type: meeting    │       │   type: hub        │       │   type: meeting    │
     │   date: 2025-12-18 │       │   status: active   │       │   date: 2025-12-30 │
@@ -92,7 +91,7 @@ Flywheel and Flywheel-Crank form a **complementary pair** for AI-assisted vault 
               │          ┌──────────┘    │    │    └──────────┐        │
               │          ▼               ▼    ▼               ▼        │
               │   ┌──────────────┐ ┌──────────────┐ ┌──────────────┐   │
-              │   │ Sarah Chen   │ │ Marcus J.    │ │ Elena R.     │   │
+              │   │[[Sarah Chen]]│ │[[Marcus J.]] │ │ [[Elena R.]] │   │
               │   │ ──────────── │ │ ──────────── │ │ ──────────── │   │
               │   │ role: Lead   │ │ role: Prop.  │ │ role: Avion. │   │
               └──▶│ team: Core   │ │ team: Core   │ │ team: Core   │◀──┘
@@ -100,7 +99,7 @@ Flywheel and Flywheel-Crank form a **complementary pair** for AI-assisted vault 
                          │                │                │
                          ▼                ▼                ▼
                   ┌──────────────┐ ┌──────────────┐ ┌──────────────┐
-                  │ GNC System   │ │ Turbopump    │ │ Avionics     │
+                  │[[GNC System]]│ │[[Turbopump]] │ │ [[Avionics]] │
                   │ ──────────── │ │ ──────────── │ │ ──────────── │
                   │ status: test │ │ status: dev  │ │ status: done │
                   │ risk: medium │ │ risk: high   │ │ risk: low    │

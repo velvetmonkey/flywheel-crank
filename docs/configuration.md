@@ -19,7 +19,21 @@ Complete configuration documentation for Flywheel and Flywheel-Crank MCP servers
 
 ### Flywheel-Crank (`.mcp.json`)
 
-**NPM package:**
+**Minimal config (recommended):**
+```json
+{
+  "mcpServers": {
+    "flywheel-crank": {
+      "command": "npx",
+      "args": ["-y", "@velvetmonkey/flywheel-crank"]
+    }
+  }
+}
+```
+
+> Vault auto-detected from `.obsidian` or `.claude` folder. Add `PROJECT_PATH` env var only if vault is in a different location.
+
+**With custom vault path:**
 ```json
 {
   "mcpServers": {
@@ -40,10 +54,7 @@ Complete configuration documentation for Flywheel and Flywheel-Crank MCP servers
   "mcpServers": {
     "flywheel-crank": {
       "command": "cmd",
-      "args": ["/c", "npx", "-y", "@velvetmonkey/flywheel-crank"],
-      "env": {
-        "PROJECT_PATH": "C:/path/to/vault"
-      }
+      "args": ["/c", "npx", "-y", "@velvetmonkey/flywheel-crank"]
     }
   }
 }
@@ -75,7 +86,7 @@ Complete configuration documentation for Flywheel and Flywheel-Crank MCP servers
       "args": ["-y", "@velvetmonkey/flywheel-mcp"],
       "env": {
         "FLYWHEEL_WATCH": "true",
-        "FLYWHEEL_DEBOUNCE_MS": "500"
+        "FLYWHEEL_DEBOUNCE_MS": "60000"
       }
     }
   }
@@ -92,7 +103,7 @@ Complete configuration documentation for Flywheel and Flywheel-Crank MCP servers
 |----------|------|---------|-------------|
 | `PROJECT_PATH` | string | cwd | Override vault location |
 | `FLYWHEEL_WATCH` | `"true"` / `"false"` | `"false"` | Auto-rebuild index on file changes |
-| `FLYWHEEL_DEBOUNCE_MS` | string (number) | `"500"` | Debounce delay for file watching (ms) |
+| `FLYWHEEL_DEBOUNCE_MS` | string (number) | `"60000"` | Debounce delay for file watching (ms) |
 
 **File Watch Details:**
 
@@ -100,7 +111,7 @@ When `FLYWHEEL_WATCH=true`:
 - Starts chokidar file watcher on vault directory
 - Ignores dotfiles (`.obsidian`, `.git`, `.trash`, etc.)
 - Only triggers on `.md` file changes
-- Debounces rapid changes (default 500ms)
+- Debounces rapid changes (default 60000ms / 1 minute)
 - Rebuilds full index on change
 - Uses `awaitWriteFinish` to prevent indexing partial writes
 
