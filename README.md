@@ -1,3 +1,7 @@
+<div align="center">
+  <img src="header.png" alt="Flywheel Crank" width="256"/>
+</div>
+
 # Flywheel Crank
 
 **Deterministic vault mutations for Obsidian via MCP - the write companion to Flywheel**
