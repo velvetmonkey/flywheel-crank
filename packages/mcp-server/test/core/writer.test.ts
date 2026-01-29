@@ -8,6 +8,7 @@ import {
   findSection,
   formatContent,
   insertInSection,
+  detectListIndentation,
   validatePath,
   readVaultFile,
   writeVaultFile,
@@ -457,6 +458,147 @@ Existing entry
     expect(result).not.toContain('- Entry 1\n\n- Entry 2');
     // No blank lines between new entry and next section
     expect(result).not.toContain('- Entry 2\n\n## Next');
+  });
+
+  // preserveListNesting tests
+  describe('with preserveListNesting option', () => {
+    it('should detect and apply list indentation when appending', () => {
+      const content = `## Log
+- Entry 1
+  - Nested item 1
+  - Nested item 2
+## Next
+`;
+      const section = findSection(content, 'Log')!;
+      const result = insertInSection(content, section, '- New entry', 'append', {
+        preserveListNesting: true,
+      });
+      // Should match the indentation of the nearest list item (2-space indent)
+      expect(result).toContain('  - Nested item 2\n  - New entry\n## Next');
+    });
+
+    it('should not apply indentation when preserveListNesting is false', () => {
+      const content = `## Log
+- Entry 1
+  - Nested item
+## Next
+`;
+      const section = findSection(content, 'Log')!;
+      const result = insertInSection(content, section, '- New entry', 'append', {
+        preserveListNesting: false,
+      });
+      expect(result).toContain('- Nested item\n- New entry\n## Next');
+    });
+
+    it('should not apply indentation when options is undefined', () => {
+      const content = `## Log
+- Entry 1
+  - Nested item
+## Next
+`;
+      const section = findSection(content, 'Log')!;
+      const result = insertInSection(content, section, '- New entry', 'append');
+      expect(result).toContain('- Nested item\n- New entry\n## Next');
+    });
+
+    it('should handle indented list items', () => {
+      const content = `## Tasks
+  - Task 1
+  - Task 2
+## Next
+`;
+      const section = findSection(content, 'Tasks')!;
+      const result = insertInSection(content, section, '- Task 3', 'append', {
+        preserveListNesting: true,
+      });
+      // Should apply the 2-space indentation from the existing list
+      expect(result).toContain('  - Task 2\n  - Task 3\n## Next');
+    });
+
+    it('should handle empty section with no list context', () => {
+      const content = `## Log
+## Next
+`;
+      const section = findSection(content, 'Log')!;
+      const result = insertInSection(content, section, '- First entry', 'append', {
+        preserveListNesting: true,
+      });
+      // No list context found, should insert without indentation
+      expect(result).toContain('## Log\n- First entry\n## Next');
+    });
+
+    it('should handle multi-line content insertion with indentation', () => {
+      const content = `## Notes
+  - Note 1
+  - Note 2
+## Next
+`;
+      const section = findSection(content, 'Notes')!;
+      const multiline = '- Line 1\n- Line 2';
+      const result = insertInSection(content, section, multiline, 'append', {
+        preserveListNesting: true,
+      });
+      // Each line should get the indentation
+      expect(result).toContain('  - Note 2\n  - Line 1\n  - Line 2\n## Next');
+    });
+  });
+});
+
+describe('detectListIndentation', () => {
+  it('should detect no indentation for top-level list items', () => {
+    const lines = ['## Log', '- Item 1', '- Item 2'];
+    const indent = detectListIndentation(lines, 3, 1);
+    expect(indent).toBe('');
+  });
+
+  it('should detect 2-space indentation', () => {
+    const lines = ['## Log', '  - Item 1', '  - Item 2'];
+    const indent = detectListIndentation(lines, 3, 1);
+    expect(indent).toBe('  ');
+  });
+
+  it('should detect 4-space indentation', () => {
+    const lines = ['## Log', '    - Item 1', '    - Item 2'];
+    const indent = detectListIndentation(lines, 3, 1);
+    expect(indent).toBe('    ');
+  });
+
+  it('should find parent list item when inserting after nested content', () => {
+    const lines = ['## Log', '- Main item', '  - Nested 1', '  - Nested 2'];
+    // Inserting after line 3 (Nested 2), should find Nested 2's indentation
+    const indent = detectListIndentation(lines, 4, 1);
+    expect(indent).toBe('  ');
+  });
+
+  it('should return empty string when no list context found', () => {
+    const lines = ['## Log', 'Plain text', 'More text'];
+    const indent = detectListIndentation(lines, 3, 1);
+    expect(indent).toBe('');
+  });
+
+  it('should stop at heading boundaries', () => {
+    const lines = ['## Section 1', '  - Indented', '## Section 2', '- Not indented'];
+    // Inserting in Section 2, should not look at Section 1's indentation
+    const indent = detectListIndentation(lines, 4, 3);
+    expect(indent).toBe('');
+  });
+
+  it('should handle numbered list items', () => {
+    const lines = ['## Priorities', '  1. First', '  2. Second'];
+    const indent = detectListIndentation(lines, 3, 1);
+    expect(indent).toBe('  ');
+  });
+
+  it('should handle task list items', () => {
+    const lines = ['## Tasks', '    - [ ] Task 1', '    - [x] Task 2'];
+    const indent = detectListIndentation(lines, 3, 1);
+    expect(indent).toBe('    ');
+  });
+
+  it('should skip empty lines when searching', () => {
+    const lines = ['## Log', '- Item 1', '', ''];
+    const indent = detectListIndentation(lines, 4, 1);
+    expect(indent).toBe('');
   });
 });
 

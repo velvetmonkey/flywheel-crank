@@ -6,7 +6,7 @@ import fs from 'fs/promises';
 import path from 'path';
 import matter from 'gray-matter';
 import { HEADING_REGEX } from './constants.js';
-import type { FormatType, Position } from './types.js';
+import type { FormatType, Position, InsertionOptions } from './types.js';
 
 /**
  * Patterns for detecting empty placeholder lines in templates
@@ -143,16 +143,62 @@ export function formatContent(content: string, format: FormatType): string {
 }
 
 /**
+ * Detect the indentation level of the list context at a given line.
+ * Returns the indentation string (spaces) that should be used for content
+ * being inserted at this position to match the surrounding list structure.
+ *
+ * Walks backward from the insertion point to find the most recent list item,
+ * then determines if we're inserting at the same level or nested.
+ */
+export function detectListIndentation(
+  lines: string[],
+  insertLineIndex: number,
+  sectionStartLine: number
+): string {
+  // Walk backward to find the most recent list item
+  for (let i = insertLineIndex - 1; i >= sectionStartLine; i--) {
+    const line = lines[i];
+    const trimmed = line.trim();
+
+    // Skip empty lines
+    if (trimmed === '') continue;
+
+    // Check if this is a list item (bullet, numbered, or task)
+    const listMatch = line.match(/^(\s*)[-*+]\s|^(\s*)\d+\.\s|^(\s*)[-*+]\s*\[[ xX]\]/);
+    if (listMatch) {
+      // Found a list item - return its indentation
+      // This ensures new content starts at the same level as existing list items
+      const indent = listMatch[1] || listMatch[2] || listMatch[3] || '';
+      return indent;
+    }
+
+    // If we hit a heading, stop searching
+    if (trimmed.match(/^#+\s/)) {
+      break;
+    }
+
+    // If we hit non-list content (like indented text under a list item),
+    // continue searching backward for the parent list item
+  }
+
+  return ''; // No list context found, use no indentation
+}
+
+/**
  * Insert content into a section at the specified position
  *
  * Smart template handling: When appending, if the last content line is an
  * empty placeholder (like "1. " or "- "), replace it instead of appending after.
+ *
+ * When preserveListNesting is true, the function will detect the indentation
+ * level of the surrounding list and apply it to the inserted content.
  */
 export function insertInSection(
   content: string,
   section: SectionBoundary,
   newContent: string,
-  position: Position
+  position: Position,
+  options?: InsertionOptions
 ): string {
   const lines = content.split('\n');
   const formattedContent = newContent.trim();
@@ -174,7 +220,17 @@ export function insertInSection(
     // Check if last content line is an empty placeholder to replace
     if (lastContentLineIdx >= section.contentStartLine && isEmptyPlaceholder(lines[lastContentLineIdx])) {
       // Replace the placeholder with the new content
-      lines[lastContentLineIdx] = formattedContent;
+      // Apply list indentation if preserveListNesting is enabled
+      if (options?.preserveListNesting) {
+        const indent = detectListIndentation(lines, lastContentLineIdx, section.contentStartLine);
+        const indentedContent = formattedContent
+          .split('\n')
+          .map(line => indent + line)
+          .join('\n');
+        lines[lastContentLineIdx] = indentedContent;
+      } else {
+        lines[lastContentLineIdx] = formattedContent;
+      }
     } else {
       // Normal append behavior - insert after last non-blank line to avoid
       // accumulating blank lines between entries
@@ -196,7 +252,17 @@ export function insertInSection(
         insertLine = section.contentStartLine;
       }
 
-      lines.splice(insertLine, 0, formattedContent);
+      // Apply list indentation if preserveListNesting is enabled
+      if (options?.preserveListNesting) {
+        const indent = detectListIndentation(lines, insertLine, section.contentStartLine);
+        const indentedContent = formattedContent
+          .split('\n')
+          .map(line => indent + line)
+          .join('\n');
+        lines.splice(insertLine, 0, indentedContent);
+      } else {
+        lines.splice(insertLine, 0, formattedContent);
+      }
     }
   }
 

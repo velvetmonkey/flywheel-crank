@@ -16,3 +16,7 @@ export interface SectionInfo {
 
 export type FormatType = 'task' | 'bullet' | 'numbered' | 'plain' | 'timestamp-bullet';
 export type Position = 'append' | 'prepend';
+
+export interface InsertionOptions {
+  preserveListNesting?: boolean;
+}

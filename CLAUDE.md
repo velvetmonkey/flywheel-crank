@@ -303,7 +303,8 @@ export function registerMutationTools(
 - `extractHeadings(content)` - Get all headings from markdown
 - `findSection(content, heading)` - Find section boundaries (case-insensitive)
 - `formatContent(text, format)` - Apply formatting (task, bullet, timestamp, etc.)
-- `insertInSection(content, section, text, position)` - Add content to section
+- `insertInSection(content, section, text, position, options?)` - Add content to section (supports `preserveListNesting`)
+- `detectListIndentation(lines, insertIndex, sectionStart)` - Detect surrounding list indentation level
 - `removeFromSection(content, section, pattern, mode, useRegex)` - Remove matching lines
 - `replaceInSection(content, section, search, replacement, mode, useRegex)` - Replace content
 
@@ -326,7 +327,7 @@ test/
 ├── helpers/
 │   └── testUtils.ts         # Temp vault creation, fixtures
 ├── core/
-│   ├── writer.test.ts       # 63 tests - file operations, section parsing
+│   ├── writer.test.ts       # 70 tests - file operations, section parsing, list nesting
 │   ├── git.test.ts          # 10 tests - git operations
 │   └── vaultRoot.test.ts    # 8 tests - vault detection
 └── tools/
@@ -337,7 +338,7 @@ test/
     └── system.test.ts       # 13 tests - list sections, undo
 ```
 
-**Total: 242 tests**
+**Total: 261 tests**
 
 **See [docs/testing.md](./docs/testing.md) for:**
 - Manual MCP testing procedures
@@ -437,7 +438,7 @@ npm run test:watch
 ### Mutation Tools (`mutations.ts`)
 | Tool | Description |
 |------|-------------|
-| `vault_add_to_section` | Add content to a section with formatting options |
+| `vault_add_to_section` | Add content to a section with formatting options. Supports `preserveListNesting` to respect existing list indentation. |
 | `vault_remove_from_section` | Remove matching lines from a section |
 | `vault_replace_in_section` | Replace content in a section |
 
@@ -556,6 +557,38 @@ Match Obsidian conventions:
 - Performance benchmarks
 - `.flywheelrc` config file support (if needed)
 - Architecture decision records
+
+### Near-Term: Intelligent Linking
+
+**Suggested Outgoing Links (`suggestOutgoingLinks: boolean`):**
+
+Add optional parameter to mutation tools that would:
+1. Analyze content being added/replaced
+2. Use cached wikilink context + optional light research from vault
+3. Append recognizable, parseable suffix with suggested relevant wikilinks
+4. Be idempotent (won't duplicate suffix on re-edits)
+
+**Target tools:**
+- `vault_add_to_section` (highest value - logs, journal entries, reflections)
+- `vault_replace_in_section` (content updates benefit from contextual links)
+- `vault_add_task` (tasks with context links are more discoverable)
+
+**Output format options:**
+- `→ [[AI]] [[Consciousness]] [[Philosophy]]` (inline suffix)
+- `Related: [[AI]], [[Consciousness]], [[Philosophy]]` (separate line)
+- `·· [[AI]] [[Consciousness]] [[Philosophy]]` (delimiter)
+
+**Implementation:**
+- Entity analysis via cached wikilink entities
+- Limit 3-5 links, exclude already-present inline links
+- Prioritize hub notes, detect/replace existing suffix for idempotency
+- Config: `CRANK_SUGGEST_LINKS_FORMAT`, `CRANK_SUGGEST_LINKS_MAX=5`
+
+**Benefits:**
+- Automatic graph enrichment (more backlinks = better discoverability)
+- Captures implicit context humans might forget
+- Opt-in, doesn't change existing behavior
+- Leverages existing vault intelligence
 
 ### Future: Hybrid Orchestration
 

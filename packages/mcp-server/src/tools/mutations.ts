@@ -45,8 +45,9 @@ export function registerMutationTools(
         .describe('How to format the content'),
       commit: z.boolean().default(false).describe('If true, commit this change to git (creates undo point)'),
       skipWikilinks: z.boolean().default(false).describe('If true, skip auto-wikilink application (wikilinks are applied by default)'),
+      preserveListNesting: z.boolean().default(false).describe('If true, detect and preserve the indentation level of surrounding list items'),
     },
-    async ({ path: notePath, section, content, position, format, commit, skipWikilinks }) => {
+    async ({ path: notePath, section, content, position, format, commit, skipWikilinks, preserveListNesting }) => {
       try {
         // 1. Validate path (security check)
         const fullPath = path.join(vaultPath, notePath);
@@ -88,7 +89,8 @@ export function registerMutationTools(
           fileContent,
           sectionBoundary,
           formattedContent,
-          position as Position
+          position as Position,
+          { preserveListNesting }
         );
 
         // 8. Write file (preserving frontmatter)
