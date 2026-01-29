@@ -29,8 +29,12 @@ credentials.json
 # Private planning docs
 ROADMAP.md
 
-# Claude Code
+# Obsidian app settings (user-specific)
+.obsidian/
+
+# Claude Code settings (but keep demo examples)
 .claude/
+!demos/**/.claude/
 
 # Windows path artifacts
 C:*
