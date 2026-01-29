@@ -68,7 +68,7 @@ Modern agentic AI faces a fundamental tension:
 - `@velvetmonkey/vault-core` shared package (entity scanning, protected zones, wikilink application)
 
 **In Progress:**
-- Phase 6: Production Readiness (optional hardening)
+- Production hardening (edge cases, benchmarks)
 - Demo vault with examples
 - Announcement (when ready)
 
@@ -551,118 +551,28 @@ Match Obsidian conventions:
 
 ## Roadmap
 
-### Phase 1: Core Mutations ✅
-- ✅ Project scaffold
-- ✅ `vault_add_to_section` - Add content to a section (plain, bullet, task, numbered, timestamp)
-- ✅ `vault_remove_from_section` - Remove matching lines (first/last/all, regex support)
-- ✅ `vault_replace_in_section` - Replace content (first/last/all, regex support)
+### Current: Production Readiness
+- Edge case tests (empty content, special chars)
+- Performance benchmarks
+- `.flywheelrc` config file support (if needed)
+- Architecture decision records
 
-### Phase 2: Tasks & Frontmatter ✅
-- ✅ `vault_toggle_task` - Toggle checkbox between [ ] and [x]
-- ✅ `vault_add_task` - Add new task to section (append/prepend, completed option)
-- ✅ `vault_update_frontmatter` - Merge updates into existing frontmatter
-- ✅ `vault_add_frontmatter_field` - Add new field (fails if exists)
-
-### Phase 3: Notes & System ✅
-- ✅ `vault_create_note` - Create note with frontmatter and content
-- ✅ `vault_delete_note` - Delete note (requires confirmation)
-- ✅ `vault_list_sections` - List headings with level filtering
-- ✅ `vault_undo_last_mutation` - Soft reset last git commit
-
-### Phase 4: Git Integration ✅
-- ✅ Git utilities implemented (commit, undo, status checks)
-- ✅ Per-call `commit` parameter (opt-in, replaces AUTO_COMMIT env var)
-- ⏳ Commit message templating
-
-### Phase 5: Auto-Wikilinks ✅
-**Feature:** Auto-enhance content with wikilinks during mutations
-
-**Implementation:**
-- Entity index built at startup from `@velvetmonkey/vault-core`
-- Cached in `.claude/wikilink-entities.json` (auto-refreshes if >1 hour old)
-- Auto-links known entities (people, projects, technologies, acronyms)
-- Excludes periodic folders: `daily-notes`, `weekly`, `templates`, `inbox`, etc.
-- Enabled by default on mutation tools
-- Disable per-call with `skipWikilinks: true` parameter
-
-**Tools with wikilink support:**
-- `vault_add_to_section` - applies to content
-- `vault_replace_in_section` - applies to replacement text
-- `vault_add_task` - applies to task text
-
-**Example:**
-```javascript
-vault_add_to_section({
-  section: "Log",
-  content: "Sam Chen needs help with Project Alpha"
-})
-// Becomes: "- 14:12 [[Sam Chen]] needs help with [[Project Alpha]]"
-
-vault_add_task({
-  section: "Tasks",
-  task: "Review MCP Server changes",
-  skipWikilinks: true  // Disable for this call
-})
-// Becomes: "- [ ] Review MCP Server changes" (no auto-linking)
-```
-
-**Architecture:** Shared `@velvetmonkey/vaultcheck-core` library provides entity scanning used by both Flywheel and Crank
-
-### Phase 6: Production Readiness (Optional)
-**Goal:** Harden for production use. Core functionality is complete - these are nice-to-have improvements.
-
-**Testing:**
-- [x] 242 tests passing
-- [x] Wikilink tests added
-- [ ] Edge case tests (empty content, special chars)
-- [ ] Performance benchmarks
-
-**Configuration:**
-- [x] Document all env vars (`docs/configuration.md`)
-- [ ] `.flywheelrc` config file support (if needed)
-
-**Documentation:**
-- [x] Complete tools reference with wikilink params
-- [x] Configuration guide (`docs/configuration.md`)
-- [x] Wikilinks guide (`docs/wikilinks.md`)
-- [x] Privacy guide (`docs/privacy.md`)
-- [x] Sanitize personal information from docs
-- [x] Example workflows (covered in README "See It In Action")
-- [ ] Architecture decision records
-
-### Phase 7: Publishing ✅
-- [x] npm package (`@velvetmonkey/flywheel-crank`) - v0.3.0 published
-- [x] Documentation (`docs/tools-reference.md`)
-- [x] Integration examples (in README)
-- [x] Demo vault (Flywheel demos work with Crank)
-- [ ] Announce (when ready)
-
-### Phase 8: MCP Tool Consolidation ✅
-**Goal:** Optimize MCP tool design for token efficiency and reduced cognitive load.
-
-**Implemented via Flywheel's `FLYWHEEL_TOOLS` config:**
-- `minimal` / `standard` / `full` presets
-- Custom category filtering: `FLYWHEEL_TOOLS=core,graph,tasks`
-- Token efficiency achieved (tools exposed based on use case)
-
-### Backlog: Hybrid Orchestration (Future)
-**Goal:** Balance deterministic scaffolding with strategic LLM creativity.
+### Future: Hybrid Orchestration
 
 **Multi-Agent Convergence:**
-- Agent debate → deterministic vote (explore stochastically, decide deterministically)
-- Confidence thresholds (require N agents to agree before executing)
-- Tie-breaking strategies (deterministic fallback rules)
+- Agent debate → deterministic vote
+- Confidence thresholds
+- Tie-breaking strategies
 
 **Dynamic Workflow Generation:**
-- LLM-suggested workflows (generate blueprint, validate, execute)
-- Template learning (extract patterns from successful executions)
-- Risk assessment (flag high-risk steps for human review)
+- LLM-suggested workflows
+- Template learning
+- Risk assessment
 
-**Workflow Primitives (Future):**
-- State tracking tools (read/write workflow state)
-- Atomic state transitions (CAS-style updates)
-- Conditional branching, sequential execution, rollback support
-- Post-mutation verification, external truth sources
+**Workflow Primitives:**
+- State tracking tools
+- Atomic state transitions
+- Conditional branching, rollback support
 
 ---
 
