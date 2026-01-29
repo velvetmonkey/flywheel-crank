@@ -1,3 +1,5 @@
+> **Part of the Flywheel Suite:** This is the mutation server for safe vault writes. See [Flywheel](https://github.com/velvetmonkey/flywheel) for read-only graph intelligence and queries.
+
 <div align="center">
   <img src="header.png" alt="Flywheel Crank" width="256"/>
 </div>
