@@ -68,10 +68,9 @@ Modern agentic AI faces a fundamental tension:
 - `@velvetmonkey/vault-core` shared package (entity scanning, protected zones, wikilink application)
 
 **In Progress:**
-- Phase 6: Production Readiness
-- Test coverage expansion
-- Documentation refresh
-- NPM publishing pipeline
+- Phase 6: Production Readiness (optional hardening)
+- Demo vault with examples
+- Announcement (when ready)
 
 ---
 
@@ -609,37 +608,32 @@ vault_add_task({
 
 **Architecture:** Shared `@velvetmonkey/vaultcheck-core` library provides entity scanning used by both Flywheel and Crank
 
-### Phase 6: Production Readiness ⏳
-**Goal:** Harden for production use with comprehensive testing, configuration, and documentation.
+### Phase 6: Production Readiness (Optional)
+**Goal:** Harden for production use. Core functionality is complete - these are nice-to-have improvements.
 
 **Testing:**
-- [ ] Increase test coverage to 95%+
-- [ ] Add edge case tests (empty content, special chars)
-- [ ] Integration tests with real vault structures
+- [x] 242 tests passing
+- [x] Wikilink tests added
+- [ ] Edge case tests (empty content, special chars)
 - [ ] Performance benchmarks
-- [ ] Add wikilink tests
-- [ ] Add empty placeholder detection tests
 
 **Configuration:**
 - [x] Document all env vars (`docs/configuration.md`)
-- [ ] Add `.flywheelrc` config file support
-- [ ] Template customization options
-- [ ] Vault-specific settings
+- [ ] `.flywheelrc` config file support (if needed)
 
 **Documentation:**
 - [x] Complete tools reference with wikilink params
-- [ ] Migration guide (vault-personal → flywheel-crank)
 - [x] Configuration guide (`docs/configuration.md`)
 - [x] Wikilinks guide (`docs/wikilinks.md`)
 - [x] Privacy guide (`docs/privacy.md`)
-- [x] Sanitize personal information from docs (use generic names: Alex Rivera, Jordan Lee, Sam Chen)
+- [x] Sanitize personal information from docs
 - [ ] Example workflows
 - [ ] Architecture decision records
 
-### Phase 7: Publishing ⏳
-- [ ] npm package (`@velvetmonkey/flywheel-crank`)
-- [ ] Documentation (`docs/tools-reference.md`)
-- [ ] Integration examples
+### Phase 7: Publishing ✅
+- [x] npm package (`@velvetmonkey/flywheel-crank`) - v0.3.0 published
+- [x] Documentation (`docs/tools-reference.md`)
+- [x] Integration examples (in README)
 - [ ] Create demo vault with examples
 - [ ] Announce in GitHub README, MCP Discord, r/ObsidianMD
 
