@@ -1,0 +1,24 @@
+{
+  "name": "@velvetmonkey/flywheel-crank",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Deterministic vault mutations for Obsidian via MCP",
+  "workspaces": ["packages/*"],
+  "scripts": {
+    "build": "npm run build --workspace=packages/mcp-server",
+    "test": "npm run test --workspace=packages/mcp-server",
+    "dev": "npm run dev --workspace=packages/mcp-server",
+    "lint": "npm run lint --workspace=packages/mcp-server",
+    "clean": "npm run clean --workspace=packages/mcp-server"
+  },
+  "engines": {
+    "node": ">=18.0.0",
+    "npm": ">=9.0.0"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/velvetmonkey/flywheel-crank.git"
+  },
+  "author": "velvetmonkey",
+  "license": "AGPL-3.0"
+}

@@ -1,0 +1,62 @@
+{
+  "name": "@velvetmonkey/flywheel-crank",
+  "version": "0.3.0",
+  "description": "Deterministic vault mutations for Obsidian via MCP",
+  "type": "module",
+  "main": "dist/index.js",
+  "bin": {
+    "flywheel-crank": "dist/index.js"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/velvetmonkey/flywheel-crank.git"
+  },
+  "bugs": {
+    "url": "https://github.com/velvetmonkey/flywheel-crank/issues"
+  },
+  "homepage": "https://github.com/velvetmonkey/flywheel-crank#readme",
+  "author": "velvetmonkey",
+  "keywords": [
+    "obsidian",
+    "mcp",
+    "model-context-protocol",
+    "claude",
+    "mutations",
+    "vault-writes",
+    "markdown"
+  ],
+  "scripts": {
+    "build": "npx esbuild src/index.ts --bundle --platform=node --format=esm --outfile=dist/index.js --packages=external && chmod +x dist/index.js",
+    "dev": "npx esbuild src/index.ts --bundle --platform=node --format=esm --outfile=dist/index.js --packages=external --watch",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "lint": "tsc --noEmit",
+    "clean": "rm -rf dist",
+    "prepublishOnly": "npm run build"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.25.1",
+    "@velvetmonkey/vault-core": "^0.1.0",
+    "gray-matter": "^4.0.3",
+    "zod": "^3.22.4",
+    "simple-git": "^3.22.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.10.0",
+    "esbuild": "^0.19.8",
+    "typescript": "^5.3.2",
+    "vitest": "^1.0.0"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "license": "AGPL-3.0",
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "publishConfig": {
+    "access": "public"
+  }
+}

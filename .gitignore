@@ -1,0 +1,52 @@
+# Dependencies
+node_modules/
+
+# Build outputs
+dist/
+*.tsbuildinfo
+
+# Python
+__pycache__/
+*.py[cod]
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db
+nul
+
+# Secrets (CRITICAL)
+.env
+.env.*
+.mcp.json
+api-keys.json
+credentials.json
+.flywheel.local.json
+
+# Private planning docs
+ROADMAP.md
+
+# Claude Code
+.claude/
+
+# Windows path artifacts
+C:*
+c:*
+
+# Claude-mem literal ** folder artifacts (Windows bug)
+# The ** folders still exist on disk (claude-mem can keep using them)
+[*][*]/
+
+
+# Logs
+*.log
+npm-debug.log*
+
+# Lock files (use root only)
+packages/*/package-lock.json
+
+# Coverage
+coverage/
