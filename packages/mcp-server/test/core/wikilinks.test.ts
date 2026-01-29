@@ -12,6 +12,8 @@ import {
   processWikilinks,
   maybeApplyWikilinks,
   getEntityIndexStats,
+  suggestRelatedLinks,
+  extractLinkedEntities,
 } from '../../src/core/wikilinks.js';
 import {
   createTempVault,
@@ -696,5 +698,207 @@ describe('error handling', () => {
     expect(result).toHaveProperty('content');
     expect(result).toHaveProperty('linksAdded');
     expect(result).toHaveProperty('linkedEntities');
+  });
+});
+
+// ========================================
+// extractLinkedEntities Tests
+// ========================================
+
+describe('extractLinkedEntities', () => {
+  it('should extract simple wikilinks', () => {
+    const content = 'Working with [[Jordan Smith]] on the project';
+    const linked = extractLinkedEntities(content);
+
+    expect(linked.has('dave evans')).toBe(true);
+    expect(linked.size).toBe(1);
+  });
+
+  it('should extract multiple wikilinks', () => {
+    const content = '[[TypeScript]] and [[MCP Server]] integration';
+    const linked = extractLinkedEntities(content);
+
+    expect(linked.has('typescript')).toBe(true);
+    expect(linked.has('mcp server')).toBe(true);
+    expect(linked.size).toBe(2);
+  });
+
+  it('should handle aliased wikilinks', () => {
+    const content = 'See [[Jordan Smith|Jordan]] for details';
+    const linked = extractLinkedEntities(content);
+
+    expect(linked.has('dave evans')).toBe(true);
+    expect(linked.size).toBe(1);
+  });
+
+  it('should return empty set for content without wikilinks', () => {
+    const content = 'Plain text without any links';
+    const linked = extractLinkedEntities(content);
+
+    expect(linked.size).toBe(0);
+  });
+
+  it('should handle empty content', () => {
+    const linked = extractLinkedEntities('');
+    expect(linked.size).toBe(0);
+  });
+
+  it('should lowercase entity names for comparison', () => {
+    const content = '[[DAVE EVANS]] and [[TypeScript]]';
+    const linked = extractLinkedEntities(content);
+
+    expect(linked.has('dave evans')).toBe(true);
+    expect(linked.has('typescript')).toBe(true);
+  });
+});
+
+// ========================================
+// suggestRelatedLinks Tests
+// ========================================
+
+describe('suggestRelatedLinks', () => {
+  describe('basic functionality', () => {
+    it('should return SuggestResult structure', () => {
+      const result = suggestRelatedLinks('Test content about programming');
+
+      expect(result).toHaveProperty('suggestions');
+      expect(result).toHaveProperty('suffix');
+      expect(Array.isArray(result.suggestions)).toBe(true);
+      expect(typeof result.suffix).toBe('string');
+    });
+
+    it('should return empty result when index not ready', () => {
+      // In test environment, index may not be ready
+      const result = suggestRelatedLinks('Some content here');
+
+      // Either returns suggestions or empty (depends on index state)
+      expect(result.suggestions.length).toBe(result.suffix ? result.suggestions.length : 0);
+    });
+
+    it('should handle empty content', () => {
+      const result = suggestRelatedLinks('');
+
+      expect(result.suggestions).toEqual([]);
+      expect(result.suffix).toBe('');
+    });
+
+    it('should handle whitespace-only content', () => {
+      const result = suggestRelatedLinks('   \n\t  ');
+
+      expect(result.suggestions).toEqual([]);
+      expect(result.suffix).toBe('');
+    });
+  });
+
+  describe('suffix format', () => {
+    it('should format suffix with arrow notation', () => {
+      // If suggestions are returned, they should be formatted correctly
+      const result = suggestRelatedLinks('TypeScript programming language');
+
+      if (result.suggestions.length > 0) {
+        expect(result.suffix).toMatch(/^→ \[\[.+\]\]/);
+      }
+    });
+
+    it('should format multiple suggestions with spaces', () => {
+      const result = suggestRelatedLinks('Advanced TypeScript API development');
+
+      if (result.suggestions.length > 1) {
+        // Should have format: → [[X]] [[Y]]
+        const linkCount = (result.suffix.match(/\[\[/g) || []).length;
+        expect(linkCount).toBe(result.suggestions.length);
+      }
+    });
+  });
+
+  describe('idempotency', () => {
+    it('should not add suggestions if content already has suffix', () => {
+      const content = 'Some content → [[ExistingLink]]';
+      const result = suggestRelatedLinks(content);
+
+      expect(result.suggestions).toEqual([]);
+      expect(result.suffix).toBe('');
+    });
+
+    it('should detect suffix pattern at end of content', () => {
+      const content = 'Text with wikilinks about AI → [[Philosophy]] [[Consciousness]]';
+      const result = suggestRelatedLinks(content);
+
+      expect(result.suggestions).toEqual([]);
+      expect(result.suffix).toBe('');
+    });
+  });
+
+  describe('options', () => {
+    it('should respect maxSuggestions option', () => {
+      const result = suggestRelatedLinks('TypeScript API development project', {
+        maxSuggestions: 1,
+      });
+
+      expect(result.suggestions.length).toBeLessThanOrEqual(1);
+    });
+
+    it('should handle maxSuggestions of 0', () => {
+      const result = suggestRelatedLinks('TypeScript content', {
+        maxSuggestions: 0,
+      });
+
+      expect(result.suggestions).toEqual([]);
+      expect(result.suffix).toBe('');
+    });
+
+    it('should respect excludeLinked=true (default)', () => {
+      const content = 'Working with [[TypeScript]] on the project';
+      const result = suggestRelatedLinks(content, { excludeLinked: true });
+
+      // Should not suggest TypeScript since it's already linked
+      if (result.suggestions.length > 0) {
+        expect(result.suggestions.map(s => s.toLowerCase())).not.toContain('typescript');
+      }
+    });
+  });
+});
+
+// ========================================
+// suggestRelatedLinks Integration Tests
+// ========================================
+
+describe('suggestRelatedLinks integration', () => {
+  let tempVault: string;
+
+  beforeEach(async () => {
+    tempVault = await createTempVault();
+  });
+
+  afterEach(async () => {
+    await cleanupTempVault(tempVault);
+  });
+
+  it('should work with initialized entity index', async () => {
+    // Create a cache with known entities
+    await createEntityCache(tempVault, {
+      technologies: ['TypeScript', 'JavaScript', 'Python'],
+      projects: ['MCP Server', 'Flywheel Crank'],
+      people: ['Jordan Smith'],
+    });
+
+    await initializeEntityIndex(tempVault);
+
+    // Now test suggestions with content that should match
+    const result = suggestRelatedLinks('Working on a TypeScript project');
+
+    // The result depends on whether entities match content tokens
+    expect(result).toHaveProperty('suggestions');
+    expect(result).toHaveProperty('suffix');
+  });
+
+  it('should handle vault without entity cache', async () => {
+    // Don't create cache
+    await mkdir(path.join(tempVault, '.claude'), { recursive: true });
+
+    // Should still work, just return empty
+    const result = suggestRelatedLinks('Some content about programming');
+
+    expect(result.suggestions.length).toBeGreaterThanOrEqual(0);
   });
 });

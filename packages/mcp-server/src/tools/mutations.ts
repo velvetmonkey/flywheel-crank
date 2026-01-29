@@ -17,7 +17,7 @@ import {
 } from '../core/writer.js';
 import type { MutationResult, FormatType, Position } from '../core/types.js';
 import { commitChange } from '../core/git.js';
-import { maybeApplyWikilinks } from '../core/wikilinks.js';
+import { maybeApplyWikilinks, suggestRelatedLinks } from '../core/wikilinks.js';
 import fs from 'fs/promises';
 import path from 'path';
 
@@ -46,8 +46,9 @@ export function registerMutationTools(
       commit: z.boolean().default(false).describe('If true, commit this change to git (creates undo point)'),
       skipWikilinks: z.boolean().default(false).describe('If true, skip auto-wikilink application (wikilinks are applied by default)'),
       preserveListNesting: z.boolean().default(false).describe('If true, detect and preserve the indentation level of surrounding list items'),
+      suggestOutgoingLinks: z.boolean().default(true).describe('Append suggested outgoing wikilinks based on content (e.g., "→ [[AI]] [[Philosophy]]"). Set false to disable.'),
     },
-    async ({ path: notePath, section, content, position, format, commit, skipWikilinks, preserveListNesting }) => {
+    async ({ path: notePath, section, content, position, format, commit, skipWikilinks, preserveListNesting, suggestOutgoingLinks }) => {
       try {
         // 1. Validate path (security check)
         const fullPath = path.join(vaultPath, notePath);
@@ -79,10 +80,20 @@ export function registerMutationTools(
         }
 
         // 5. Apply wikilinks to content (unless skipped)
-        const { content: wikilinkedContent, wikilinkInfo } = maybeApplyWikilinks(content, skipWikilinks);
+        let { content: processedContent, wikilinkInfo } = maybeApplyWikilinks(content, skipWikilinks);
+
+        // 5b. Suggest outgoing links (enabled by default)
+        let suggestInfo: string | undefined;
+        if (suggestOutgoingLinks && !skipWikilinks) {
+          const result = suggestRelatedLinks(processedContent);
+          if (result.suffix) {
+            processedContent = processedContent + ' ' + result.suffix;
+            suggestInfo = `Suggested: ${result.suggestions.join(', ')}`;
+          }
+        }
 
         // 6. Format the content
-        const formattedContent = formatContent(wikilinkedContent, format as FormatType);
+        const formattedContent = formatContent(processedContent, format as FormatType);
 
         // 7. Insert at position
         const updatedContent = insertInSection(
@@ -109,7 +120,8 @@ export function registerMutationTools(
         }
 
         // 10. Generate preview (show the added line)
-        const preview = formattedContent + (wikilinkInfo ? `\n(${wikilinkInfo})` : '');
+        const infoLines = [wikilinkInfo, suggestInfo].filter(Boolean);
+        const preview = formattedContent + (infoLines.length > 0 ? `\n(${infoLines.join('; ')})` : '');
 
         const result: MutationResult = {
           success: true,
@@ -244,8 +256,9 @@ export function registerMutationTools(
       useRegex: z.boolean().default(false).describe('Treat search as regex'),
       commit: z.boolean().default(false).describe('If true, commit this change to git (creates undo point)'),
       skipWikilinks: z.boolean().default(false).describe('If true, skip auto-wikilink application on replacement text'),
+      suggestOutgoingLinks: z.boolean().default(true).describe('Append suggested outgoing wikilinks based on content (e.g., "→ [[AI]] [[Philosophy]]"). Set false to disable.'),
     },
-    async ({ path: notePath, section, search, replacement, mode, useRegex, commit, skipWikilinks }) => {
+    async ({ path: notePath, section, search, replacement, mode, useRegex, commit, skipWikilinks, suggestOutgoingLinks }) => {
       try {
         // 1. Check if file exists
         const fullPath = path.join(vaultPath, notePath);
@@ -275,14 +288,24 @@ export function registerMutationTools(
         }
 
         // 4. Apply wikilinks to replacement text (unless skipped)
-        const { content: wikilinkedReplacement, wikilinkInfo } = maybeApplyWikilinks(replacement, skipWikilinks);
+        let { content: processedReplacement, wikilinkInfo } = maybeApplyWikilinks(replacement, skipWikilinks);
+
+        // 4b. Suggest outgoing links (enabled by default)
+        let suggestInfo: string | undefined;
+        if (suggestOutgoingLinks && !skipWikilinks) {
+          const result = suggestRelatedLinks(processedReplacement);
+          if (result.suffix) {
+            processedReplacement = processedReplacement + ' ' + result.suffix;
+            suggestInfo = `Suggested: ${result.suggestions.join(', ')}`;
+          }
+        }
 
         // 5. Replace matching content
         const replaceResult = replaceInSection(
           fileContent,
           sectionBoundary,
           search,
-          wikilinkedReplacement,
+          processedReplacement,
           mode as MatchMode,
           useRegex
         );

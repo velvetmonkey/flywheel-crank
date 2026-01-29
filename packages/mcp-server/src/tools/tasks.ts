@@ -14,7 +14,7 @@ import {
 } from '../core/writer.js';
 import type { MutationResult, Position } from '../core/types.js';
 import { commitChange } from '../core/git.js';
-import { maybeApplyWikilinks } from '../core/wikilinks.js';
+import { maybeApplyWikilinks, suggestRelatedLinks } from '../core/wikilinks.js';
 import fs from 'fs/promises';
 import path from 'path';
 
@@ -223,8 +223,9 @@ export function registerTaskTools(
       completed: z.boolean().default(false).describe('Whether the task should start as completed'),
       commit: z.boolean().default(false).describe('If true, commit this change to git (creates undo point)'),
       skipWikilinks: z.boolean().default(false).describe('If true, skip auto-wikilink application (wikilinks are applied by default)'),
+      suggestOutgoingLinks: z.boolean().default(true).describe('Append suggested outgoing wikilinks based on content (e.g., "→ [[AI]] [[Philosophy]]"). Set false to disable.'),
     },
-    async ({ path: notePath, section, task, position, completed, commit, skipWikilinks }) => {
+    async ({ path: notePath, section, task, position, completed, commit, skipWikilinks, suggestOutgoingLinks }) => {
       try {
         // 1. Check if file exists
         const fullPath = path.join(vaultPath, notePath);
@@ -254,11 +255,21 @@ export function registerTaskTools(
         }
 
         // 4. Apply wikilinks to task text (unless skipped)
-        const { content: wikilinkedTask, wikilinkInfo } = maybeApplyWikilinks(task.trim(), skipWikilinks);
+        let { content: processedTask, wikilinkInfo } = maybeApplyWikilinks(task.trim(), skipWikilinks);
+
+        // 4b. Suggest outgoing links (enabled by default)
+        let suggestInfo: string | undefined;
+        if (suggestOutgoingLinks && !skipWikilinks) {
+          const result = suggestRelatedLinks(processedTask);
+          if (result.suffix) {
+            processedTask = processedTask + ' ' + result.suffix;
+            suggestInfo = `Suggested: ${result.suggestions.join(', ')}`;
+          }
+        }
 
         // 5. Format the task
         const checkbox = completed ? '[x]' : '[ ]';
-        const taskLine = `- ${checkbox} ${wikilinkedTask}`;
+        const taskLine = `- ${checkbox} ${processedTask}`;
 
         // 6. Insert into section
         const updatedContent = insertInSection(
@@ -283,11 +294,12 @@ export function registerTaskTools(
           }
         }
 
+        const infoLines = [wikilinkInfo, suggestInfo].filter(Boolean);
         const result: MutationResult = {
           success: true,
           message: `Added task to section "${sectionBoundary.name}" in ${notePath}`,
           path: notePath,
-          preview: taskLine + (wikilinkInfo ? `\n(${wikilinkInfo})` : ''),
+          preview: taskLine + (infoLines.length > 0 ? `\n(${infoLines.join('; ')})` : ''),
           gitCommit,
           gitError,
         };

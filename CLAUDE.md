@@ -62,7 +62,7 @@ Modern agentic AI faces a fundamental tension:
 - Git integration (auto-commit + undo)
 - Section-scoped operations (safe, reversible)
 - Permission model (read-broad, write-narrow)
-- 242 automated tests
+- 280 automated tests
 - Smart template handling (replace empty placeholders like `1. ` or `- `)
 - Wikilink integration (auto-wikilinks on by default, opt-out via `skipWikilinks`)
 - `@velvetmonkey/vault-core` shared package (entity scanning, protected zones, wikilink application)
@@ -327,18 +327,20 @@ test/
 ├── helpers/
 │   └── testUtils.ts         # Temp vault creation, fixtures
 ├── core/
+│   ├── wikilinks.test.ts    # 68 tests - wikilink processing, entity index, suggestions
 │   ├── writer.test.ts       # 70 tests - file operations, section parsing, list nesting
 │   ├── git.test.ts          # 10 tests - git operations
 │   └── vaultRoot.test.ts    # 8 tests - vault detection
 └── tools/
-    ├── mutations.test.ts    # 29 tests - add/remove/replace
-    ├── tasks.test.ts        # 19 tests - toggle/add tasks
+    ├── mutations.test.ts    # 37 tests - add/remove/replace with suggestions
+    ├── tasks.test.ts        # 25 tests - toggle/add tasks with suggestions
     ├── frontmatter.test.ts  # 14 tests - frontmatter ops
     ├── notes.test.ts        # 14 tests - create/delete notes
-    └── system.test.ts       # 13 tests - list sections, undo
+    ├── system.test.ts       # 13 tests - list sections, undo
+    └── git-integration.test.ts # 21 tests - git commit integration
 ```
 
-**Total: 261 tests**
+**Total: 280 tests**
 
 **See [docs/testing.md](./docs/testing.md) for:**
 - Manual MCP testing procedures
@@ -438,15 +440,15 @@ npm run test:watch
 ### Mutation Tools (`mutations.ts`)
 | Tool | Description |
 |------|-------------|
-| `vault_add_to_section` | Add content to a section with formatting options. Supports `preserveListNesting` to respect existing list indentation. |
+| `vault_add_to_section` | Add content to a section with formatting options. Supports `preserveListNesting` to respect existing list indentation. `suggestOutgoingLinks=true` (default) appends contextual wikilink suggestions (e.g., `→ [[AI]] [[Philosophy]]`). |
 | `vault_remove_from_section` | Remove matching lines from a section |
-| `vault_replace_in_section` | Replace content in a section |
+| `vault_replace_in_section` | Replace content in a section. `suggestOutgoingLinks=true` (default) appends contextual wikilink suggestions. |
 
 ### Task Tools (`tasks.ts`)
 | Tool | Description |
 |------|-------------|
 | `vault_toggle_task` | Toggle task checkbox (checked/unchecked) |
-| `vault_add_task` | Add a new task to a section |
+| `vault_add_task` | Add a new task to a section. `suggestOutgoingLinks=true` (default) appends contextual wikilink suggestions. |
 
 ### Frontmatter Tools (`frontmatter.ts`)
 | Tool | Description |
@@ -560,32 +562,24 @@ Match Obsidian conventions:
 
 ### Near-Term: Intelligent Linking
 
-**Suggested Outgoing Links (`suggestOutgoingLinks: boolean`):**
+**✅ IMPLEMENTED: Suggested Outgoing Links (`suggestOutgoingLinks: boolean`):**
 
-Add optional parameter to mutation tools that would:
-1. Analyze content being added/replaced
-2. Use cached wikilink context + optional light research from vault
-3. Append recognizable, parseable suffix with suggested relevant wikilinks
-4. Be idempotent (won't duplicate suffix on re-edits)
+Mutation tools now support automatic wikilink suggestions:
+- `suggestOutgoingLinks=true` (default) - appends contextual wikilinks
+- Set `suggestOutgoingLinks=false` to disable
+- Format: `→ [[Entity1]] [[Entity2]] [[Entity3]]`
 
-**Target tools:**
-- `vault_add_to_section` (highest value - logs, journal entries, reflections)
-- `vault_replace_in_section` (content updates benefit from contextual links)
-- `vault_add_task` (tasks with context links are more discoverable)
+**Implementation details:**
+- Tokenizes content into significant words (4+ chars, excluding stopwords)
+- Scores entities by word overlap with content
+- Excludes entities already linked in content
+- Default max 3 suggestions
+- Idempotent (won't duplicate if suffix already present)
 
-**Output format options:**
-- `→ [[AI]] [[Consciousness]] [[Philosophy]]` (inline suffix)
-- `Related: [[AI]], [[Consciousness]], [[Philosophy]]` (separate line)
-- `·· [[AI]] [[Consciousness]] [[Philosophy]]` (delimiter)
-
-**Implementation:**
-- Entity analysis via cached wikilink entities
-- Limit 3-5 links, exclude already-present inline links
-- Prioritize hub notes, detect/replace existing suffix for idempotency
-- Config: `CRANK_SUGGEST_LINKS_FORMAT`, `CRANK_SUGGEST_LINKS_MAX=5`
-
-**Benefits:**
-- Automatic graph enrichment (more backlinks = better discoverability)
+**Supported tools:**
+- `vault_add_to_section` (logs, journal entries, reflections)
+- `vault_replace_in_section` (content updates)
+- `vault_add_task` (tasks with context links)
 - Captures implicit context humans might forget
 - Opt-in, doesn't change existing behavior
 - Leverages existing vault intelligence

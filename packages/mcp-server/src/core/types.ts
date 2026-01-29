@@ -20,3 +20,13 @@ export type Position = 'append' | 'prepend';
 export interface InsertionOptions {
   preserveListNesting?: boolean;
 }
+
+export interface SuggestOptions {
+  maxSuggestions?: number;    // default: 3
+  excludeLinked?: boolean;    // exclude entities already in content (default: true)
+}
+
+export interface SuggestResult {
+  suggestions: string[];      // entity names suggested
+  suffix: string;             // formatted suffix: "→ [[X]] [[Y]]"
+}
