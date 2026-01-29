@@ -9,6 +9,88 @@ import { HEADING_REGEX } from './constants.js';
 import type { FormatType, Position, InsertionOptions } from './types.js';
 
 /**
+ * Sensitive file patterns that should never be written via vault mutations.
+ * These patterns protect credentials, secrets, and system configuration.
+ */
+const SENSITIVE_PATH_PATTERNS: RegExp[] = [
+  /\.env($|\..*)/i,              // .env, .env.local, .env.production, etc.
+  /\.git\/config$/i,             // Git config (may contain tokens)
+  /\.git\/credentials$/i,        // Git credentials
+  /\.pem$/i,                     // SSL/TLS certificates
+  /\.key$/i,                     // Private keys
+  /\.p12$/i,                     // PKCS#12 certificates
+  /\.pfx$/i,                     // Windows certificate format
+  /\.jks$/i,                     // Java keystore
+  /id_rsa/i,                     // SSH private key
+  /id_ed25519/i,                 // SSH private key (ed25519)
+  /id_ecdsa/i,                   // SSH private key (ecdsa)
+  /credentials\.json$/i,         // Cloud credentials files
+  /secrets\.json$/i,             // Secrets files
+  /secrets\.ya?ml$/i,            // Secrets YAML files
+  /\.htpasswd$/i,                // Apache password file
+  /shadow$/,                     // Unix shadow password file
+  /passwd$/,                     // Unix password file
+];
+
+/**
+ * Result of secure path validation
+ */
+export interface PathValidationResult {
+  valid: boolean;
+  reason?: string;
+}
+
+/**
+ * Check if a path matches any sensitive file pattern
+ */
+export function isSensitivePath(filePath: string): boolean {
+  const normalizedPath = filePath.replace(/\\/g, '/');
+  return SENSITIVE_PATH_PATTERNS.some(pattern => pattern.test(normalizedPath));
+}
+
+/**
+ * Line ending types
+ */
+export type LineEnding = 'LF' | 'CRLF';
+
+/**
+ * Detect the line ending style used in content.
+ * Returns 'CRLF' if Windows-style line endings are detected, 'LF' otherwise.
+ */
+export function detectLineEnding(content: string): LineEnding {
+  // Count occurrences of each line ending type
+  const crlfCount = (content.match(/\r\n/g) || []).length;
+  const lfCount = (content.match(/(?<!\r)\n/g) || []).length;
+
+  // If CRLF appears more frequently, treat as Windows file
+  return crlfCount > lfCount ? 'CRLF' : 'LF';
+}
+
+/**
+ * Normalize line endings to LF for internal processing.
+ */
+export function normalizeLineEndings(content: string): string {
+  return content.replace(/\r\n/g, '\n');
+}
+
+/**
+ * Convert line endings to the specified style.
+ */
+export function convertLineEndings(content: string, style: LineEnding): string {
+  // First normalize to LF, then convert if needed
+  const normalized = content.replace(/\r\n/g, '\n');
+  return style === 'CRLF' ? normalized.replace(/\n/g, '\r\n') : normalized;
+}
+
+/**
+ * Ensure content ends with exactly one newline.
+ */
+export function normalizeTrailingNewline(content: string): string {
+  // Remove all trailing whitespace/newlines, then add exactly one
+  return content.replace(/[\r\n\s]+$/, '') + '\n';
+}
+
+/**
  * Patterns for detecting empty placeholder lines in templates
  * These are format lines that should be replaced rather than appended after
  */
@@ -270,7 +352,7 @@ export function insertInSection(
 }
 
 /**
- * Validate path to prevent traversal attacks
+ * Validate path to prevent traversal attacks (sync version for reads)
  */
 export function validatePath(vaultPath: string, notePath: string): boolean {
   const resolvedVault = path.resolve(vaultPath);
@@ -281,7 +363,106 @@ export function validatePath(vaultPath: string, notePath: string): boolean {
 }
 
 /**
- * Read a vault file with frontmatter parsing
+ * Securely validate path for write operations.
+ *
+ * This async version:
+ * 1. Follows symlinks using fs.realpath() to detect symlink escapes
+ * 2. Verifies the resolved path is still within the vault
+ * 3. Checks against sensitive file patterns
+ *
+ * Use this for ALL write operations to prevent:
+ * - Symlink attacks (symlink pointing outside vault)
+ * - Path traversal attacks (../)
+ * - Accidental credential exposure (.env, .pem, etc.)
+ */
+export async function validatePathSecure(
+  vaultPath: string,
+  notePath: string
+): Promise<PathValidationResult> {
+  // First, do the basic path traversal check
+  const resolvedVault = path.resolve(vaultPath);
+  const resolvedNote = path.resolve(vaultPath, notePath);
+
+  if (!resolvedNote.startsWith(resolvedVault)) {
+    return {
+      valid: false,
+      reason: 'Path traversal not allowed',
+    };
+  }
+
+  // Check for sensitive file patterns
+  if (isSensitivePath(notePath)) {
+    return {
+      valid: false,
+      reason: 'Cannot write to sensitive file (credentials, keys, secrets)',
+    };
+  }
+
+  // For files that exist, resolve symlinks and verify still in vault
+  try {
+    // Check if path exists (might be a symlink or regular file)
+    const fullPath = path.join(vaultPath, notePath);
+
+    try {
+      await fs.access(fullPath);
+
+      // File exists - resolve any symlinks
+      const realPath = await fs.realpath(fullPath);
+      const realVaultPath = await fs.realpath(vaultPath);
+
+      if (!realPath.startsWith(realVaultPath)) {
+        return {
+          valid: false,
+          reason: 'Symlink target is outside vault',
+        };
+      }
+
+      // Also check if the resolved path is a sensitive file
+      const relativePath = path.relative(realVaultPath, realPath);
+      if (isSensitivePath(relativePath)) {
+        return {
+          valid: false,
+          reason: 'Symlink target is a sensitive file',
+        };
+      }
+    } catch {
+      // File doesn't exist yet - check parent directory for symlink escape
+      const parentDir = path.dirname(fullPath);
+      try {
+        await fs.access(parentDir);
+        const realParentPath = await fs.realpath(parentDir);
+        const realVaultPath = await fs.realpath(vaultPath);
+
+        if (!realParentPath.startsWith(realVaultPath)) {
+          return {
+            valid: false,
+            reason: 'Parent directory symlink target is outside vault',
+          };
+        }
+      } catch {
+        // Parent directory doesn't exist - that's fine, will be created
+        // Just ensure the path we're creating is within vault boundaries
+      }
+    }
+  } catch (error) {
+    // This shouldn't happen given our earlier checks, but handle gracefully
+    return {
+      valid: false,
+      reason: `Path validation error: ${(error as Error).message}`,
+    };
+  }
+
+  return { valid: true };
+}
+
+/**
+ * Read a vault file with frontmatter parsing.
+ *
+ * Returns:
+ * - content: The file content (after frontmatter), normalized to LF
+ * - frontmatter: Parsed YAML frontmatter
+ * - rawContent: The original raw content
+ * - lineEnding: The detected line ending style (LF or CRLF)
  */
 export async function readVaultFile(
   vaultPath: string,
@@ -290,6 +471,7 @@ export async function readVaultFile(
   content: string;
   frontmatter: Record<string, unknown>;
   rawContent: string;
+  lineEnding: LineEnding;
 }> {
   if (!validatePath(vaultPath, notePath)) {
     throw new Error('Invalid path: path traversal not allowed');
@@ -298,32 +480,54 @@ export async function readVaultFile(
   const fullPath = path.join(vaultPath, notePath);
   const rawContent = await fs.readFile(fullPath, 'utf-8');
 
-  const parsed = matter(rawContent);
+  // Detect line ending before parsing
+  const lineEnding = detectLineEnding(rawContent);
+
+  // Normalize to LF for internal processing
+  const normalizedContent = normalizeLineEndings(rawContent);
+
+  const parsed = matter(normalizedContent);
 
   return {
     content: parsed.content,
     frontmatter: parsed.data as Record<string, unknown>,
     rawContent,
+    lineEnding,
   };
 }
 
 /**
- * Write a vault file, preserving frontmatter
+ * Write a vault file, preserving frontmatter and line endings.
+ *
+ * Uses validatePathSecure() to:
+ * - Follow symlinks and ensure target is within vault
+ * - Block writes to sensitive files (.env, .pem, etc.)
+ *
+ * @param lineEnding - Optional line ending style to use. If not provided, uses LF.
  */
 export async function writeVaultFile(
   vaultPath: string,
   notePath: string,
   content: string,
-  frontmatter: Record<string, unknown>
+  frontmatter: Record<string, unknown>,
+  lineEnding: LineEnding = 'LF'
 ): Promise<void> {
-  if (!validatePath(vaultPath, notePath)) {
-    throw new Error('Invalid path: path traversal not allowed');
+  // Use secure validation for writes (follows symlinks, checks sensitive paths)
+  const validation = await validatePathSecure(vaultPath, notePath);
+  if (!validation.valid) {
+    throw new Error(`Invalid path: ${validation.reason}`);
   }
 
   const fullPath = path.join(vaultPath, notePath);
 
   // Stringify with gray-matter
-  const output = matter.stringify(content, frontmatter);
+  let output = matter.stringify(content, frontmatter);
+
+  // Normalize trailing newline (exactly one)
+  output = normalizeTrailingNewline(output);
+
+  // Convert to target line ending style
+  output = convertLineEndings(output, lineEnding);
 
   await fs.writeFile(fullPath, output, 'utf-8');
 }

@@ -10,10 +10,14 @@ import {
   insertInSection,
   detectListIndentation,
   validatePath,
+  validatePathSecure,
+  isSensitivePath,
   readVaultFile,
   writeVaultFile,
   isEmptyPlaceholder,
 } from '../../src/core/writer.js';
+import fs from 'fs/promises';
+import path from 'path';
 import {
   createTempVault,
   cleanupTempVault,
@@ -655,6 +659,199 @@ describe('validatePath', () => {
   });
 });
 
+describe('isSensitivePath', () => {
+  it('should detect .env files', () => {
+    expect(isSensitivePath('.env')).toBe(true);
+    expect(isSensitivePath('.env.local')).toBe(true);
+    expect(isSensitivePath('.env.production')).toBe(true);
+    expect(isSensitivePath('config/.env')).toBe(true);
+  });
+
+  it('should detect private key files', () => {
+    expect(isSensitivePath('server.pem')).toBe(true);
+    expect(isSensitivePath('cert.key')).toBe(true);
+    expect(isSensitivePath('id_rsa')).toBe(true);
+    expect(isSensitivePath('id_ed25519')).toBe(true);
+    expect(isSensitivePath('.ssh/id_rsa')).toBe(true);
+  });
+
+  it('should detect certificate files', () => {
+    expect(isSensitivePath('cert.p12')).toBe(true);
+    expect(isSensitivePath('cert.pfx')).toBe(true);
+    expect(isSensitivePath('keystore.jks')).toBe(true);
+  });
+
+  it('should detect credentials files', () => {
+    expect(isSensitivePath('credentials.json')).toBe(true);
+    expect(isSensitivePath('secrets.json')).toBe(true);
+    expect(isSensitivePath('secrets.yaml')).toBe(true);
+    expect(isSensitivePath('secrets.yml')).toBe(true);
+    expect(isSensitivePath('.git/config')).toBe(true);
+    expect(isSensitivePath('.git/credentials')).toBe(true);
+  });
+
+  it('should detect system password files', () => {
+    expect(isSensitivePath('.htpasswd')).toBe(true);
+    expect(isSensitivePath('etc/shadow')).toBe(true);
+    expect(isSensitivePath('etc/passwd')).toBe(true);
+  });
+
+  it('should allow normal markdown files', () => {
+    expect(isSensitivePath('notes.md')).toBe(false);
+    expect(isSensitivePath('daily-notes/2026-01-29.md')).toBe(false);
+    expect(isSensitivePath('projects/my-project.md')).toBe(false);
+  });
+
+  it('should allow files that partially match patterns', () => {
+    expect(isSensitivePath('environment.md')).toBe(false);
+    expect(isSensitivePath('my-key-points.md')).toBe(false);
+    expect(isSensitivePath('ssh-notes.md')).toBe(false);
+  });
+});
+
+describe('validatePathSecure', () => {
+  let tempVault: string;
+
+  beforeEach(async () => {
+    tempVault = await createTempVault();
+  });
+
+  afterEach(async () => {
+    await cleanupTempVault(tempVault);
+  });
+
+  it('should allow valid relative paths', async () => {
+    const result = await validatePathSecure(tempVault, 'daily-notes/2026-01-28.md');
+    expect(result.valid).toBe(true);
+    expect(result.reason).toBeUndefined();
+  });
+
+  it('should block path traversal attempts', async () => {
+    const result = await validatePathSecure(tempVault, '../../../etc/passwd');
+    expect(result.valid).toBe(false);
+    expect(result.reason).toContain('traversal');
+  });
+
+  it('should block sensitive file writes', async () => {
+    const result = await validatePathSecure(tempVault, '.env');
+    expect(result.valid).toBe(false);
+    expect(result.reason).toContain('sensitive');
+  });
+
+  it('should block writes to .pem files', async () => {
+    const result = await validatePathSecure(tempVault, 'certs/server.pem');
+    expect(result.valid).toBe(false);
+    expect(result.reason).toContain('sensitive');
+  });
+
+  it('should block writes to .key files', async () => {
+    const result = await validatePathSecure(tempVault, 'private.key');
+    expect(result.valid).toBe(false);
+    expect(result.reason).toContain('sensitive');
+  });
+
+  it('should block writes to credentials.json', async () => {
+    const result = await validatePathSecure(tempVault, 'credentials.json');
+    expect(result.valid).toBe(false);
+    expect(result.reason).toContain('sensitive');
+  });
+
+  it('should detect symlink escape attempts', async () => {
+    // Create a symlink inside the vault pointing outside
+    const symlinkPath = path.join(tempVault, 'escape-link.md');
+
+    // Create a temp file outside the vault
+    const outsideDir = path.join(tempVault, '..', 'outside-vault');
+    await fs.mkdir(outsideDir, { recursive: true });
+    const outsideFile = path.join(outsideDir, 'target.md');
+    await fs.writeFile(outsideFile, '# Outside vault');
+
+    try {
+      // Create symlink
+      await fs.symlink(outsideFile, symlinkPath);
+
+      // Validate should detect the symlink escape
+      const result = await validatePathSecure(tempVault, 'escape-link.md');
+      expect(result.valid).toBe(false);
+      expect(result.reason).toContain('outside vault');
+    } finally {
+      // Cleanup
+      try {
+        await fs.unlink(symlinkPath);
+      } catch {}
+      try {
+        await fs.unlink(outsideFile);
+        await fs.rmdir(outsideDir);
+      } catch {}
+    }
+  });
+
+  it('should detect symlink to sensitive file', async () => {
+    // Create a symlink to a sensitive file within vault
+    const sensitiveFile = path.join(tempVault, '.env.secret');
+    await fs.writeFile(sensitiveFile, 'SECRET=value');
+
+    const symlinkPath = path.join(tempVault, 'innocent-link.md');
+
+    try {
+      await fs.symlink(sensitiveFile, symlinkPath);
+
+      // Validate should detect the symlink points to sensitive file
+      const result = await validatePathSecure(tempVault, 'innocent-link.md');
+      expect(result.valid).toBe(false);
+      expect(result.reason).toContain('sensitive');
+    } finally {
+      try {
+        await fs.unlink(symlinkPath);
+        await fs.unlink(sensitiveFile);
+      } catch {}
+    }
+  });
+
+  it('should allow valid symlinks within vault', async () => {
+    // Create a valid symlink within the vault
+    const targetFile = path.join(tempVault, 'real-note.md');
+    await fs.writeFile(targetFile, '# Real Note');
+
+    const symlinkPath = path.join(tempVault, 'link-to-note.md');
+
+    try {
+      await fs.symlink(targetFile, symlinkPath);
+
+      // Validate should allow valid symlinks
+      const result = await validatePathSecure(tempVault, 'link-to-note.md');
+      expect(result.valid).toBe(true);
+    } finally {
+      try {
+        await fs.unlink(symlinkPath);
+        await fs.unlink(targetFile);
+      } catch {}
+    }
+  });
+
+  it('should detect parent directory symlink escape', async () => {
+    // Create a subdirectory that's actually a symlink to outside
+    const outsideDir = path.join(tempVault, '..', 'escape-target');
+    await fs.mkdir(outsideDir, { recursive: true });
+
+    const symlinkDir = path.join(tempVault, 'escape-dir');
+
+    try {
+      await fs.symlink(outsideDir, symlinkDir);
+
+      // Try to write to a file in the symlinked directory
+      const result = await validatePathSecure(tempVault, 'escape-dir/note.md');
+      expect(result.valid).toBe(false);
+      expect(result.reason).toContain('outside vault');
+    } finally {
+      try {
+        await fs.unlink(symlinkDir);
+        await fs.rmdir(outsideDir);
+      } catch {}
+    }
+  });
+});
+
 describe('readVaultFile', () => {
   let tempVault: string;
 
@@ -779,6 +976,16 @@ describe('writeVaultFile', () => {
     await expect(
       writeVaultFile(tempVault, '../../../etc/passwd', 'malicious', {})
     ).rejects.toThrow('Invalid path');
+  });
+
+  it('should reject writes to sensitive files', async () => {
+    await expect(
+      writeVaultFile(tempVault, '.env', 'SECRET=value', {})
+    ).rejects.toThrow('sensitive');
+
+    await expect(
+      writeVaultFile(tempVault, 'certs/server.pem', 'cert-content', {})
+    ).rejects.toThrow('sensitive');
   });
 
   it('should not accumulate blank lines in section across read/write cycles', async () => {

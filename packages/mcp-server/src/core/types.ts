@@ -1,3 +1,13 @@
+/**
+ * Content hash for change tracking
+ */
+export interface ContentHash {
+  /** Hash of content before mutation */
+  before: string;
+  /** Hash of content after mutation */
+  after: string;
+}
+
 export interface MutationResult {
   success: boolean;
   message: string;
@@ -5,6 +15,10 @@ export interface MutationResult {
   preview?: string;
   gitCommit?: string;
   gitError?: string;
+  /** Content hashes for change tracking (optional) */
+  contentHash?: ContentHash;
+  /** Whether a hint was written for Flywheel integration */
+  hintWritten?: boolean;
 }
 
 export interface SectionInfo {
