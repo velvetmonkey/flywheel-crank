@@ -623,4 +623,4 @@ Mutation tools now support automatic wikilink suggestions:
 
 ## License
 
-AGPL-3.0 (same as Flywheel)
+Apache-2.0
