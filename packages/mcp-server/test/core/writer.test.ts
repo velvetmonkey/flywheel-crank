@@ -466,7 +466,7 @@ Existing entry
 
   // preserveListNesting tests
   describe('with preserveListNesting option', () => {
-    it('should detect and apply list indentation when appending', () => {
+    it('should append at section base level, not nested level', () => {
       const content = `## Log
 - Entry 1
   - Nested item 1
@@ -477,8 +477,9 @@ Existing entry
       const result = insertInSection(content, section, '- New entry', 'append', {
         preserveListNesting: true,
       });
-      // Should match the indentation of the nearest list item (2-space indent)
-      expect(result).toContain('  - Nested item 2\n  - New entry\n## Next');
+      // Should match the BASE indentation (0-space for Entry 1), NOT continue nested
+      // This ensures new entries go to the section's top level, not inside nested sublists
+      expect(result).toContain('  - Nested item 2\n- New entry\n## Next');
     });
 
     it('should not apply indentation when preserveListNesting is false', () => {
@@ -590,7 +591,7 @@ Existing entry
       expect(result).toContain('## Log\n- New entry\n  - Entry 1');
     });
 
-    it('should handle deep nesting (5+ levels) when appending', () => {
+    it('should append at section base level, not nested level', () => {
       const content = `## Deep
 - Level 1
   - Level 2
@@ -603,8 +604,9 @@ Existing entry
       const result = insertInSection(content, section, '- New item', 'append', {
         preserveListNesting: true,
       });
-      // Should match the 8-space indentation of Level 5
-      expect(result).toContain('        - Level 5\n        - New item\n## Next');
+      // Should match the base indentation (0-space for Level 1), NOT continue nested
+      // This ensures new entries go to the section's top level, not inside nested sublists
+      expect(result).toContain('        - Level 5\n- New item\n## Next');
     });
 
     it('should handle prepend to section with deeply nested list', () => {

@@ -1463,7 +1463,7 @@ type: test
     expect(result).toContain('  - Nested entry 2\n  - New entry');
   });
 
-  it('should preserve structure when adding to nested bullets', async () => {
+  it('should append at section base level, not nested level', async () => {
     const note = `---
 type: test
 ---
@@ -1484,8 +1484,9 @@ type: test
       preserveListNesting: true,
     });
 
-    // Should match the indentation of the last item (4-space for grandchild)
-    expect(result).toContain('    - Grandchild task\n    - New item');
+    // Should match the BASE indentation (0-space for Parent task), NOT continue nested
+    // This ensures new entries go to the section's top level, not inside nested sublists
+    expect(result).toContain('    - Grandchild task\n- New item');
   });
 
   it('should add to top-level when section has no nested lists', async () => {

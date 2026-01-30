@@ -414,6 +414,12 @@ const MIN_SUGGESTION_SCORE = STRICTNESS_CONFIGS.balanced.minSuggestionScore;
 const MIN_MATCH_RATIO = STRICTNESS_CONFIGS.balanced.minMatchRatio;
 
 /**
+ * Bonus for single-word aliases that exactly match a content token
+ * This ensures "production" alias matches "production" in content in conservative mode
+ */
+const FULL_ALIAS_MATCH_BONUS = 8;
+
+/**
  * Score a name (entity name or alias) against content
  *
  * @param name - Entity name or alias to score
@@ -497,9 +503,22 @@ function scoreEntity(
 
   // Use the best score between name and aliases
   const bestResult = nameResult.score >= bestAliasResult.score ? nameResult : bestAliasResult;
-  const { score, matchedWords, exactMatches, totalTokens } = bestResult;
+  let { score, matchedWords, exactMatches, totalTokens } = bestResult;
 
   if (totalTokens === 0) return 0;
+
+  // Bonus for single-word aliases that exactly match a content token
+  // This ensures "production" alias matches "production" in content in conservative mode
+  for (const alias of aliases) {
+    const aliasLower = alias.toLowerCase();
+    // Single-word alias (4+ chars) that matches a content token exactly
+    if (aliasLower.length >= 4 &&
+        !/\s/.test(aliasLower) &&
+        contentTokens.has(aliasLower)) {
+      score += FULL_ALIAS_MATCH_BONUS;
+      break;  // Only apply bonus once
+    }
+  }
 
   // Multi-word entities need minimum match ratio
   if (totalTokens > 1) {

@@ -225,12 +225,53 @@ export function formatContent(content: string, format: FormatType): string {
 }
 
 /**
+ * Detect the base indentation level for a section.
+ * Returns the indentation string (spaces) of the first list item in the section,
+ * which represents the "top level" for that section.
+ *
+ * This should be used when appending new entries to ensure they're added at
+ * the section's base level, not nested inside existing sublists.
+ */
+export function detectSectionBaseIndentation(
+  lines: string[],
+  sectionStartLine: number,
+  sectionEndLine: number
+): string {
+  // Look forward to find the first list item in the section
+  for (let i = sectionStartLine; i <= sectionEndLine; i++) {
+    const line = lines[i];
+    const trimmed = line.trim();
+
+    // Skip empty lines
+    if (trimmed === '') continue;
+
+    // Check if this is a list item (bullet, numbered, or task)
+    const listMatch = line.match(/^(\s*)[-*+]\s|^(\s*)\d+\.\s|^(\s*)[-*+]\s*\[[ xX]\]/);
+    if (listMatch) {
+      // Found the first list item - return its indentation as the base
+      const indent = listMatch[1] || listMatch[2] || listMatch[3] || '';
+      return indent;
+    }
+
+    // If we hit a heading (not the section heading itself), stop searching
+    if (i > sectionStartLine && trimmed.match(/^#+\s/)) {
+      break;
+    }
+  }
+
+  return ''; // No list context found, use no indentation
+}
+
+/**
  * Detect the indentation level of the list context at a given line.
  * Returns the indentation string (spaces) that should be used for content
  * being inserted at this position to match the surrounding list structure.
  *
  * Walks backward from the insertion point to find the most recent list item,
  * then determines if we're inserting at the same level or nested.
+ *
+ * NOTE: This function is suitable for continuing a nested list. For adding
+ * new top-level entries to a section, use detectSectionBaseIndentation instead.
  */
 export function detectListIndentation(
   lines: string[],
@@ -332,9 +373,9 @@ export function insertInSection(
     // Check if last content line is an empty placeholder to replace
     if (lastContentLineIdx >= section.contentStartLine && isEmptyPlaceholder(lines[lastContentLineIdx])) {
       // Replace the placeholder with the new content
-      // Apply list indentation if preserveListNesting is enabled
+      // Apply section base indentation if preserveListNesting is enabled
       if (options?.preserveListNesting) {
-        const indent = detectListIndentation(lines, lastContentLineIdx, section.contentStartLine);
+        const indent = detectSectionBaseIndentation(lines, section.contentStartLine, section.endLine);
         const indentedContent = formattedContent
           .split('\n')
           .map(line => indent + line)
@@ -364,9 +405,11 @@ export function insertInSection(
         insertLine = section.contentStartLine;
       }
 
-      // Apply list indentation if preserveListNesting is enabled
+      // Apply section base indentation if preserveListNesting is enabled
+      // Use section base (first list item) to add new top-level entries,
+      // not the last item's indentation which could be nested
       if (options?.preserveListNesting) {
-        const indent = detectListIndentation(lines, insertLine, section.contentStartLine);
+        const indent = detectSectionBaseIndentation(lines, section.contentStartLine, section.endLine);
         const indentedContent = formattedContent
           .split('\n')
           .map(line => indent + line)

@@ -1930,6 +1930,40 @@ describe('alias matching', () => {
     expect(result2.suggestions).toContain('Artificial Intel');
   });
 
+  it('should suggest entity when single-word alias exactly matches in conservative mode', async () => {
+    const cacheDir = path.join(tempVault, '.claude');
+    await mkdir(cacheDir, { recursive: true });
+
+    // PRD entity with "production" alias (matches real-world case)
+    await writeFile(
+      path.join(cacheDir, 'wikilink-entities.json'),
+      JSON.stringify({
+        _metadata: {
+          generated_at: new Date().toISOString(),
+          vault_path: tempVault,
+          source: 'test',
+          version: 2,
+          total_entities: 1,
+        },
+        technologies: [],
+        acronyms: [],
+        people: [],
+        projects: [],
+        other: [
+          { name: 'prd', path: 'prd.md', aliases: ['production', 'prod'] },
+        ],
+      })
+    );
+
+    await initializeEntityIndex(tempVault);
+
+    // Should match in conservative mode (default) due to full alias bonus
+    // "production" exact match (10) + full alias bonus (8) = 18 >= 15 threshold
+    const result = suggestRelatedLinks('Deploying to production today');
+
+    expect(result.suggestions).toContain('prd');
+  });
+
   it('should work with entities that have no aliases (backward compatibility)', async () => {
     const cacheDir = path.join(tempVault, '.claude');
     await mkdir(cacheDir, { recursive: true });
