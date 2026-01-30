@@ -287,7 +287,37 @@ export function insertInSection(
 
   if (position === 'prepend') {
     // Insert right after the heading
-    lines.splice(section.contentStartLine, 0, formattedContent);
+    // If preserveListNesting is enabled, detect indentation from the first list item in the section
+    if (options?.preserveListNesting) {
+      // Look forward to find the first list item in the section
+      let indent = '';
+      for (let i = section.contentStartLine; i <= section.endLine; i++) {
+        const line = lines[i];
+        const trimmed = line.trim();
+        if (trimmed === '') continue;
+
+        // Check if this is a list item (bullet, numbered, or task)
+        const listMatch = line.match(/^(\s*)[-*+]\s|^(\s*)\d+\.\s|^(\s*)[-*+]\s*\[[ xX]\]/);
+        if (listMatch) {
+          indent = listMatch[1] || listMatch[2] || listMatch[3] || '';
+          break;
+        }
+        // If we hit non-list content, stop searching
+        break;
+      }
+
+      if (indent) {
+        const indentedContent = formattedContent
+          .split('\n')
+          .map(line => indent + line)
+          .join('\n');
+        lines.splice(section.contentStartLine, 0, indentedContent);
+      } else {
+        lines.splice(section.contentStartLine, 0, formattedContent);
+      }
+    } else {
+      lines.splice(section.contentStartLine, 0, formattedContent);
+    }
   } else {
     // Append at end of section
     // First, check if the last non-empty line in the section is a placeholder

@@ -545,6 +545,81 @@ Existing entry
       // Each line should get the indentation
       expect(result).toContain('  - Note 2\n  - Line 1\n  - Line 2\n## Next');
     });
+
+    // Prepend with preserveListNesting tests
+    it('should prepend with preserveListNesting=true and preserve indentation', () => {
+      const content = `## Log
+  - Entry 1
+  - Entry 2
+## Next
+`;
+      const section = findSection(content, 'Log')!;
+      const result = insertInSection(content, section, '- New entry', 'prepend', {
+        preserveListNesting: true,
+      });
+      // Should match the indentation of the first list item
+      expect(result).toContain('## Log\n  - New entry\n  - Entry 1');
+    });
+
+    it('should prepend to nested list and maintain structure', () => {
+      const content = `## Tasks
+- Parent task
+  - Child task 1
+  - Child task 2
+## Next
+`;
+      const section = findSection(content, 'Tasks')!;
+      const result = insertInSection(content, section, '- New parent', 'prepend', {
+        preserveListNesting: true,
+      });
+      // Top-level list, so no indentation should be added
+      expect(result).toContain('## Tasks\n- New parent\n- Parent task');
+    });
+
+    it('should prepend without indentation when preserveListNesting=false', () => {
+      const content = `## Log
+  - Entry 1
+  - Entry 2
+## Next
+`;
+      const section = findSection(content, 'Log')!;
+      const result = insertInSection(content, section, '- New entry', 'prepend', {
+        preserveListNesting: false,
+      });
+      // Should NOT apply indentation
+      expect(result).toContain('## Log\n- New entry\n  - Entry 1');
+    });
+
+    it('should handle deep nesting (5+ levels) when appending', () => {
+      const content = `## Deep
+- Level 1
+  - Level 2
+    - Level 3
+      - Level 4
+        - Level 5
+## Next
+`;
+      const section = findSection(content, 'Deep')!;
+      const result = insertInSection(content, section, '- New item', 'append', {
+        preserveListNesting: true,
+      });
+      // Should match the 8-space indentation of Level 5
+      expect(result).toContain('        - Level 5\n        - New item\n## Next');
+    });
+
+    it('should handle prepend to section with deeply nested list', () => {
+      const content = `## Deep
+    - Indented item 1
+    - Indented item 2
+## Next
+`;
+      const section = findSection(content, 'Deep')!;
+      const result = insertInSection(content, section, '- New item', 'prepend', {
+        preserveListNesting: true,
+      });
+      // Should match the 4-space indentation of the first list item
+      expect(result).toContain('## Deep\n    - New item\n    - Indented item 1');
+    });
   });
 });
 
@@ -603,6 +678,43 @@ describe('detectListIndentation', () => {
     const lines = ['## Log', '- Item 1', '', ''];
     const indent = detectListIndentation(lines, 4, 1);
     expect(indent).toBe('');
+  });
+
+  it('should detect tab indentation', () => {
+    const lines = ['## Log', '\t- Item 1', '\t- Item 2'];
+    const indent = detectListIndentation(lines, 3, 1);
+    expect(indent).toBe('\t');
+  });
+
+  it('should detect multiple tab indentation', () => {
+    const lines = ['## Log', '\t\t- Item 1', '\t\t- Item 2'];
+    const indent = detectListIndentation(lines, 3, 1);
+    expect(indent).toBe('\t\t');
+  });
+
+  it('should handle mixed tab and space indentation', () => {
+    // When spaces are used, should detect spaces
+    const lines = ['## Log', '  - Item 1', '  - Item 2'];
+    const indent = detectListIndentation(lines, 3, 1);
+    expect(indent).toBe('  ');
+  });
+
+  it('should detect deep nesting with 8-space indentation', () => {
+    const lines = ['## Deep', '        - Level 5 item'];
+    const indent = detectListIndentation(lines, 2, 1);
+    expect(indent).toBe('        ');
+  });
+
+  it('should handle asterisk list markers', () => {
+    const lines = ['## Log', '  * Item 1', '  * Item 2'];
+    const indent = detectListIndentation(lines, 3, 1);
+    expect(indent).toBe('  ');
+  });
+
+  it('should handle plus list markers', () => {
+    const lines = ['## Log', '  + Item 1', '  + Item 2'];
+    const indent = detectListIndentation(lines, 3, 1);
+    expect(indent).toBe('  ');
   });
 });
 

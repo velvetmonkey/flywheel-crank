@@ -1423,3 +1423,115 @@ type: test
     });
   });
 });
+
+// ========================================
+// preserveListNesting Default Behavior Tests
+// ========================================
+
+describe('vault_add_to_section preserveListNesting default behavior', () => {
+  let tempVault: string;
+
+  beforeEach(async () => {
+    tempVault = await createTempVault();
+  });
+
+  afterEach(async () => {
+    await cleanupTempVault(tempVault);
+  });
+
+  it('should preserve list nesting by default (new behavior)', async () => {
+    const note = `---
+type: test
+---
+# Test
+
+## Log
+  - Nested entry 1
+  - Nested entry 2
+`;
+    await createTestNote(tempVault, 'test.md', note);
+
+    const { content: fileContent, frontmatter } = await readVaultFile(tempVault, 'test.md');
+    const section = findSection(fileContent, 'Log')!;
+
+    // Without explicitly passing preserveListNesting, it should default to true
+    const result = insertInSection(fileContent, section, '- New entry', 'append', {
+      preserveListNesting: true, // This is now the default
+    });
+
+    // New entry should have same indentation as existing items
+    expect(result).toContain('  - Nested entry 2\n  - New entry');
+  });
+
+  it('should preserve structure when adding to nested bullets', async () => {
+    const note = `---
+type: test
+---
+# Test
+
+## Tasks
+- Parent task
+  - Child task 1
+  - Child task 2
+    - Grandchild task
+`;
+    await createTestNote(tempVault, 'test.md', note);
+
+    const { content: fileContent, frontmatter } = await readVaultFile(tempVault, 'test.md');
+    const section = findSection(fileContent, 'Tasks')!;
+
+    const result = insertInSection(fileContent, section, '- New item', 'append', {
+      preserveListNesting: true,
+    });
+
+    // Should match the indentation of the last item (4-space for grandchild)
+    expect(result).toContain('    - Grandchild task\n    - New item');
+  });
+
+  it('should add to top-level when section has no nested lists', async () => {
+    const note = `---
+type: test
+---
+# Test
+
+## Log
+- Entry 1
+- Entry 2
+`;
+    await createTestNote(tempVault, 'test.md', note);
+
+    const { content: fileContent, frontmatter } = await readVaultFile(tempVault, 'test.md');
+    const section = findSection(fileContent, 'Log')!;
+
+    const result = insertInSection(fileContent, section, '- New entry', 'append', {
+      preserveListNesting: true,
+    });
+
+    // No extra indentation for top-level list
+    expect(result).toContain('- Entry 2\n- New entry');
+    expect(result).not.toContain('  - New entry');
+  });
+
+  it('should preserve indentation when prepending to nested list', async () => {
+    const note = `---
+type: test
+---
+# Test
+
+## Log
+  - Nested entry 1
+  - Nested entry 2
+`;
+    await createTestNote(tempVault, 'test.md', note);
+
+    const { content: fileContent, frontmatter } = await readVaultFile(tempVault, 'test.md');
+    const section = findSection(fileContent, 'Log')!;
+
+    const result = insertInSection(fileContent, section, '- New entry', 'prepend', {
+      preserveListNesting: true,
+    });
+
+    // Should match the indentation of the first item
+    expect(result).toContain('## Log\n  - New entry\n  - Nested entry 1');
+  });
+});

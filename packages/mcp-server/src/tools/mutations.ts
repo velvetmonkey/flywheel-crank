@@ -45,7 +45,7 @@ export function registerMutationTools(
         .describe('How to format the content'),
       commit: z.boolean().default(false).describe('If true, commit this change to git (creates undo point)'),
       skipWikilinks: z.boolean().default(false).describe('If true, skip auto-wikilink application (wikilinks are applied by default)'),
-      preserveListNesting: z.boolean().default(false).describe('If true, detect and preserve the indentation level of surrounding list items'),
+      preserveListNesting: z.boolean().default(true).describe('Detect and preserve the indentation level of surrounding list items. Set false to disable.'),
       suggestOutgoingLinks: z.boolean().default(true).describe('Append suggested outgoing wikilinks based on content (e.g., "→ [[AI]] [[Philosophy]]"). Set false to disable.'),
     },
     async ({ path: notePath, section, content, position, format, commit, skipWikilinks, preserveListNesting, suggestOutgoingLinks }) => {

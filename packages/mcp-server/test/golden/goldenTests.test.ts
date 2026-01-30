@@ -217,6 +217,40 @@ describe('Nested List Preservation', () => {
     const result = await fs.readFile(path.join(tempVault, 'test.md'), 'utf-8');
     expect(normalizeLineEndings(result)).toBe(normalizeLineEndings(expected));
   });
+
+  it('should prepend to indented section with preserveListNesting', async () => {
+    const input = await readGoldenFile(INPUT_DIR, 'nested-prepend.md');
+    const expected = await readGoldenFile(EXPECTED_DIR, 'nested-prepend.prepend-indented.md');
+
+    await fs.writeFile(path.join(tempVault, 'test.md'), input);
+
+    const { content, frontmatter, lineEnding } = await readVaultFile(tempVault, 'test.md');
+    const section = findSection(content, 'Indented Section')!;
+    const modified = insertInSection(content, section, '- Prepended item', 'prepend', {
+      preserveListNesting: true,
+    });
+    await writeVaultFile(tempVault, 'test.md', modified, frontmatter, lineEnding);
+
+    const result = await fs.readFile(path.join(tempVault, 'test.md'), 'utf-8');
+    expect(normalizeLineEndings(result)).toBe(normalizeLineEndings(expected));
+  });
+
+  it('should prepend to top-level list with preserveListNesting', async () => {
+    const input = await readGoldenFile(INPUT_DIR, 'nested-prepend.md');
+    const expected = await readGoldenFile(EXPECTED_DIR, 'nested-prepend.prepend-top-level.md');
+
+    await fs.writeFile(path.join(tempVault, 'test.md'), input);
+
+    const { content, frontmatter, lineEnding } = await readVaultFile(tempVault, 'test.md');
+    const section = findSection(content, 'Mixed Section')!;
+    const modified = insertInSection(content, section, '- Prepended item', 'prepend', {
+      preserveListNesting: true,
+    });
+    await writeVaultFile(tempVault, 'test.md', modified, frontmatter, lineEnding);
+
+    const result = await fs.readFile(path.join(tempVault, 'test.md'), 'utf-8');
+    expect(normalizeLineEndings(result)).toBe(normalizeLineEndings(expected));
+  });
 });
 
 describe('Code Block Handling', () => {

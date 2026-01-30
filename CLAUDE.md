@@ -62,7 +62,7 @@ Modern agentic AI faces a fundamental tension:
 - Git integration (auto-commit + undo)
 - Section-scoped operations (safe, reversible)
 - Permission model (read-broad, write-narrow)
-- 487 automated tests (production hardened with edge cases, benchmarks, stress tests)
+- 504 automated tests (production hardened with edge cases, benchmarks, stress tests)
 - Smart template handling (replace empty placeholders like `1. ` or `- `)
 - Wikilink integration (auto-wikilinks on by default, opt-out via `skipWikilinks`)
 - `@velvetmonkey/vault-core` shared package (entity scanning, protected zones, wikilink application)
@@ -449,7 +449,7 @@ npm run test:watch
 ### Mutation Tools (`mutations.ts`)
 | Tool | Description |
 |------|-------------|
-| `vault_add_to_section` | Add content to a section with formatting options. Supports `preserveListNesting` to respect existing list indentation. `suggestOutgoingLinks=true` (default) appends contextual wikilink suggestions (e.g., `→ [[AI]] [[Philosophy]]`). |
+| `vault_add_to_section` | Add content to a section with formatting options. `preserveListNesting=true` (default) respects existing list indentation when appending/prepending to nested lists. `suggestOutgoingLinks=true` (default) appends contextual wikilink suggestions (e.g., `→ [[AI]] [[Philosophy]]`). |
 | `vault_remove_from_section` | Remove matching lines from a section |
 | `vault_replace_in_section` | Replace content in a section. `suggestOutgoingLinks=true` (default) appends contextual wikilink suggestions. |
 
