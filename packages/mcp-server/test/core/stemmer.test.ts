@@ -105,8 +105,10 @@ describe('stem', () => {
 describe('tokenize', () => {
   describe('basic tokenization', () => {
     it('should extract significant words', () => {
-      const tokens = tokenize('Thinking about AI consciousness');
-      expect(tokens).toContain('thinking');
+      // Note: "thinking" is now a stopword
+      const tokens = tokenize('Pondering philosophical consciousness');
+      expect(tokens).toContain('pondering');
+      expect(tokens).toContain('philosophical');
       expect(tokens).toContain('consciousness');
     });
 
@@ -119,12 +121,12 @@ describe('tokenize', () => {
     });
 
     it('should filter out stopwords', () => {
-      const tokens = tokenize('This is about something very important');
+      // Note: "something" and "important" are now stopwords
+      // Use words that aren't stopwords
+      const tokens = tokenize('This is extraordinary programming');
       expect(tokens).not.toContain('this');
-      expect(tokens).not.toContain('about');
-      expect(tokens).not.toContain('very');
-      expect(tokens).toContain('something');
-      expect(tokens).toContain('important');
+      expect(tokens).toContain('extraordinary');
+      expect(tokens).toContain('programming');
     });
 
     it('should lowercase all tokens', () => {
@@ -137,12 +139,14 @@ describe('tokenize', () => {
 
   describe('markdown handling', () => {
     it('should extract text from wikilinks', () => {
-      const tokens = tokenize('Working with [[Jordan Smith]] on [[Project Alpha]]');
-      expect(tokens).toContain('working');
+      // Note: "working" is now a stopword
+      const tokens = tokenize('Collaborating with [[Jordan Smith]] regarding [[Project Alpha]]');
+      expect(tokens).toContain('collaborating');
       expect(tokens).toContain('dave');
       expect(tokens).toContain('evans');
       expect(tokens).toContain('project');
       expect(tokens).toContain('alpha');
+      expect(tokens).toContain('regarding');
     });
 
     it('should handle aliased wikilinks', () => {
@@ -174,10 +178,11 @@ describe('tokenize', () => {
     });
 
     it('should handle numbers mixed with text', () => {
-      const tokens = tokenize('Version 0.5.1 released today');
+      // Note: "today" and "released" are now stopwords
+      const tokens = tokenize('Version 0.5.1 available publicly');
       expect(tokens).toContain('version');
-      expect(tokens).toContain('released');
-      expect(tokens).toContain('today');
+      expect(tokens).toContain('available');
+      expect(tokens).toContain('publicly');
     });
   });
 });
@@ -188,24 +193,30 @@ describe('tokenize', () => {
 
 describe('tokenizeAndStem', () => {
   it('should return tokens, tokenSet, and stems', () => {
-    const result = tokenizeAndStem('Thinking philosophically about consciousness');
+    // Note: "thinking" is now a stopword, use non-stopword content words
+    const result = tokenizeAndStem('Philosophical meditations regarding consciousness');
 
-    expect(result.tokens).toContain('thinking');
-    expect(result.tokens).toContain('philosophically');
+    expect(result.tokens).toContain('philosophical');
+    expect(result.tokens).toContain('meditations');
     expect(result.tokens).toContain('consciousness');
 
-    expect(result.tokenSet.has('thinking')).toBe(true);
-    expect(result.tokenSet.has('philosophically')).toBe(true);
+    expect(result.tokenSet.has('philosophical')).toBe(true);
+    expect(result.tokenSet.has('meditations')).toBe(true);
 
-    expect(result.stems.has('think')).toBe(true);
     expect(result.stems.has('philosoph')).toBe(true);
+    expect(result.stems.has('medit')).toBe(true);
     expect(result.stems.has('conscious')).toBe(true);
   });
 
   it('should deduplicate stems', () => {
-    const result = tokenizeAndStem('think thinking thoughts');
-    // All stem to similar roots
-    expect(result.stems.size).toBeLessThanOrEqual(result.tokens.length);
+    // Use words that aren't stopwords but have similar stems
+    const result = tokenizeAndStem('philosophical philosophy philosopher');
+    // All share the "philosoph" root
+    expect(result.stems.has('philosoph')).toBe(true);
+    // Token set should have all three
+    expect(result.tokenSet.has('philosophical')).toBe(true);
+    expect(result.tokenSet.has('philosophy')).toBe(true);
+    expect(result.tokenSet.has('philosopher')).toBe(true);
   });
 });
 
@@ -230,6 +241,73 @@ describe('isStopword', () => {
     expect(isStopword('programming')).toBe(false);
     expect(isStopword('consciousness')).toBe(false);
     expect(isStopword('flywheel')).toBe(false);
+  });
+
+  // Expanded stopwords tests (critical for false positive prevention)
+  describe('expanded stopwords - verbs', () => {
+    it('should identify common verbs as stopwords', () => {
+      // These verbs caused false positives like "Completed" → "Complete Guide"
+      expect(isStopword('completed')).toBe(true);
+      expect(isStopword('started')).toBe(true);
+      expect(isStopword('finished')).toBe(true);
+      expect(isStopword('working')).toBe(true);
+      expect(isStopword('created')).toBe(true);
+      expect(isStopword('updated')).toBe(true);
+      expect(isStopword('fixed')).toBe(true);
+      expect(isStopword('building')).toBe(true);
+      expect(isStopword('testing')).toBe(true);
+      expect(isStopword('released')).toBe(true);
+    });
+
+    it('should identify verb root forms as stopwords', () => {
+      expect(isStopword('complete')).toBe(true);
+      expect(isStopword('start')).toBe(true);
+      expect(isStopword('finish')).toBe(true);
+      expect(isStopword('work')).toBe(true);
+      expect(isStopword('create')).toBe(true);
+      expect(isStopword('update')).toBe(true);
+      expect(isStopword('fix')).toBe(true);
+      expect(isStopword('build')).toBe(true);
+      expect(isStopword('test')).toBe(true);
+      expect(isStopword('release')).toBe(true);
+    });
+  });
+
+  describe('expanded stopwords - time words', () => {
+    it('should identify time words as stopwords', () => {
+      expect(isStopword('today')).toBe(true);
+      expect(isStopword('tomorrow')).toBe(true);
+      expect(isStopword('yesterday')).toBe(true);
+      expect(isStopword('weekly')).toBe(true);
+      expect(isStopword('daily')).toBe(true);
+      expect(isStopword('monthly')).toBe(true);
+      expect(isStopword('morning')).toBe(true);
+      expect(isStopword('currently')).toBe(true);
+      expect(isStopword('recently')).toBe(true);
+    });
+  });
+
+  describe('expanded stopwords - generic words', () => {
+    it('should identify generic words as stopwords', () => {
+      expect(isStopword('thing')).toBe(true);
+      expect(isStopword('things')).toBe(true);
+      expect(isStopword('something')).toBe(true);
+      expect(isStopword('good')).toBe(true);
+      expect(isStopword('better')).toBe(true);
+      expect(isStopword('different')).toBe(true);
+      expect(isStopword('important')).toBe(true);
+    });
+  });
+
+  describe('expanded stopwords - descriptive words', () => {
+    it('should identify descriptive/qualifier words as stopwords', () => {
+      expect(isStopword('really')).toBe(true);
+      expect(isStopword('actually')).toBe(true);
+      expect(isStopword('basically')).toBe(true);
+      expect(isStopword('probably')).toBe(true);
+      expect(isStopword('simply')).toBe(true);
+      expect(isStopword('quickly')).toBe(true);
+    });
   });
 });
 
@@ -266,16 +344,15 @@ describe('stemmer integration', () => {
     expect(stemsShareRoot(contentStems, entityStem)).toBe(true);
   });
 
-  it('should enable matching "thinking" to "Thoughts" entity', () => {
-    const contentStems = tokenizeAndStem('thinking about AI').stems;
-    const entityStem = stem('thoughts');
+  it('should enable matching "meditating" to "Meditation" entity', () => {
+    // Note: "thinking" is now a stopword, use "meditating" instead
+    const contentStems = tokenizeAndStem('meditating quietly').stems;
+    const entityStem = stem('meditation');
 
-    // "thinking" -> "think", "thoughts" -> "thought"
-    // Both share "thin" prefix at minimum
-    // Note: For more accurate matching, the wikilinks module uses
-    // additional scoring heuristics
-    expect(contentStems.has('think')).toBe(true);
-    expect(entityStem).toBe('thought');
+    // "meditating" -> "medit", "meditation" -> "medit"
+    // Both share the "medit" root
+    expect(contentStems.has('medit')).toBe(true);
+    expect(entityStem).toBe('medit');
   });
 
   it('should enable matching "deterministic" to "Determinism" entity', () => {

@@ -1,6 +1,6 @@
 {
   "name": "@velvetmonkey/flywheel-crank",
-  "version": "0.7.3",
+  "version": "0.8.0",
   "description": "Deterministic vault mutations for Obsidian via MCP",
   "type": "module",
   "main": "dist/index.js",

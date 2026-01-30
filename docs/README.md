@@ -17,6 +17,8 @@ Flywheel Crank is the deterministic write companion to Flywheel MCP. While Flywh
 | Check performance benchmarks | [PERFORMANCE.md](PERFORMANCE.md) |
 | Troubleshoot issues | [TROUBLESHOOTING.md](TROUBLESHOOTING.md) |
 | Check compatibility | [COMPATIBILITY.md](COMPATIBILITY.md) |
+| Migrate from raw editing | [MIGRATION.md](MIGRATION.md) |
+| Understand limitations | [LIMITATIONS.md](LIMITATIONS.md) |
 | Run tests or contribute | [testing.md](testing.md) |
 
 ---
@@ -68,8 +70,18 @@ Platform compatibility matrix and known limitations across macOS, Linux, Windows
 
 **Read when:** Setting up on a new platform or encountering platform-specific issues.
 
+### [MIGRATION.md](MIGRATION.md)
+Step-by-step guide for transitioning from raw file editing (Edit tool, sed) to Flywheel-Crank. Covers migration strategies, gradual adoption timeline, permission workflows, rollback procedures, and common migration patterns.
+
+**Read when:** Transitioning an existing vault or workflow to use Crank tools.
+
+### [LIMITATIONS.md](LIMITATIONS.md)
+Comprehensive documentation of what Crank cannot do, including architectural limitations, content restrictions, wikilink boundaries, and platform-specific issues. Includes decision tree for when to use alternative tools.
+
+**Read when:** Understanding Crank's boundaries or deciding whether Crank is the right tool for a task.
+
 ### [testing.md](testing.md)
-Automated test suite overview (487 tests), manual MCP testing procedures, and git integration behavior. Includes common development workflows.
+Automated test suite overview (523 tests), manual MCP testing procedures, and git integration behavior. Includes common development workflows.
 
 **Read when:** Contributing to Flywheel Crank or debugging tool behavior.
 
@@ -83,6 +95,11 @@ Automated test suite overview (487 tests), manual MCP testing procedures, and gi
 3. [tools-reference.md](tools-reference.md) - Learn the tools
 4. [guiding-claude.md](guiding-claude.md) - Master the feedback loop
 5. [wikilinks.md](wikilinks.md) - Understand auto-linking
+
+**Migrating from raw editing:**
+1. [MIGRATION.md](MIGRATION.md) - Step-by-step migration guide
+2. [LIMITATIONS.md](LIMITATIONS.md) - Understand what Crank can/cannot do
+3. [configuration.md](configuration.md) - Set up permissions
 
 **Privacy-focused users:**
 1. [privacy.md](privacy.md) - Understand data flow

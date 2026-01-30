@@ -87,6 +87,7 @@ Add content to a markdown section with automatic formatting.
 | `commit` | boolean | No | Git commit after mutation |
 | `skipWikilinks` | boolean | No | Disable auto-wikilinks (default: `false`) |
 | `suggestOutgoingLinks` | boolean | No | Append entity suggestions (default: `true`) |
+| `maxSuggestions` | number | No | Max suggested wikilinks (1-10, default: `3`) |
 
 **Format Types:**
 | Format | Output Example |
@@ -166,6 +167,7 @@ Replace content in a section (supports regex capture groups).
 | `commit` | boolean | No | Git commit after mutation |
 | `skipWikilinks` | boolean | No | Disable auto-wikilinks on replacement |
 | `suggestOutgoingLinks` | boolean | No | Append entity suggestions (default: `true`) |
+| `maxSuggestions` | number | No | Max suggested wikilinks (1-10, default: `3`) |
 
 **Example with Regex Capture:**
 
@@ -235,6 +237,7 @@ Add a new task to a section.
 | `commit` | boolean | No | Git commit after mutation |
 | `skipWikilinks` | boolean | No | Disable auto-wikilinks |
 | `suggestOutgoingLinks` | boolean | No | Append entity suggestions (default: `true`) |
+| `maxSuggestions` | number | No | Max suggested wikilinks (1-10, default: `3`) |
 
 **Example:**
 

@@ -224,9 +224,10 @@ export function registerTaskTools(
       commit: z.boolean().default(false).describe('If true, commit this change to git (creates undo point)'),
       skipWikilinks: z.boolean().default(false).describe('If true, skip auto-wikilink application (wikilinks are applied by default)'),
       suggestOutgoingLinks: z.boolean().default(true).describe('Append suggested outgoing wikilinks based on content (e.g., "→ [[AI]] [[Philosophy]]"). Set false to disable.'),
+      maxSuggestions: z.number().min(1).max(10).default(3).describe('Maximum number of suggested wikilinks to append (1-10, default: 3)'),
       preserveListNesting: z.boolean().default(true).describe('Preserve indentation when inserting into nested lists. Default: true'),
     },
-    async ({ path: notePath, section, task, position, completed, commit, skipWikilinks, suggestOutgoingLinks, preserveListNesting }) => {
+    async ({ path: notePath, section, task, position, completed, commit, skipWikilinks, suggestOutgoingLinks, maxSuggestions, preserveListNesting }) => {
       try {
         // 1. Check if file exists
         const fullPath = path.join(vaultPath, notePath);
@@ -261,7 +262,7 @@ export function registerTaskTools(
         // 4b. Suggest outgoing links (enabled by default)
         let suggestInfo: string | undefined;
         if (suggestOutgoingLinks && !skipWikilinks) {
-          const result = suggestRelatedLinks(processedTask);
+          const result = suggestRelatedLinks(processedTask, { maxSuggestions });
           if (result.suffix) {
             processedTask = processedTask + ' ' + result.suffix;
             suggestInfo = `Suggested: ${result.suggestions.join(', ')}`;

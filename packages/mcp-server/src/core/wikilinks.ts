@@ -15,7 +15,7 @@ import {
   type WikilinkResult,
 } from '@velvetmonkey/vault-core';
 import path from 'path';
-import type { SuggestOptions, SuggestResult } from './types.js';
+import type { SuggestOptions, SuggestResult, SuggestionConfig, StrictnessMode } from './types.js';
 import { stem, tokenize } from './stemmer.js';
 import {
   mineCooccurrences,
@@ -358,34 +358,69 @@ export function isLikelyArticleTitle(name: string): boolean {
 }
 
 /**
- * Minimum score required for an entity to be suggested
- * Requires at least one stem match (5 points)
+ * Strictness mode configurations for suggestion scoring
+ *
+ * Each mode provides different trade-offs between precision and recall:
+ * - conservative: High precision, fewer false positives (default)
+ * - balanced: Moderate precision, matches v0.7 behavior
+ * - aggressive: Maximum recall, may include loose matches
  */
-const MIN_SUGGESTION_SCORE = 5;
+const STRICTNESS_CONFIGS: Record<StrictnessMode, SuggestionConfig> = {
+  conservative: {
+    minWordLength: 5,
+    minSuggestionScore: 15,    // Requires exact match (10) + at least one stem (5)
+    minMatchRatio: 0.6,        // 60% of multi-word entity must match
+    requireMultipleMatches: true, // Single-word entities need multiple content matches
+    stemMatchBonus: 3,         // Lower bonus for stem-only matches
+    exactMatchBonus: 10,       // Standard bonus for exact matches
+  },
+  balanced: {
+    minWordLength: 4,
+    minSuggestionScore: 8,     // At least one exact match or two stem matches
+    minMatchRatio: 0.4,        // 40% of multi-word entity must match
+    requireMultipleMatches: false,
+    stemMatchBonus: 5,         // Standard bonus for stem matches
+    exactMatchBonus: 10,       // Standard bonus for exact matches
+  },
+  aggressive: {
+    minWordLength: 4,
+    minSuggestionScore: 5,     // Single stem match is enough
+    minMatchRatio: 0.3,        // 30% of multi-word entity must match
+    requireMultipleMatches: false,
+    stemMatchBonus: 6,         // Higher bonus for stem matches
+    exactMatchBonus: 10,       // Standard bonus for exact matches
+  },
+};
 
 /**
- * Minimum ratio of matched words for multi-word entities
+ * Default strictness mode
  */
-const MIN_MATCH_RATIO = 0.4;
+const DEFAULT_STRICTNESS: StrictnessMode = 'conservative';
+
+// Legacy constants (kept for backward compatibility, use STRICTNESS_CONFIGS instead)
+const MIN_SUGGESTION_SCORE = STRICTNESS_CONFIGS.balanced.minSuggestionScore;
+const MIN_MATCH_RATIO = STRICTNESS_CONFIGS.balanced.minMatchRatio;
 
 /**
  * Score an entity based on word overlap with content
  *
  * Scoring layers:
- * - Exact match: +10 per word (highest confidence)
- * - Stem match: +5 per word (medium confidence)
+ * - Exact match: +exactMatchBonus per word (highest confidence)
+ * - Stem match: +stemMatchBonus per word (medium confidence)
  *
- * Multi-word entities require at least 40% of words to match.
+ * The config determines thresholds and bonuses based on strictness mode.
  *
  * @param entityName - Name of the entity
  * @param contentTokens - Set of tokenized content words
  * @param contentStems - Set of stemmed content words
+ * @param config - Scoring configuration from strictness mode
  * @returns Score (higher = more relevant), 0 if doesn't meet threshold
  */
 function scoreEntity(
   entityName: string,
   contentTokens: Set<string>,
-  contentStems: Set<string>
+  contentStems: Set<string>,
+  config: SuggestionConfig
 ): number {
   // Tokenize entity name
   const entityTokens = tokenize(entityName);
@@ -396,6 +431,7 @@ function scoreEntity(
 
   let score = 0;
   let matchedWords = 0;
+  let exactMatches = 0;
 
   for (let i = 0; i < entityTokens.length; i++) {
     const token = entityTokens[i];
@@ -403,19 +439,30 @@ function scoreEntity(
 
     if (contentTokens.has(token)) {
       // Exact word match - highest confidence
-      score += 10;
+      score += config.exactMatchBonus;
       matchedWords++;
+      exactMatches++;
     } else if (contentStems.has(entityStem)) {
       // Stem match only - medium confidence
-      score += 5;
+      score += config.stemMatchBonus;
       matchedWords++;
     }
   }
 
-  // Multi-word entities need at least 40% of words to match
+  // Multi-word entities need minimum match ratio
   if (entityTokens.length > 1) {
     const matchRatio = matchedWords / entityTokens.length;
-    if (matchRatio < MIN_MATCH_RATIO) {
+    if (matchRatio < config.minMatchRatio) {
+      return 0;
+    }
+  }
+
+  // For conservative mode: single-word entities need multiple content word matches
+  // This prevents "Complete" matching just because content has "completed"
+  if (config.requireMultipleMatches && entityTokens.length === 1) {
+    // Check if the entity word appears multiple times or has strong context
+    // For single-word entities, require at least one exact match
+    if (exactMatches === 0) {
       return 0;
     }
   }
@@ -449,7 +496,14 @@ export function suggestRelatedLinks(
   content: string,
   options: SuggestOptions = {}
 ): SuggestResult {
-  const { maxSuggestions = 3, excludeLinked = true } = options;
+  const {
+    maxSuggestions = 3,
+    excludeLinked = true,
+    strictness = DEFAULT_STRICTNESS
+  } = options;
+
+  // Get config for the specified strictness mode
+  const config = STRICTNESS_CONFIGS[strictness];
 
   // Empty result for quick returns
   const emptyResult: SuggestResult = { suggestions: [], suffix: '' };
@@ -504,15 +558,15 @@ export function suggestRelatedLinks(
       continue;
     }
 
-    // Layers 2+3: Exact match (+10) and stem match (+5)
-    const score = scoreEntity(entityName, contentTokens, contentStems);
+    // Layers 2+3: Exact match and stem match scoring (bonuses depend on strictness)
+    const score = scoreEntity(entityName, contentTokens, contentStems, config);
 
     if (score > 0) {
       directlyMatchedEntities.add(entityName);
     }
 
-    // Minimum threshold: at least one stem match (5 points)
-    if (score >= MIN_SUGGESTION_SCORE) {
+    // Minimum threshold depends on strictness mode
+    if (score >= config.minSuggestionScore) {
       scoredEntities.push({ name: entityName, score });
     }
   }
@@ -538,7 +592,7 @@ export function suggestRelatedLinks(
         const existing = scoredEntities.find(e => e.name === entityName);
         if (existing) {
           existing.score += boost;
-        } else if (boost >= MIN_SUGGESTION_SCORE) {
+        } else if (boost >= config.minSuggestionScore) {
           // Add entity if boost alone meets threshold
           scoredEntities.push({ name: entityName, score: boost });
         }
