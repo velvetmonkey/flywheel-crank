@@ -186,6 +186,281 @@ describe('Trailing Newline Normalization', () => {
   });
 });
 
+describe('Nested List Preservation', () => {
+  let tempVault: string;
+
+  beforeEach(async () => {
+    tempVault = await createTempVault();
+  });
+
+  afterEach(async () => {
+    await cleanupTempVault(tempVault);
+  });
+
+  it('should preserve 3-level nested bullet structure', async () => {
+    const input = await readGoldenFile(INPUT_DIR, 'nested-lists.md');
+    const expected = await readGoldenFile(EXPECTED_DIR, 'nested-lists.add-nested.md');
+
+    await fs.writeFile(path.join(tempVault, 'test.md'), input);
+
+    const { content, frontmatter, lineEnding } = await readVaultFile(tempVault, 'test.md');
+
+    // Find the Level 3 content area and add a new nested item
+    // We need to insert after "Level 3 Item A1b" which is at level 3
+    const lines = content.split('\n');
+    const insertIndex = lines.findIndex(l => l.includes('Level 3 Item A1b')) + 1;
+    lines.splice(insertIndex, 0, '    - New nested item');
+    const modified = lines.join('\n');
+
+    await writeVaultFile(tempVault, 'test.md', modified, frontmatter, lineEnding);
+
+    const result = await fs.readFile(path.join(tempVault, 'test.md'), 'utf-8');
+    expect(normalizeLineEndings(result)).toBe(normalizeLineEndings(expected));
+  });
+});
+
+describe('Code Block Handling', () => {
+  let tempVault: string;
+
+  beforeEach(async () => {
+    tempVault = await createTempVault();
+  });
+
+  afterEach(async () => {
+    await cleanupTempVault(tempVault);
+  });
+
+  it('should not match headings inside code blocks', async () => {
+    const input = await readGoldenFile(INPUT_DIR, 'code-blocks.md');
+    const expected = await readGoldenFile(EXPECTED_DIR, 'code-blocks.add-content.md');
+
+    await fs.writeFile(path.join(tempVault, 'test.md'), input);
+
+    const { content, frontmatter, lineEnding } = await readVaultFile(tempVault, 'test.md');
+    const section = findSection(content, 'Code Section')!;
+    const modified = insertInSection(content, section, 'New content after code block', 'append');
+    await writeVaultFile(tempVault, 'test.md', modified, frontmatter, lineEnding);
+
+    const result = await fs.readFile(path.join(tempVault, 'test.md'), 'utf-8');
+    expect(normalizeLineEndings(result)).toBe(normalizeLineEndings(expected));
+  });
+});
+
+describe('Unicode Content Handling', () => {
+  let tempVault: string;
+
+  beforeEach(async () => {
+    tempVault = await createTempVault();
+  });
+
+  afterEach(async () => {
+    await cleanupTempVault(tempVault);
+  });
+
+  it('should handle emoji in sections and content', async () => {
+    const input = await readGoldenFile(INPUT_DIR, 'unicode-content.md');
+    const expected = await readGoldenFile(EXPECTED_DIR, 'unicode-content.add-emoji.md');
+
+    await fs.writeFile(path.join(tempVault, 'test.md'), input);
+
+    const { content, frontmatter, lineEnding } = await readVaultFile(tempVault, 'test.md');
+    const section = findSection(content, 'Emoji Section 📝')!;
+    const modified = insertInSection(content, section, '- 🌟 New star entry', 'append');
+    await writeVaultFile(tempVault, 'test.md', modified, frontmatter, lineEnding);
+
+    const result = await fs.readFile(path.join(tempVault, 'test.md'), 'utf-8');
+    expect(normalizeLineEndings(result)).toBe(normalizeLineEndings(expected));
+  });
+
+  it('should preserve CJK characters', async () => {
+    const input = await readGoldenFile(INPUT_DIR, 'unicode-content.md');
+
+    await fs.writeFile(path.join(tempVault, 'test.md'), input);
+
+    const { content } = await readVaultFile(tempVault, 'test.md');
+
+    // Verify CJK content is preserved
+    expect(content).toContain('你好世界');
+    expect(content).toContain('こんにちは');
+    expect(content).toContain('안녕하세요');
+  });
+});
+
+describe('Empty Section Handling', () => {
+  let tempVault: string;
+
+  beforeEach(async () => {
+    tempVault = await createTempVault();
+  });
+
+  afterEach(async () => {
+    await cleanupTempVault(tempVault);
+  });
+
+  it('should add content to empty section', async () => {
+    const input = await readGoldenFile(INPUT_DIR, 'empty-sections.md');
+    const expected = await readGoldenFile(EXPECTED_DIR, 'empty-sections.add-to-empty.md');
+
+    await fs.writeFile(path.join(tempVault, 'test.md'), input);
+
+    const { content, frontmatter, lineEnding } = await readVaultFile(tempVault, 'test.md');
+    const section = findSection(content, 'Empty Section')!;
+    const modified = insertInSection(content, section, 'First content in empty section', 'append');
+    await writeVaultFile(tempVault, 'test.md', modified, frontmatter, lineEnding);
+
+    const result = await fs.readFile(path.join(tempVault, 'test.md'), 'utf-8');
+    expect(normalizeLineEndings(result)).toBe(normalizeLineEndings(expected));
+  });
+});
+
+describe('Special Headings Handling', () => {
+  let tempVault: string;
+
+  beforeEach(async () => {
+    tempVault = await createTempVault();
+  });
+
+  afterEach(async () => {
+    await cleanupTempVault(tempVault);
+  });
+
+  it('should handle headings with brackets, parens, and special chars', async () => {
+    const input = await readGoldenFile(INPUT_DIR, 'special-headings.md');
+    const expected = await readGoldenFile(EXPECTED_DIR, 'special-headings.add-to-brackets.md');
+
+    await fs.writeFile(path.join(tempVault, 'test.md'), input);
+
+    const { content, frontmatter, lineEnding } = await readVaultFile(tempVault, 'test.md');
+    const section = findSection(content, '[Bracketed] Heading')!;
+    const modified = insertInSection(content, section, 'New content added', 'append');
+    await writeVaultFile(tempVault, 'test.md', modified, frontmatter, lineEnding);
+
+    const result = await fs.readFile(path.join(tempVault, 'test.md'), 'utf-8');
+    expect(normalizeLineEndings(result)).toBe(normalizeLineEndings(expected));
+  });
+
+  it('should find heading with backticks', async () => {
+    const input = await readGoldenFile(INPUT_DIR, 'special-headings.md');
+
+    await fs.writeFile(path.join(tempVault, 'test.md'), input);
+
+    const { content } = await readVaultFile(tempVault, 'test.md');
+    const section = findSection(content, '`Backtick` Code Heading');
+
+    expect(section).not.toBeNull();
+    expect(section?.name).toBe('`Backtick` Code Heading');
+  });
+
+  it('should find emoji heading', async () => {
+    const input = await readGoldenFile(INPUT_DIR, 'special-headings.md');
+
+    await fs.writeFile(path.join(tempVault, 'test.md'), input);
+
+    const { content } = await readVaultFile(tempVault, 'test.md');
+    const section = findSection(content, '📝 Emoji Heading 🚀');
+
+    expect(section).not.toBeNull();
+    expect(section?.name).toBe('📝 Emoji Heading 🚀');
+  });
+});
+
+describe('Daily Note Realistic Scenario', () => {
+  let tempVault: string;
+
+  beforeEach(async () => {
+    tempVault = await createTempVault();
+  });
+
+  afterEach(async () => {
+    await cleanupTempVault(tempVault);
+  });
+
+  it('should add timestamped log entry to realistic daily note', async () => {
+    const input = await readGoldenFile(INPUT_DIR, 'daily-note-realistic.md');
+    const expected = await readGoldenFile(EXPECTED_DIR, 'daily-note-realistic.add-log.md');
+
+    await fs.writeFile(path.join(tempVault, 'test.md'), input);
+
+    const { content, frontmatter, lineEnding } = await readVaultFile(tempVault, 'test.md');
+    const section = findSection(content, 'Log')!;
+    const modified = insertInSection(content, section, '- **14:00** Afternoon standup', 'append');
+    await writeVaultFile(tempVault, 'test.md', modified, frontmatter, lineEnding);
+
+    const result = await fs.readFile(path.join(tempVault, 'test.md'), 'utf-8');
+    expect(normalizeLineEndings(result)).toBe(normalizeLineEndings(expected));
+  });
+
+  it('should preserve complex frontmatter in daily note', async () => {
+    const input = await readGoldenFile(INPUT_DIR, 'daily-note-realistic.md');
+
+    await fs.writeFile(path.join(tempVault, 'test.md'), input);
+
+    const { frontmatter } = await readVaultFile(tempVault, 'test.md');
+
+    // gray-matter parses YAML dates as Date objects
+    expect(frontmatter.date).toBeInstanceOf(Date);
+    expect(frontmatter.type).toBe('daily');
+    expect(frontmatter.tags).toContain('daily');
+    expect(frontmatter.tags).toContain('work');
+    expect(frontmatter.weather).toBe('sunny');
+    expect(frontmatter.mood).toBe('productive');
+  });
+});
+
+describe('Trailing Newline Handling', () => {
+  let tempVault: string;
+
+  beforeEach(async () => {
+    tempVault = await createTempVault();
+  });
+
+  afterEach(async () => {
+    await cleanupTempVault(tempVault);
+  });
+
+  it('should normalize trailing newlines', async () => {
+    const input = await readGoldenFile(INPUT_DIR, 'trailing-newline.md');
+    const expected = await readGoldenFile(EXPECTED_DIR, 'trailing-newline.normalized.md');
+
+    await fs.writeFile(path.join(tempVault, 'test.md'), input);
+
+    const { content, frontmatter, lineEnding } = await readVaultFile(tempVault, 'test.md');
+    const section = findSection(content, 'Section')!;
+    const modified = insertInSection(content, section, 'New content added', 'append');
+    await writeVaultFile(tempVault, 'test.md', modified, frontmatter, lineEnding);
+
+    const result = await fs.readFile(path.join(tempVault, 'test.md'), 'utf-8');
+    expect(normalizeLineEndings(result)).toBe(normalizeLineEndings(expected));
+  });
+});
+
+describe('Mixed Line Endings Handling', () => {
+  let tempVault: string;
+
+  beforeEach(async () => {
+    tempVault = await createTempVault();
+  });
+
+  afterEach(async () => {
+    await cleanupTempVault(tempVault);
+  });
+
+  it('should handle files with mixed line endings', async () => {
+    const input = await readGoldenFile(INPUT_DIR, 'mixed-line-endings.md');
+    const expected = await readGoldenFile(EXPECTED_DIR, 'mixed-line-endings.add-item.md');
+
+    await fs.writeFile(path.join(tempVault, 'test.md'), input);
+
+    const { content, frontmatter, lineEnding } = await readVaultFile(tempVault, 'test.md');
+    const section = findSection(content, 'Section')!;
+    const modified = insertInSection(content, section, '- Item 3', 'append');
+    await writeVaultFile(tempVault, 'test.md', modified, frontmatter, lineEnding);
+
+    const result = await fs.readFile(path.join(tempVault, 'test.md'), 'utf-8');
+    expect(normalizeLineEndings(result)).toBe(normalizeLineEndings(expected));
+  });
+});
+
 describe('CRLF Round-Trip Preservation', () => {
   let tempVault: string;
 

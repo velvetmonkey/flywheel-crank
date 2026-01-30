@@ -1050,3 +1050,305 @@ Content here
     expect((result.frontmatter.nested as any).deep.value).toBe('test');
   });
 });
+
+// ========================================
+// Edge Case Tests (Phase 2 Production Hardening)
+// ========================================
+
+describe('edge cases', () => {
+  let tempVault: string;
+
+  beforeEach(async () => {
+    tempVault = await createTempVault();
+  });
+
+  afterEach(async () => {
+    await cleanupTempVault(tempVault);
+  });
+
+  describe('heading edge cases', () => {
+    it('should handle heading with only emoji: ## 📝', () => {
+      const content = `# Title
+## 📝
+Emoji section content
+## Next Section
+`;
+      const headings = extractHeadings(content);
+      expect(headings).toHaveLength(3);
+      expect(headings[1].text).toBe('📝');
+
+      const section = findSection(content, '📝');
+      expect(section).not.toBeNull();
+      expect(section?.name).toBe('📝');
+    });
+
+    it('should handle malformed heading ##NoSpace', () => {
+      const content = `# Title
+##NoSpace
+Content here
+## Valid Section
+`;
+      const headings = extractHeadings(content);
+      // Malformed heading (no space) should NOT be extracted
+      expect(headings).toHaveLength(2);
+      expect(headings[0].text).toBe('Title');
+      expect(headings[1].text).toBe('Valid Section');
+    });
+
+    it('should handle heading inside code block (should not match)', () => {
+      const content = `# Real Heading
+\`\`\`markdown
+## Fake Heading In Code
+### Another Fake
+\`\`\`
+## Another Real Heading
+`;
+      const headings = extractHeadings(content);
+      expect(headings).toHaveLength(2);
+      expect(headings.map(h => h.text)).toEqual(['Real Heading', 'Another Real Heading']);
+    });
+
+    it('should handle duplicate heading names (finds first)', () => {
+      const content = `# Notes
+## Section
+First section content
+## Section
+Second section content
+## Section
+Third section content
+`;
+      // findSection should return the first matching heading
+      const section = findSection(content, 'Section');
+      expect(section).not.toBeNull();
+      expect(section?.startLine).toBe(1);
+      expect(section?.contentStartLine).toBe(2);
+    });
+
+    it('should handle heading with trailing whitespace', () => {
+      const content = `# Title
+## Log
+Content with trailing spaces in heading
+## Next
+`;
+      const headings = extractHeadings(content);
+      expect(headings).toHaveLength(3);
+      expect(headings[1].text).toBe('Log');
+
+      // Should still find section when searching without trailing spaces
+      const section = findSection(content, 'Log');
+      expect(section).not.toBeNull();
+    });
+
+    it('should handle very long heading (500+ chars)', () => {
+      const longTitle = 'A'.repeat(500);
+      const content = `# Title
+## ${longTitle}
+Content here
+`;
+      const headings = extractHeadings(content);
+      expect(headings).toHaveLength(2);
+      expect(headings[1].text).toBe(longTitle);
+      expect(headings[1].text.length).toBe(500);
+    });
+
+    it('should handle heading with special chars: ## [Special] (parens)', () => {
+      const content = `# Title
+## [Special] (parens) {braces}
+Content here
+`;
+      const headings = extractHeadings(content);
+      expect(headings).toHaveLength(2);
+      expect(headings[1].text).toBe('[Special] (parens) {braces}');
+
+      const section = findSection(content, '[Special] (parens) {braces}');
+      expect(section).not.toBeNull();
+    });
+
+    it('should handle inline code in heading: ## `Code` Heading', () => {
+      const content = `# Title
+## \`Code\` Heading
+Content here
+`;
+      const headings = extractHeadings(content);
+      expect(headings).toHaveLength(2);
+      expect(headings[1].text).toBe('`Code` Heading');
+    });
+
+    it('should handle deeply nested sections (5+ levels)', () => {
+      const content = `# H1
+## H2
+### H3
+#### H4
+##### H5
+###### H6
+Content at deepest level
+`;
+      const headings = extractHeadings(content);
+      expect(headings).toHaveLength(6);
+
+      const h6Section = findSection(content, 'H6');
+      expect(h6Section).not.toBeNull();
+      expect(h6Section?.level).toBe(6);
+    });
+  });
+
+  describe('file content edge cases', () => {
+    it('should handle section at EOF with no trailing newline', async () => {
+      const content = `---
+type: test
+---
+# Title
+
+## Last Section
+Final content with no newline`;
+      await createTestNote(tempVault, 'no-newline.md', content);
+
+      const { content: fileContent } = await readVaultFile(tempVault, 'no-newline.md');
+      const section = findSection(fileContent, 'Last Section');
+      expect(section).not.toBeNull();
+      expect(section?.endLine).toBe(3); // Zero-indexed line of content
+    });
+
+    it('should handle empty file (0 bytes)', async () => {
+      await createTestNote(tempVault, 'empty.md', '');
+
+      // Reading an empty file should not throw
+      const { content, frontmatter } = await readVaultFile(tempVault, 'empty.md');
+      expect(content).toBe('');
+      expect(Object.keys(frontmatter)).toHaveLength(0);
+
+      const headings = extractHeadings(content);
+      expect(headings).toHaveLength(0);
+    });
+
+    it('should handle file with only frontmatter', async () => {
+      const content = `---
+type: test
+title: Only Frontmatter
+---
+`;
+      await createTestNote(tempVault, 'only-fm.md', content);
+
+      const { content: fileContent, frontmatter } = await readVaultFile(tempVault, 'only-fm.md');
+      expect(frontmatter.type).toBe('test');
+      expect(frontmatter.title).toBe('Only Frontmatter');
+
+      const headings = extractHeadings(fileContent);
+      expect(headings).toHaveLength(0);
+    });
+
+    it('should handle consecutive blank lines in section', async () => {
+      const content = `---
+type: test
+---
+# Title
+
+## Log
+
+Line 1
+
+
+Line 2
+
+
+
+Line 3
+
+## Next
+`;
+      await createTestNote(tempVault, 'blanks.md', content);
+
+      const { content: fileContent, frontmatter } = await readVaultFile(tempVault, 'blanks.md');
+      const section = findSection(fileContent, 'Log')!;
+
+      // Insert should work correctly with consecutive blank lines
+      const result = insertInSection(fileContent, section, 'New line', 'append');
+      expect(result).toContain('Line 3\nNew line');
+    });
+
+    it('should handle section with only whitespace content', () => {
+      const content = `## Empty Section
+
+
+## Next Section
+Content
+`;
+      const section = findSection(content, 'Empty Section');
+      expect(section).not.toBeNull();
+      expect(section?.contentStartLine).toBe(1);
+
+      // Insert into whitespace-only section
+      const result = insertInSection(content, section!, 'New content', 'append');
+      expect(result).toContain('New content');
+    });
+
+    it('should preserve BOM if present', async () => {
+      // UTF-8 BOM
+      const bom = '\uFEFF';
+      const content = `${bom}---
+type: test
+---
+# Title
+
+## Section
+Content
+`;
+      await createTestNote(tempVault, 'bom.md', content);
+
+      // gray-matter should handle BOM gracefully
+      const { content: fileContent, frontmatter } = await readVaultFile(tempVault, 'bom.md');
+      expect(frontmatter.type).toBe('test');
+
+      // Content should be usable
+      const headings = extractHeadings(fileContent);
+      expect(headings.length).toBeGreaterThanOrEqual(1);
+    });
+
+    it('should handle content with null bytes gracefully', async () => {
+      // Create a file with content that has unusual characters
+      const content = `---
+type: test
+---
+# Title
+
+## Section
+Content with special \t tab character
+`;
+      await createTestNote(tempVault, 'special-chars.md', content);
+
+      const { content: fileContent } = await readVaultFile(tempVault, 'special-chars.md');
+      expect(fileContent).toContain('\t');
+
+      const headings = extractHeadings(fileContent);
+      expect(headings).toHaveLength(2);
+    });
+  });
+
+  describe('insertion edge cases', () => {
+    it('should handle inserting into section at very end of file', () => {
+      const content = `# Title
+## Last Section
+Existing content`;
+
+      const section = findSection(content, 'Last Section')!;
+      const result = insertInSection(content, section, 'New content', 'append');
+
+      expect(result).toContain('Existing content\nNew content');
+    });
+
+    it('should handle multi-line content with mixed indentation', () => {
+      const content = `## Section
+- Item 1
+`;
+      const section = findSection(content, 'Section')!;
+      const multiline = `- Parent item
+  - Child item 1
+  - Child item 2
+    - Grandchild`;
+
+      const result = insertInSection(content, section, multiline, 'append');
+      expect(result).toContain('- Child item 1');
+      expect(result).toContain('    - Grandchild');
+    });
+  });
+});

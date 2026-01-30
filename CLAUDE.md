@@ -62,13 +62,13 @@ Modern agentic AI faces a fundamental tension:
 - Git integration (auto-commit + undo)
 - Section-scoped operations (safe, reversible)
 - Permission model (read-broad, write-narrow)
-- 428 automated tests
+- 487 automated tests (production hardened with edge cases, benchmarks, stress tests)
 - Smart template handling (replace empty placeholders like `1. ` or `- `)
 - Wikilink integration (auto-wikilinks on by default, opt-out via `skipWikilinks`)
 - `@velvetmonkey/vault-core` shared package (entity scanning, protected zones, wikilink application)
+- Performance benchmarks (1000-line file mutation <100ms, 10k entities <500ms)
 
 **In Progress:**
-- Production hardening (edge cases, benchmarks)
 - Demo vault with examples
 - Announcement (when ready)
 
@@ -328,20 +328,28 @@ test/
 │   └── testUtils.ts         # Temp vault creation, fixtures
 ├── core/
 │   ├── wikilinks.test.ts    # 108 tests - wikilink processing, entity index, suggestions, quality filters
-│   ├── writer.test.ts       # 70 tests - file operations, section parsing, list nesting
+│   ├── writer.test.ts       # 88 tests - file operations, section parsing, edge cases
 │   ├── stemmer.test.ts      # 33 tests - Porter stemmer implementation
 │   ├── git.test.ts          # 10 tests - git operations
 │   └── vaultRoot.test.ts    # 8 tests - vault detection
-└── tools/
-    ├── mutations.test.ts    # 43 tests - add/remove/replace with suggestions
-    ├── tasks.test.ts        # 31 tests - toggle/add tasks with suggestions
-    ├── frontmatter.test.ts  # 14 tests - frontmatter ops
-    ├── notes.test.ts        # 14 tests - create/delete notes
-    ├── system.test.ts       # 13 tests - list sections, undo
-    └── git-integration.test.ts # 21 tests - git commit integration
+├── tools/
+│   ├── mutations.test.ts    # 56 tests - add/remove/replace with error handling
+│   ├── tasks.test.ts        # 31 tests - toggle/add tasks with suggestions
+│   ├── frontmatter.test.ts  # 14 tests - frontmatter ops
+│   ├── notes.test.ts        # 14 tests - create/delete notes
+│   ├── system.test.ts       # 13 tests - list sections, undo
+│   └── git-integration.test.ts # 21 tests - git commit integration
+├── golden/
+│   └── goldenTests.test.ts  # 29 tests - format preservation golden files
+├── performance/
+│   └── benchmarks.test.ts   # 8 tests - performance baselines
+├── stress/
+│   └── concurrency.test.ts  # 8 tests - concurrent mutation safety
+└── workflows/
+    └── workflows.test.ts    # 15 tests - end-to-end workflow scenarios
 ```
 
-**Total: 428 tests**
+**Total: 487 tests**
 
 **See [docs/testing.md](./docs/testing.md) for:**
 - Manual MCP testing procedures
