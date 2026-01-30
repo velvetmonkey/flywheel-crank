@@ -199,7 +199,11 @@ export function findSection(content: string, sectionName: string): SectionBounda
 }
 
 /**
- * Format content according to format type
+ * Format content according to format type.
+ *
+ * For multi-line content, continuation lines are indented to align under
+ * the parent bullet/task/number text, ensuring proper markdown rendering.
+ * Empty lines are preserved as empty (not indented).
  */
 export function formatContent(content: string, format: FormatType): string {
   const trimmed = content.trim();
@@ -207,17 +211,47 @@ export function formatContent(content: string, format: FormatType): string {
   switch (format) {
     case 'plain':
       return trimmed;
-    case 'bullet':
-      return `- ${trimmed}`;
-    case 'task':
-      return `- [ ] ${trimmed}`;
-    case 'numbered':
-      return `1. ${trimmed}`;
+    case 'bullet': {
+      // Indent continuation lines with 2 spaces to align under "- " text
+      // Keep empty lines empty for proper markdown paragraphs
+      const lines = trimmed.split('\n');
+      return lines.map((line, i) => {
+        if (i === 0) return `- ${line}`;
+        if (line === '') return '';
+        return `  ${line}`;
+      }).join('\n');
+    }
+    case 'task': {
+      // Indent continuation lines with 6 spaces to align under "- [ ] " text
+      const lines = trimmed.split('\n');
+      return lines.map((line, i) => {
+        if (i === 0) return `- [ ] ${line}`;
+        if (line === '') return '';
+        return `      ${line}`;
+      }).join('\n');
+    }
+    case 'numbered': {
+      // Indent continuation lines with 3 spaces to align under "1. " text
+      const lines = trimmed.split('\n');
+      return lines.map((line, i) => {
+        if (i === 0) return `1. ${line}`;
+        if (line === '') return '';
+        return `   ${line}`;
+      }).join('\n');
+    }
     case 'timestamp-bullet': {
       const now = new Date();
       const hours = String(now.getHours()).padStart(2, '0');
       const minutes = String(now.getMinutes()).padStart(2, '0');
-      return `- **${hours}:${minutes}** ${trimmed}`;
+      const prefix = `- **${hours}:${minutes}** `;
+      const lines = trimmed.split('\n');
+      // Indent continuation lines to align under the text after "- "
+      const indent = '  ';
+      return lines.map((line, i) => {
+        if (i === 0) return `${prefix}${line}`;
+        if (line === '') return '';
+        return `${indent}${line}`;
+      }).join('\n');
     }
     default:
       return trimmed;
