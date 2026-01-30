@@ -8,11 +8,15 @@
 import {
   scanVaultEntities,
   getAllEntities,
+  getEntityName,
+  getEntityAliases,
   applyWikilinks,
   loadEntityCache,
   saveEntityCache,
+  ENTITY_CACHE_VERSION,
   type EntityIndex,
   type WikilinkResult,
+  type Entity,
 } from '@velvetmonkey/vault-core';
 import path from 'path';
 import type { SuggestOptions, SuggestResult, SuggestionConfig, StrictnessMode } from './types.js';
@@ -78,6 +82,14 @@ export async function initializeEntityIndex(vaultPath: string): Promise<void> {
     // Try loading from cache first (fast path)
     const cached = await loadEntityCache(cacheFile);
     if (cached) {
+      // Check cache version - rebuild if outdated (e.g., no alias support)
+      const cacheVersion = cached._metadata.version ?? 1;
+      if (cacheVersion < ENTITY_CACHE_VERSION) {
+        console.error(`[Crank] Cache version ${cacheVersion} < ${ENTITY_CACHE_VERSION}, rebuilding...`);
+        await rebuildIndex(vaultPath, cacheFile);
+        return;
+      }
+
       entityIndex = cached;
       indexReady = true;
       console.error(`[Crank] Loaded ${cached._metadata.total_entities} entities from cache`);
@@ -402,56 +414,96 @@ const MIN_SUGGESTION_SCORE = STRICTNESS_CONFIGS.balanced.minSuggestionScore;
 const MIN_MATCH_RATIO = STRICTNESS_CONFIGS.balanced.minMatchRatio;
 
 /**
- * Score an entity based on word overlap with content
+ * Score a name (entity name or alias) against content
  *
- * Scoring layers:
- * - Exact match: +exactMatchBonus per word (highest confidence)
- * - Stem match: +stemMatchBonus per word (medium confidence)
- *
- * The config determines thresholds and bonuses based on strictness mode.
- *
- * @param entityName - Name of the entity
+ * @param name - Entity name or alias to score
  * @param contentTokens - Set of tokenized content words
  * @param contentStems - Set of stemmed content words
  * @param config - Scoring configuration from strictness mode
- * @returns Score (higher = more relevant), 0 if doesn't meet threshold
+ * @returns Object with score, matchedWords, and exactMatches
  */
-function scoreEntity(
-  entityName: string,
+function scoreNameAgainstContent(
+  name: string,
   contentTokens: Set<string>,
   contentStems: Set<string>,
   config: SuggestionConfig
-): number {
-  // Tokenize entity name
-  const entityTokens = tokenize(entityName);
-  if (entityTokens.length === 0) return 0;
+): { score: number; matchedWords: number; exactMatches: number; totalTokens: number } {
+  const nameTokens = tokenize(name);
+  if (nameTokens.length === 0) {
+    return { score: 0, matchedWords: 0, exactMatches: 0, totalTokens: 0 };
+  }
 
-  // Pre-compute entity stems
-  const entityStems = entityTokens.map(t => stem(t));
+  const nameStems = nameTokens.map(t => stem(t));
 
   let score = 0;
   let matchedWords = 0;
   let exactMatches = 0;
 
-  for (let i = 0; i < entityTokens.length; i++) {
-    const token = entityTokens[i];
-    const entityStem = entityStems[i];
+  for (let i = 0; i < nameTokens.length; i++) {
+    const token = nameTokens[i];
+    const nameStem = nameStems[i];
 
     if (contentTokens.has(token)) {
       // Exact word match - highest confidence
       score += config.exactMatchBonus;
       matchedWords++;
       exactMatches++;
-    } else if (contentStems.has(entityStem)) {
+    } else if (contentStems.has(nameStem)) {
       // Stem match only - medium confidence
       score += config.stemMatchBonus;
       matchedWords++;
     }
   }
 
+  return { score, matchedWords, exactMatches, totalTokens: nameTokens.length };
+}
+
+/**
+ * Score an entity based on word overlap with content
+ *
+ * Scoring layers:
+ * - Exact match: +exactMatchBonus per word (highest confidence)
+ * - Stem match: +stemMatchBonus per word (medium confidence)
+ * - Alias matching: Also scores against entity aliases
+ *
+ * The config determines thresholds and bonuses based on strictness mode.
+ *
+ * @param entity - Entity object (with name and aliases) or string name
+ * @param contentTokens - Set of tokenized content words
+ * @param contentStems - Set of stemmed content words
+ * @param config - Scoring configuration from strictness mode
+ * @returns Score (higher = more relevant), 0 if doesn't meet threshold
+ */
+function scoreEntity(
+  entity: Entity,
+  contentTokens: Set<string>,
+  contentStems: Set<string>,
+  config: SuggestionConfig
+): number {
+  const entityName = getEntityName(entity);
+  const aliases = getEntityAliases(entity);
+
+  // Score the primary name
+  const nameResult = scoreNameAgainstContent(entityName, contentTokens, contentStems, config);
+
+  // Score each alias and take the best match
+  let bestAliasResult = { score: 0, matchedWords: 0, exactMatches: 0, totalTokens: 0 };
+  for (const alias of aliases) {
+    const aliasResult = scoreNameAgainstContent(alias, contentTokens, contentStems, config);
+    if (aliasResult.score > bestAliasResult.score) {
+      bestAliasResult = aliasResult;
+    }
+  }
+
+  // Use the best score between name and aliases
+  const bestResult = nameResult.score >= bestAliasResult.score ? nameResult : bestAliasResult;
+  const { score, matchedWords, exactMatches, totalTokens } = bestResult;
+
+  if (totalTokens === 0) return 0;
+
   // Multi-word entities need minimum match ratio
-  if (entityTokens.length > 1) {
-    const matchRatio = matchedWords / entityTokens.length;
+  if (totalTokens > 1) {
+    const matchRatio = matchedWords / totalTokens;
     if (matchRatio < config.minMatchRatio) {
       return 0;
     }
@@ -459,7 +511,7 @@ function scoreEntity(
 
   // For conservative mode: single-word entities need multiple content word matches
   // This prevents "Complete" matching just because content has "completed"
-  if (config.requireMultipleMatches && entityTokens.length === 1) {
+  if (config.requireMultipleMatches && totalTokens === 1) {
     // Check if the entity word appears multiple times or has strong context
     // For single-word entities, require at least one exact match
     if (exactMatches === 0) {
@@ -538,9 +590,8 @@ export function suggestRelatedLinks(
   const directlyMatchedEntities = new Set<string>();
 
   for (const entity of entities) {
-    // Handle both string entities (from scanVaultEntities) and
-    // object entities with .name property (from cache format)
-    const entityName = typeof entity === 'string' ? entity : (entity as { name?: string }).name;
+    // Get entity name using helper (handles both string and object formats)
+    const entityName = getEntityName(entity);
     if (!entityName) continue;
 
     // Layer 1a: Length filter - skip article titles, clippings (>25 chars)
@@ -558,8 +609,8 @@ export function suggestRelatedLinks(
       continue;
     }
 
-    // Layers 2+3: Exact match and stem match scoring (bonuses depend on strictness)
-    const score = scoreEntity(entityName, contentTokens, contentStems, config);
+    // Layers 2+3: Exact match, stem match, and alias matching (bonuses depend on strictness)
+    const score = scoreEntity(entity, contentTokens, contentStems, config);
 
     if (score > 0) {
       directlyMatchedEntities.add(entityName);
@@ -576,7 +627,7 @@ export function suggestRelatedLinks(
   // to be suggested
   if (cooccurrenceIndex && directlyMatchedEntities.size > 0) {
     for (const entity of entities) {
-      const entityName = typeof entity === 'string' ? entity : (entity as { name?: string }).name;
+      const entityName = getEntityName(entity);
       if (!entityName) continue;
 
       // Skip if already scored, already linked, too long, or article-like

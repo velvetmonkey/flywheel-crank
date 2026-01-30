@@ -31,6 +31,7 @@ This document describes what Flywheel-Crank cannot do and provides guidance on w
 | Git required for undo | No undo without git | Initialize git before use |
 | Entity cache 1hr stale | New notes not immediately linkable | Wait for cache refresh |
 | 25-char entity limit | Long note names not suggested | Keep entity names concise |
+| Alias support (v0.9.0+) | Frontmatter aliases now match | Add aliases for variations |
 | Section must exist | Cannot create sections | Create section first, then add |
 
 ---
@@ -212,10 +213,27 @@ Output: "[[Jordan Smith]] mentioned Jordan Smith should review"
 
 **Limitation:** Suggestions are based on word overlap, not semantic understanding.
 
-**May not work well:**
-- Acronyms without expanded form in content
-- Concepts with no word overlap
-- Domain-specific jargon
+**Works well with aliases (v0.9.0+):**
+- Acronyms with expanded aliases: `prd.md` with `aliases: [Production]` will match content containing "Production"
+- Alternative names: Add aliases in frontmatter for common variations
+
+**Still limited:**
+- Concepts with no word overlap (even with aliases)
+- Domain-specific jargon without aliases
+- Semantic synonyms (e.g., "happy" won't match entity "Joy" unless aliased)
+
+**Alias Configuration:**
+```yaml
+---
+aliases: [Production, Prod, Product Requirements]
+---
+# PRD
+```
+
+**Note:** Aliases are filtered using the same rules as entity names:
+- Max 25 characters
+- Max 3 words
+- This prevents over-linking from generic phrases
 
 ### 5. Word Count Filter
 

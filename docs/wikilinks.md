@@ -9,6 +9,7 @@ Crank automatically links known entities as you write, creating a self-reinforci
 - [The Feedback Loop](#the-feedback-loop)
 - [How Auto-Wikilinks Work](#how-auto-wikilinks-work)
 - [Entity Inference Rules](#entity-inference-rules)
+- [Entity Aliases](#entity-aliases)
 - [Excluded Folders](#excluded-folders)
 - [Template Placeholder Handling](#template-placeholder-handling)
 - [Controlling Wikilinks](#controlling-wikilinks)
@@ -128,6 +129,98 @@ The entity scanner (from `@velvetmonkey/vault-core`):
 **Acronym detection:**
 - Titles that are ALL CAPS (3+ characters)
 - Known acronym patterns (API, CLI, MCP, etc.)
+
+---
+
+## Entity Aliases
+
+**New in v0.9.0:** Crank now reads aliases from note frontmatter, allowing alternative names to trigger wikilink suggestions.
+
+### How Aliases Work
+
+When Crank scans your vault, it reads the `aliases` field from each note's frontmatter and includes those as alternative match targets.
+
+**Example:**
+```yaml
+---
+aliases: [Production, Prod]
+---
+# PRD
+
+Product Requirements Document...
+```
+
+With this configuration:
+- Content mentioning "Production" will suggest `[[PRD]]`
+- Content mentioning "Prod" will suggest `[[PRD]]`
+- Content mentioning "PRD" will suggest `[[PRD]]` (primary name still works)
+
+### Alias Filtering Rules
+
+Aliases follow the same filtering rules as entity names:
+- **Max 25 characters** - Long aliases are filtered out
+- **Max 3 words** - Multi-word phrases beyond 3 words are filtered
+
+**Filtered (not indexed):**
+- `Product Requirements Document` (4 words)
+- `A Very Long Alternative Name That Is Too Descriptive` (too long)
+
+**Kept (indexed):**
+- `Production` (1 word, ≤25 chars)
+- `Prod` (1 word, ≤25 chars)
+- `Product Reqs` (2 words, ≤25 chars)
+
+### Alias Formats Supported
+
+Crank supports standard YAML alias formats:
+
+**Inline array:**
+```yaml
+aliases: [Alias1, Alias2, Alias3]
+```
+
+**List format:**
+```yaml
+aliases:
+  - Alias1
+  - Alias2
+  - Alias3
+```
+
+**Single value:**
+```yaml
+aliases: SingleAlias
+```
+
+### Best Practices for Aliases
+
+1. **Add short, common alternatives**
+   ```yaml
+   aliases: [JS, JavaScript]  # Both short variations
+   ```
+
+2. **Use acronym expansions**
+   ```yaml
+   # In API.md
+   aliases: [Application Programming Interface]
+   ```
+
+3. **Add common misspellings or variations**
+   ```yaml
+   aliases: [TypeScript, Typescript, TS]
+   ```
+
+4. **Don't add generic phrases**
+   ```yaml
+   # Avoid:
+   aliases: [The Thing, A Concept, Some Idea]
+   ```
+
+### Cache Considerations
+
+- Aliases are cached with the entity index
+- Cache version upgraded (v2) to support alias schema
+- Old caches automatically rebuild on first access
 
 ---
 
@@ -403,7 +496,20 @@ Good: "Alex Rivera.md" → matches "alex rivera", "Alex Rivera"
 Avoid: "ARivera.md" → won't match "Alex Rivera"
 ```
 
-### 3. Let the Feedback Loop Work
+### 3. Leverage Aliases for Variations
+
+Add frontmatter aliases for common variations:
+
+```yaml
+---
+aliases: [AI, Machine Learning, ML]
+---
+# Artificial Intelligence
+```
+
+This ensures content mentioning "AI", "Machine Learning", or "ML" suggests `[[Artificial Intelligence]]`.
+
+### 4. Let the Feedback Loop Work
 
 1. Create a note
 2. Mention it naturally in other notes
@@ -412,7 +518,7 @@ Avoid: "ARivera.md" → won't match "Alex Rivera"
 5. Create more notes
 6. Repeat
 
-### 4. Don't Over-Link
+### 5. Don't Over-Link
 
 First occurrence is usually enough:
 

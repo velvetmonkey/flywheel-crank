@@ -221,6 +221,8 @@ export async function createEntityCache(
     _metadata: {
       generated_at: (generatedAt || new Date()).toISOString(),
       vault_path: vaultPath,
+      source: 'test-utils createEntityCache',
+      version: 2, // Current cache version with alias support
       total_entities:
         (entities.people?.length || 0) +
         (entities.projects?.length || 0) +
