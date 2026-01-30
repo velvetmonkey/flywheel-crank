@@ -16,6 +16,10 @@
 
 ## Quick Start
 
+**Package:** [`@velvetmonkey/flywheel-crank`](https://www.npmjs.com/package/@velvetmonkey/flywheel-crank)
+
+Add to your Claude Code MCP config (`.mcp.json`):
+
 ```json
 {
   "mcpServers": {

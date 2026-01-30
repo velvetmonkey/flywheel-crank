@@ -16,6 +16,14 @@ import {
 } from '@velvetmonkey/vault-core';
 import path from 'path';
 import type { SuggestOptions, SuggestResult } from './types.js';
+import { stem, tokenize } from './stemmer.js';
+import {
+  mineCooccurrences,
+  getCooccurrenceBoost,
+  serializeCooccurrenceIndex,
+  deserializeCooccurrenceIndex,
+  type CooccurrenceIndex,
+} from './cooccurrence.js';
 
 /**
  * Global entity index state
@@ -23,6 +31,11 @@ import type { SuggestOptions, SuggestResult } from './types.js';
 let entityIndex: EntityIndex | null = null;
 let indexReady = false;
 let indexError: Error | null = null;
+
+/**
+ * Global co-occurrence index state
+ */
+let cooccurrenceIndex: CooccurrenceIndex | null = null;
 
 /**
  * Folders to exclude from entity scanning (periodic notes, etc.)
@@ -83,8 +96,19 @@ async function rebuildIndex(vaultPath: string, cacheFile: string): Promise<void>
   });
 
   indexReady = true;
-  const duration = Date.now() - startTime;
-  console.error(`[Crank] Entity index built: ${entityIndex._metadata.total_entities} entities in ${duration}ms`);
+  const entityDuration = Date.now() - startTime;
+  console.error(`[Crank] Entity index built: ${entityIndex._metadata.total_entities} entities in ${entityDuration}ms`);
+
+  // Mine co-occurrences for conceptual suggestions
+  try {
+    const cooccurrenceStart = Date.now();
+    const entities = getAllEntities(entityIndex);
+    cooccurrenceIndex = await mineCooccurrences(vaultPath, entities);
+    const cooccurrenceDuration = Date.now() - cooccurrenceStart;
+    console.error(`[Crank] Co-occurrence index built: ${cooccurrenceIndex._metadata.total_associations} associations in ${cooccurrenceDuration}ms`);
+  } catch (e) {
+    console.error(`[Crank] Failed to build co-occurrence index: ${e}`);
+  }
 
   // Save to cache
   try {
@@ -240,43 +264,95 @@ export function extractLinkedEntities(content: string): Set<string> {
 
 /**
  * Tokenize content into significant words for matching
+ * Uses the shared stemmer module for consistent tokenization
  * @param content - Content to tokenize
  * @returns Array of significant words (lowercase, 4+ chars, no stopwords)
  */
 function tokenizeContent(content: string): string[] {
-  // Remove wikilinks and markdown formatting for cleaner tokenization
-  const cleanContent = content
-    .replace(/\[\[([^\]|]+)(?:\|[^\]]+)?\]\]/g, '$1') // Extract wikilink text
-    .replace(/[*_`#\[\]()]/g, ' ') // Remove markdown chars
-    .toLowerCase();
-
-  // Extract words (4+ chars, not stopwords)
-  const words = cleanContent.match(/\b[a-z]{4,}\b/g) || [];
-  return words.filter(word => !STOPWORDS.has(word));
+  return tokenize(content);
 }
 
 /**
- * Score an entity based on word overlap with content tokens
- * @param entityName - Name of the entity
- * @param contentTokens - Tokenized content words
- * @returns Score (higher = more relevant)
+ * Tokenize content and compute stems for matching
+ * @param content - Content to tokenize
+ * @returns Object with tokens set and stems set
  */
-function scoreEntity(entityName: string, contentTokens: string[]): number {
-  const entityWords = entityName.toLowerCase().split(/\s+/);
+function tokenizeForMatching(content: string): {
+  tokens: Set<string>;
+  stems: Set<string>;
+} {
+  const tokens = tokenize(content);
+  const tokenSet = new Set(tokens);
+  const stems = new Set(tokens.map(t => stem(t)));
+  return { tokens: tokenSet, stems };
+}
+
+/**
+ * Maximum entity name length for suggestions
+ * Filters out article titles, clippings, and other long names
+ */
+const MAX_ENTITY_LENGTH = 30;
+
+/**
+ * Minimum score required for an entity to be suggested
+ * Requires at least one stem match (5 points)
+ */
+const MIN_SUGGESTION_SCORE = 5;
+
+/**
+ * Minimum ratio of matched words for multi-word entities
+ */
+const MIN_MATCH_RATIO = 0.4;
+
+/**
+ * Score an entity based on word overlap with content
+ *
+ * Scoring layers:
+ * - Exact match: +10 per word (highest confidence)
+ * - Stem match: +5 per word (medium confidence)
+ *
+ * Multi-word entities require at least 40% of words to match.
+ *
+ * @param entityName - Name of the entity
+ * @param contentTokens - Set of tokenized content words
+ * @param contentStems - Set of stemmed content words
+ * @returns Score (higher = more relevant), 0 if doesn't meet threshold
+ */
+function scoreEntity(
+  entityName: string,
+  contentTokens: Set<string>,
+  contentStems: Set<string>
+): number {
+  // Tokenize entity name
+  const entityTokens = tokenize(entityName);
+  if (entityTokens.length === 0) return 0;
+
+  // Pre-compute entity stems
+  const entityStems = entityTokens.map(t => stem(t));
+
   let score = 0;
+  let matchedWords = 0;
 
-  for (const entityWord of entityWords) {
-    if (entityWord.length < 3) continue;
+  for (let i = 0; i < entityTokens.length; i++) {
+    const token = entityTokens[i];
+    const entityStem = entityStems[i];
 
-    for (const contentToken of contentTokens) {
-      // Exact match gets higher score
-      if (contentToken === entityWord) {
-        score += 3;
-      }
-      // Partial match (entity word appears in content token or vice versa)
-      else if (contentToken.includes(entityWord) || entityWord.includes(contentToken)) {
-        score += 1;
-      }
+    if (contentTokens.has(token)) {
+      // Exact word match - highest confidence
+      score += 10;
+      matchedWords++;
+    } else if (contentStems.has(entityStem)) {
+      // Stem match only - medium confidence
+      score += 5;
+      matchedWords++;
+    }
+  }
+
+  // Multi-word entities need at least 40% of words to match
+  if (entityTokens.length > 1) {
+    const matchRatio = matchedWords / entityTokens.length;
+    if (matchRatio < MIN_MATCH_RATIO) {
+      return 0;
     }
   }
 
@@ -288,6 +364,15 @@ function scoreEntity(entityName: string, contentTokens: string[]): number {
  *
  * Analyzes content tokens and scores entities from the cache,
  * returning the top matches as suggested outgoing links.
+ *
+ * Scoring layers:
+ * 1. Length filter: Skip entities >30 chars (article titles, clippings)
+ * 2. Exact match: +10 per word (highest confidence)
+ * 3. Stem match: +5 per word (medium confidence)
+ * 4. Co-occurrence boost: +3 per related entity (conceptual links)
+ *
+ * Multi-word entities require 40% of words to match.
+ * Minimum score of 5 required (at least one stem match).
  *
  * @param content - Content to analyze for suggestions
  * @param options - Configuration options
@@ -318,17 +403,18 @@ export function suggestRelatedLinks(
     return emptyResult;
   }
 
-  // Tokenize content
-  const contentTokens = tokenizeContent(content);
-  if (contentTokens.length === 0) {
+  // Tokenize content and compute stems for matching
+  const { tokens: contentTokens, stems: contentStems } = tokenizeForMatching(content);
+  if (contentTokens.size === 0) {
     return emptyResult;
   }
 
   // Get already-linked entities
   const linkedEntities = excludeLinked ? extractLinkedEntities(content) : new Set<string>();
 
-  // Score and filter entities
+  // First pass: Score entities and track which ones matched directly
   const scoredEntities: Array<{ name: string; score: number }> = [];
+  const directlyMatchedEntities = new Set<string>();
 
   for (const entity of entities) {
     // Handle both string entities (from scanVaultEntities) and
@@ -336,14 +422,54 @@ export function suggestRelatedLinks(
     const entityName = typeof entity === 'string' ? entity : (entity as { name?: string }).name;
     if (!entityName) continue;
 
+    // Layer 1: Length filter - skip article titles, clippings (>30 chars)
+    if (entityName.length > MAX_ENTITY_LENGTH) {
+      continue;
+    }
+
     // Skip if already linked
     if (linkedEntities.has(entityName.toLowerCase())) {
       continue;
     }
 
-    const score = scoreEntity(entityName, contentTokens);
+    // Layers 2+3: Exact match (+10) and stem match (+5)
+    const score = scoreEntity(entityName, contentTokens, contentStems);
+
     if (score > 0) {
+      directlyMatchedEntities.add(entityName);
+    }
+
+    // Minimum threshold: at least one stem match (5 points)
+    if (score >= MIN_SUGGESTION_SCORE) {
       scoredEntities.push({ name: entityName, score });
+    }
+  }
+
+  // Layer 4: Add co-occurrence boost for entities related to matched ones
+  // This allows entities that didn't match directly but are conceptually related
+  // to be suggested
+  if (cooccurrenceIndex && directlyMatchedEntities.size > 0) {
+    for (const entity of entities) {
+      const entityName = typeof entity === 'string' ? entity : (entity as { name?: string }).name;
+      if (!entityName) continue;
+
+      // Skip if already scored, already linked, or too long
+      if (entityName.length > MAX_ENTITY_LENGTH) continue;
+      if (linkedEntities.has(entityName.toLowerCase())) continue;
+
+      // Get co-occurrence boost
+      const boost = getCooccurrenceBoost(entityName, directlyMatchedEntities, cooccurrenceIndex);
+
+      if (boost > 0) {
+        // Check if entity is already in scored list
+        const existing = scoredEntities.find(e => e.name === entityName);
+        if (existing) {
+          existing.score += boost;
+        } else if (boost >= MIN_SUGGESTION_SCORE) {
+          // Add entity if boost alone meets threshold
+          scoredEntities.push({ name: entityName, score: boost });
+        }
+      }
     }
   }
 
