@@ -36,6 +36,11 @@ ROADMAP.md
 .claude/
 !demos/**/.claude/
 
+# Auto-generated CLAUDE.md files (except root)
+**/CLAUDE.md
+!CLAUDE.md
+docs/CLAUDE.md
+
 # Windows path artifacts
 C:*
 c:*

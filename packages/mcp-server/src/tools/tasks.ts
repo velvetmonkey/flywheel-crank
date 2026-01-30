@@ -15,6 +15,7 @@ import {
 import type { MutationResult, Position } from '../core/types.js';
 import { commitChange } from '../core/git.js';
 import { maybeApplyWikilinks, suggestRelatedLinks } from '../core/wikilinks.js';
+import { estimateTokens } from '../core/constants.js';
 import fs from 'fs/promises';
 import path from 'path';
 
@@ -119,7 +120,9 @@ export function registerTaskTools(
             success: false,
             message: `File not found: ${notePath}`,
             path: notePath,
+            tokensEstimate: 0,
           };
+          result.tokensEstimate = estimateTokens(result);
           return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
         }
 
@@ -135,7 +138,9 @@ export function registerTaskTools(
               success: false,
               message: `Section not found: ${section}`,
               path: notePath,
+              tokensEstimate: 0,
             };
+            result.tokensEstimate = estimateTokens(result);
             return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
           }
           sectionBoundary = found;
@@ -155,7 +160,9 @@ export function registerTaskTools(
             success: false,
             message: `No task found matching "${task}"${section ? ` in section "${section}"` : ''}`,
             path: notePath,
+            tokensEstimate: 0,
           };
+          result.tokensEstimate = estimateTokens(result);
           return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
         }
 
@@ -166,7 +173,9 @@ export function registerTaskTools(
             success: false,
             message: 'Failed to toggle task',
             path: notePath,
+            tokensEstimate: 0,
           };
+          result.tokensEstimate = estimateTokens(result);
           return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
         }
 
@@ -195,7 +204,9 @@ export function registerTaskTools(
           preview: `${checkbox} ${matchingTask.text}`,
           gitCommit,
           gitError,
+          tokensEstimate: 0,
         };
+        result.tokensEstimate = estimateTokens(result);
 
         return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
       } catch (error) {
@@ -203,7 +214,9 @@ export function registerTaskTools(
           success: false,
           message: `Failed to toggle task: ${error instanceof Error ? error.message : String(error)}`,
           path: notePath,
+          tokensEstimate: 0,
         };
+        result.tokensEstimate = estimateTokens(result);
         return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
       }
     }
@@ -238,7 +251,9 @@ export function registerTaskTools(
             success: false,
             message: `File not found: ${notePath}`,
             path: notePath,
+            tokensEstimate: 0,
           };
+          result.tokensEstimate = estimateTokens(result);
           return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
         }
 
@@ -252,7 +267,9 @@ export function registerTaskTools(
             success: false,
             message: `Section not found: ${section}`,
             path: notePath,
+            tokensEstimate: 0,
           };
+          result.tokensEstimate = estimateTokens(result);
           return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
         }
 
@@ -305,7 +322,9 @@ export function registerTaskTools(
           preview: taskLine + (infoLines.length > 0 ? `\n(${infoLines.join('; ')})` : ''),
           gitCommit,
           gitError,
+          tokensEstimate: 0,
         };
+        result.tokensEstimate = estimateTokens(result);
 
         return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
       } catch (error) {
@@ -313,7 +332,9 @@ export function registerTaskTools(
           success: false,
           message: `Failed to add task: ${error instanceof Error ? error.message : String(error)}`,
           path: notePath,
+          tokensEstimate: 0,
         };
+        result.tokensEstimate = estimateTokens(result);
         return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
       }
     }

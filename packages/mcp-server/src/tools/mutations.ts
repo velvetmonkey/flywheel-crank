@@ -18,6 +18,7 @@ import {
 import type { MutationResult, FormatType, Position } from '../core/types.js';
 import { commitChange } from '../core/git.js';
 import { maybeApplyWikilinks, suggestRelatedLinks } from '../core/wikilinks.js';
+import { estimateTokens } from '../core/constants.js';
 import fs from 'fs/promises';
 import path from 'path';
 
@@ -62,7 +63,9 @@ export function registerMutationTools(
             success: false,
             message: `File not found: ${notePath}`,
             path: notePath,
+            tokensEstimate: 0,
           };
+          result.tokensEstimate = estimateTokens(result);
           return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
         }
 
@@ -76,7 +79,9 @@ export function registerMutationTools(
             success: false,
             message: `Section not found: ${section}`,
             path: notePath,
+            tokensEstimate: 0,
           };
+          result.tokensEstimate = estimateTokens(result);
           return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
         }
 
@@ -131,7 +136,9 @@ export function registerMutationTools(
           preview,
           gitCommit,
           gitError,
+          tokensEstimate: 0, // Will be set below
         };
+        result.tokensEstimate = estimateTokens(result);
 
         return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
       } catch (error) {
@@ -139,7 +146,9 @@ export function registerMutationTools(
           success: false,
           message: `Failed to add content: ${error instanceof Error ? error.message : String(error)}`,
           path: notePath,
+          tokensEstimate: 0,
         };
+        result.tokensEstimate = estimateTokens(result);
         return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
       }
     }
@@ -170,7 +179,9 @@ export function registerMutationTools(
             success: false,
             message: `File not found: ${notePath}`,
             path: notePath,
+            tokensEstimate: 0,
           };
+          result.tokensEstimate = estimateTokens(result);
           return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
         }
 
@@ -184,7 +195,9 @@ export function registerMutationTools(
             success: false,
             message: `Section not found: ${section}`,
             path: notePath,
+            tokensEstimate: 0,
           };
+          result.tokensEstimate = estimateTokens(result);
           return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
         }
 
@@ -202,7 +215,9 @@ export function registerMutationTools(
             success: false,
             message: `No content matching "${pattern}" found in section "${sectionBoundary.name}"`,
             path: notePath,
+            tokensEstimate: 0,
           };
+          result.tokensEstimate = estimateTokens(result);
           return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
         }
 
@@ -228,7 +243,9 @@ export function registerMutationTools(
           preview: removeResult.removedLines.join('\n'),
           gitCommit,
           gitError,
+          tokensEstimate: 0,
         };
+        result.tokensEstimate = estimateTokens(result);
 
         return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
       } catch (error) {
@@ -236,7 +253,9 @@ export function registerMutationTools(
           success: false,
           message: `Failed to remove content: ${error instanceof Error ? error.message : String(error)}`,
           path: notePath,
+          tokensEstimate: 0,
         };
+        result.tokensEstimate = estimateTokens(result);
         return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
       }
     }
@@ -271,7 +290,9 @@ export function registerMutationTools(
             success: false,
             message: `File not found: ${notePath}`,
             path: notePath,
+            tokensEstimate: 0,
           };
+          result.tokensEstimate = estimateTokens(result);
           return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
         }
 
@@ -285,7 +306,9 @@ export function registerMutationTools(
             success: false,
             message: `Section not found: ${section}`,
             path: notePath,
+            tokensEstimate: 0,
           };
+          result.tokensEstimate = estimateTokens(result);
           return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
         }
 
@@ -317,7 +340,9 @@ export function registerMutationTools(
             success: false,
             message: `No content matching "${search}" found in section "${sectionBoundary.name}"`,
             path: notePath,
+            tokensEstimate: 0,
           };
+          result.tokensEstimate = estimateTokens(result);
           return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
         }
 
@@ -348,7 +373,9 @@ export function registerMutationTools(
           preview: previewLines.join('\n'),
           gitCommit,
           gitError,
+          tokensEstimate: 0,
         };
+        result.tokensEstimate = estimateTokens(result);
 
         return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
       } catch (error) {
@@ -356,7 +383,9 @@ export function registerMutationTools(
           success: false,
           message: `Failed to replace content: ${error instanceof Error ? error.message : String(error)}`,
           path: notePath,
+          tokensEstimate: 0,
         };
+        result.tokensEstimate = estimateTokens(result);
         return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
       }
     }

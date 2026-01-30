@@ -13,6 +13,8 @@ Flywheel Crank is the deterministic write companion to Flywheel MCP. While Flywh
 | Learn what tools are available | [tools-reference.md](tools-reference.md) |
 | Guide Claude to better tool choices | [guiding-claude.md](guiding-claude.md) |
 | Understand auto-wikilinks | [wikilinks.md](wikilinks.md) |
+| Use Flywheel as agent memory | [AGENT-MEMORY.md](AGENT-MEMORY.md) |
+| Compare with alternatives | [COMPARISON.md](COMPARISON.md) |
 | Know how my data is handled | [privacy.md](privacy.md) |
 | Check performance benchmarks | [PERFORMANCE.md](PERFORMANCE.md) |
 | Troubleshoot issues | [TROUBLESHOOTING.md](TROUBLESHOOTING.md) |
@@ -49,6 +51,16 @@ How to give feedback when Claude picks the wrong tool, teach Claude your vault's
 Explains how Crank automatically links known entities (people, projects, technologies) as you write. Covers the feedback loop, entity inference rules, excluded folders, and how to control linking behavior.
 
 **Read when:** You use wikilinks in your vault and want to understand or customize auto-linking.
+
+### [AGENT-MEMORY.md](AGENT-MEMORY.md)
+How to use Flywheel + Crank as a persistent memory layer for AI coding assistants like Claude Code. Covers session memory patterns, CLAUDE.md integration, and token efficiency.
+
+**Read when:** You want your AI assistant to remember context across sessions.
+
+### [COMPARISON.md](COMPARISON.md)
+Detailed comparison of Flywheel-Crank vs alternatives (Dataview, Edit tool, other MCP servers). Includes token cost comparisons, decision matrices, and honest trade-offs.
+
+**Read when:** Evaluating whether Flywheel-Crank is the right tool for your use case.
 
 ### [privacy.md](privacy.md)
 Architectural overview of data handling. Explains what runs locally, what gets indexed, what flows to Claude's API, and best practices for privacy-conscious usage.
@@ -105,8 +117,14 @@ Automated test suite overview (523 tests), manual MCP testing procedures, and gi
 1. [privacy.md](privacy.md) - Understand data flow
 2. [configuration.md](configuration.md) - Set up with recommended permissions
 
+**AI agent developers:**
+1. [AGENT-MEMORY.md](AGENT-MEMORY.md) - Use Flywheel as persistent memory
+2. [COMPARISON.md](COMPARISON.md) - Understand vs alternatives
+3. [tools-reference.md](tools-reference.md) - Learn tool capabilities
+4. [wikilinks.md](wikilinks.md) - Leverage auto-linking
+
 **Contributors:**
-1. [testing.md](testing.md) - Understand the test suite (487 tests)
+1. [testing.md](testing.md) - Understand the test suite (523 tests)
 2. [tools-reference.md](tools-reference.md) - Learn tool patterns
 3. [PERFORMANCE.md](PERFORMANCE.md) - Understand benchmarks
 

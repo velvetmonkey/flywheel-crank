@@ -19,6 +19,8 @@ export interface MutationResult {
   contentHash?: ContentHash;
   /** Whether a hint was written for Flywheel integration */
   hintWritten?: boolean;
+  /** Estimated token count for this response (helps track API costs) */
+  tokensEstimate?: number;
 }
 
 export interface SectionInfo {
