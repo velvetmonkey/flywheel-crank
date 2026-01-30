@@ -62,7 +62,7 @@ Modern agentic AI faces a fundamental tension:
 - Git integration (auto-commit + undo)
 - Section-scoped operations (safe, reversible)
 - Permission model (read-broad, write-narrow)
-- 280 automated tests
+- 428 automated tests
 - Smart template handling (replace empty placeholders like `1. ` or `- `)
 - Wikilink integration (auto-wikilinks on by default, opt-out via `skipWikilinks`)
 - `@velvetmonkey/vault-core` shared package (entity scanning, protected zones, wikilink application)
@@ -327,20 +327,21 @@ test/
 ├── helpers/
 │   └── testUtils.ts         # Temp vault creation, fixtures
 ├── core/
-│   ├── wikilinks.test.ts    # 68 tests - wikilink processing, entity index, suggestions
+│   ├── wikilinks.test.ts    # 108 tests - wikilink processing, entity index, suggestions, quality filters
 │   ├── writer.test.ts       # 70 tests - file operations, section parsing, list nesting
+│   ├── stemmer.test.ts      # 33 tests - Porter stemmer implementation
 │   ├── git.test.ts          # 10 tests - git operations
 │   └── vaultRoot.test.ts    # 8 tests - vault detection
 └── tools/
-    ├── mutations.test.ts    # 37 tests - add/remove/replace with suggestions
-    ├── tasks.test.ts        # 25 tests - toggle/add tasks with suggestions
+    ├── mutations.test.ts    # 43 tests - add/remove/replace with suggestions
+    ├── tasks.test.ts        # 31 tests - toggle/add tasks with suggestions
     ├── frontmatter.test.ts  # 14 tests - frontmatter ops
     ├── notes.test.ts        # 14 tests - create/delete notes
     ├── system.test.ts       # 13 tests - list sections, undo
     └── git-integration.test.ts # 21 tests - git commit integration
 ```
 
-**Total: 280 tests**
+**Total: 428 tests**
 
 **See [docs/testing.md](./docs/testing.md) for:**
 - Manual MCP testing procedures

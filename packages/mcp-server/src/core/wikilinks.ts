@@ -38,18 +38,33 @@ let indexError: Error | null = null;
 let cooccurrenceIndex: CooccurrenceIndex | null = null;
 
 /**
- * Folders to exclude from entity scanning (periodic notes, etc.)
+ * Folders to exclude from entity scanning
+ * Includes periodic notes, working folders, and clippings/external content
  */
 const DEFAULT_EXCLUDE_FOLDERS = [
+  // Periodic notes
   'daily-notes',
   'daily',
   'weekly',
+  'weekly-notes',
   'monthly',
+  'monthly-notes',
   'quarterly',
+  'yearly-notes',
   'periodic',
   'journal',
+  // Working folders
   'inbox',
   'templates',
+  'attachments',
+  'tmp',
+  'new',
+  // Clippings & external content (article titles are not concepts)
+  'clippings',
+  'readwise',
+  'articles',
+  'bookmarks',
+  'web-clips',
 ];
 
 /**
@@ -291,7 +306,56 @@ function tokenizeForMatching(content: string): {
  * Maximum entity name length for suggestions
  * Filters out article titles, clippings, and other long names
  */
-const MAX_ENTITY_LENGTH = 30;
+const MAX_ENTITY_LENGTH = 25;
+
+/**
+ * Maximum word count for entity names
+ * Concepts are typically 1-3 words; longer names are article titles
+ */
+const MAX_ENTITY_WORDS = 3;
+
+/**
+ * Patterns that indicate an entity is an article title, not a concept
+ * Case-insensitive matching
+ */
+const ARTICLE_PATTERNS = [
+  /\bguide\s+to\b/i,
+  /\bhow\s+to\b/i,
+  /\bcomplete\s+/i,
+  /\bultimate\s+/i,
+  /\bchecklist\b/i,
+  /\bcheatsheet\b/i,
+  /\bcheat\s+sheet\b/i,
+  /\bbest\s+practices\b/i,
+  /\bintroduction\s+to\b/i,
+  /\btutorial\b/i,
+  /\bworksheet\b/i,
+];
+
+/**
+ * Check if an entity name looks like an article title rather than a concept
+ *
+ * Heuristics:
+ * - Matches known article patterns ("Guide to", "How to", etc.)
+ * - Has more than 3 words (concepts are usually 1-3 words)
+ *
+ * @param name - Entity name to check
+ * @returns true if this looks like an article title
+ */
+export function isLikelyArticleTitle(name: string): boolean {
+  // Check against article patterns
+  if (ARTICLE_PATTERNS.some(pattern => pattern.test(name))) {
+    return true;
+  }
+
+  // Count words (split on whitespace, filter empty)
+  const words = name.split(/\s+/).filter(w => w.length > 0);
+  if (words.length > MAX_ENTITY_WORDS) {
+    return true;
+  }
+
+  return false;
+}
 
 /**
  * Minimum score required for an entity to be suggested
@@ -365,8 +429,11 @@ function scoreEntity(
  * Analyzes content tokens and scores entities from the cache,
  * returning the top matches as suggested outgoing links.
  *
+ * Filtering layers:
+ * 1a. Length filter: Skip entities >25 chars (article titles, clippings)
+ * 1b. Article pattern filter: Skip "Guide to", "How to", etc. and >3 words
+ *
  * Scoring layers:
- * 1. Length filter: Skip entities >30 chars (article titles, clippings)
  * 2. Exact match: +10 per word (highest confidence)
  * 3. Stem match: +5 per word (medium confidence)
  * 4. Co-occurrence boost: +3 per related entity (conceptual links)
@@ -422,8 +489,13 @@ export function suggestRelatedLinks(
     const entityName = typeof entity === 'string' ? entity : (entity as { name?: string }).name;
     if (!entityName) continue;
 
-    // Layer 1: Length filter - skip article titles, clippings (>30 chars)
+    // Layer 1a: Length filter - skip article titles, clippings (>25 chars)
     if (entityName.length > MAX_ENTITY_LENGTH) {
+      continue;
+    }
+
+    // Layer 1b: Article pattern filter - skip "Guide to", "How to", >3 words, etc.
+    if (isLikelyArticleTitle(entityName)) {
       continue;
     }
 
@@ -453,8 +525,9 @@ export function suggestRelatedLinks(
       const entityName = typeof entity === 'string' ? entity : (entity as { name?: string }).name;
       if (!entityName) continue;
 
-      // Skip if already scored, already linked, or too long
+      // Skip if already scored, already linked, too long, or article-like
       if (entityName.length > MAX_ENTITY_LENGTH) continue;
+      if (isLikelyArticleTitle(entityName)) continue;
       if (linkedEntities.has(entityName.toLowerCase())) continue;
 
       // Get co-occurrence boost

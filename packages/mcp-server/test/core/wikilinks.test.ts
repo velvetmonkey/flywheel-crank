@@ -14,6 +14,7 @@ import {
   getEntityIndexStats,
   suggestRelatedLinks,
   extractLinkedEntities,
+  isLikelyArticleTitle,
 } from '../../src/core/wikilinks.js';
 import {
   createTempVault,
@@ -1031,6 +1032,307 @@ describe('garbage suggestion prevention', () => {
           s.includes('consciousness') || s.includes('ethics')
         )
       ).toBe(true);
+    }
+  });
+});
+
+// ========================================
+// isLikelyArticleTitle Unit Tests
+// ========================================
+
+describe('isLikelyArticleTitle', () => {
+  describe('article pattern detection', () => {
+    it('should detect "Guide to" pattern', () => {
+      expect(isLikelyArticleTitle('Guide to TypeScript')).toBe(true);
+      expect(isLikelyArticleTitle('A Guide to Meditation')).toBe(true);
+      expect(isLikelyArticleTitle('Complete Guide to Git')).toBe(true);
+    });
+
+    it('should detect "How to" pattern', () => {
+      expect(isLikelyArticleTitle('How to Cook Rice')).toBe(true);
+      expect(isLikelyArticleTitle('Learn How to Code')).toBe(true);
+    });
+
+    it('should detect "Complete" pattern', () => {
+      expect(isLikelyArticleTitle('Complete Reference Manual')).toBe(true);
+      expect(isLikelyArticleTitle('The Complete Guide')).toBe(true);
+    });
+
+    it('should detect "Ultimate" pattern', () => {
+      expect(isLikelyArticleTitle('Ultimate Productivity System')).toBe(true);
+      expect(isLikelyArticleTitle('The Ultimate Guide')).toBe(true);
+    });
+
+    it('should detect "checklist" pattern', () => {
+      expect(isLikelyArticleTitle('Morning Routine Checklist')).toBe(true);
+      expect(isLikelyArticleTitle('Travel Checklist')).toBe(true);
+    });
+
+    it('should detect "cheatsheet" patterns', () => {
+      expect(isLikelyArticleTitle('Git Cheatsheet')).toBe(true);
+      expect(isLikelyArticleTitle('Vim Cheat Sheet')).toBe(true);
+    });
+
+    it('should detect "best practices" pattern', () => {
+      expect(isLikelyArticleTitle('React Best Practices')).toBe(true);
+    });
+
+    it('should detect "introduction to" pattern', () => {
+      expect(isLikelyArticleTitle('Introduction to Machine Learning')).toBe(true);
+    });
+
+    it('should detect "tutorial" pattern', () => {
+      expect(isLikelyArticleTitle('Docker Tutorial')).toBe(true);
+      expect(isLikelyArticleTitle('Python Tutorial for Beginners')).toBe(true);
+    });
+
+    it('should detect "worksheet" pattern', () => {
+      expect(isLikelyArticleTitle('Math Worksheet')).toBe(true);
+    });
+  });
+
+  describe('word count filter', () => {
+    it('should accept 1-word entity names', () => {
+      expect(isLikelyArticleTitle('TypeScript')).toBe(false);
+      expect(isLikelyArticleTitle('Meditation')).toBe(false);
+    });
+
+    it('should accept 2-word entity names', () => {
+      expect(isLikelyArticleTitle('Machine Learning')).toBe(false);
+      expect(isLikelyArticleTitle('Data Science')).toBe(false);
+    });
+
+    it('should accept 3-word entity names', () => {
+      expect(isLikelyArticleTitle('Natural Language Processing')).toBe(false);
+      expect(isLikelyArticleTitle('Azure App Service')).toBe(false);
+    });
+
+    it('should reject >3-word entity names', () => {
+      expect(isLikelyArticleTitle('Very Long Entity Name Here')).toBe(true);
+      expect(isLikelyArticleTitle('One Two Three Four')).toBe(true);
+      expect(isLikelyArticleTitle('A B C D E')).toBe(true);
+    });
+  });
+
+  describe('valid concept names (should NOT be filtered)', () => {
+    it('should accept technology names', () => {
+      expect(isLikelyArticleTitle('TypeScript')).toBe(false);
+      expect(isLikelyArticleTitle('React')).toBe(false);
+      expect(isLikelyArticleTitle('Node.js')).toBe(false);
+      expect(isLikelyArticleTitle('Azure Functions')).toBe(false);
+    });
+
+    it('should accept concept names', () => {
+      expect(isLikelyArticleTitle('Philosophy')).toBe(false);
+      expect(isLikelyArticleTitle('Consciousness')).toBe(false);
+      expect(isLikelyArticleTitle('Machine Learning')).toBe(false);
+    });
+
+    it('should accept project names', () => {
+      expect(isLikelyArticleTitle('Flywheel Crank')).toBe(false);
+      expect(isLikelyArticleTitle('Claude Code')).toBe(false);
+    });
+
+    it('should accept acronyms', () => {
+      expect(isLikelyArticleTitle('API')).toBe(false);
+      expect(isLikelyArticleTitle('REST')).toBe(false);
+      expect(isLikelyArticleTitle('MCP')).toBe(false);
+    });
+  });
+
+  describe('edge cases', () => {
+    it('should handle empty string', () => {
+      // Empty has 0 words after filtering, which is ≤3
+      expect(isLikelyArticleTitle('')).toBe(false);
+    });
+
+    it('should handle single character', () => {
+      expect(isLikelyArticleTitle('A')).toBe(false);
+    });
+
+    it('should handle names with special characters', () => {
+      expect(isLikelyArticleTitle('C++')).toBe(false);
+      expect(isLikelyArticleTitle('C#')).toBe(false);
+    });
+  });
+});
+
+// ========================================
+// Suggestion Quality Integration Tests
+// ========================================
+
+describe('suggestion quality - length filter', () => {
+  let tempVault: string;
+
+  beforeEach(async () => {
+    tempVault = await createTempVault();
+  });
+
+  afterEach(async () => {
+    await cleanupTempVault(tempVault);
+  });
+
+  it('should accept entities up to 25 characters', async () => {
+    await createEntityCache(tempVault, {
+      technologies: ['Natural Language Process'], // 24 chars - OK
+    });
+
+    await initializeEntityIndex(tempVault);
+
+    const result = suggestRelatedLinks('Working on Natural Language Process today');
+
+    expect(result.suggestions).toContain('Natural Language Process');
+  });
+
+  it('should reject entities over 25 characters', async () => {
+    await createEntityCache(tempVault, {
+      technologies: ['Natural Language Processing V2'], // 30 chars - too long
+    });
+
+    await initializeEntityIndex(tempVault);
+
+    const result = suggestRelatedLinks('Working on Natural Language Processing V2');
+
+    expect(result.suggestions).not.toContain('Natural Language Processing V2');
+  });
+});
+
+describe('suggestion quality - article pattern filter', () => {
+  let tempVault: string;
+
+  beforeEach(async () => {
+    tempVault = await createTempVault();
+  });
+
+  afterEach(async () => {
+    await cleanupTempVault(tempVault);
+  });
+
+  it('should NOT suggest article-like entities even if they match', async () => {
+    await createEntityCache(tempVault, {
+      other: [
+        'Git Cheatsheet',        // Has "cheatsheet" pattern
+        'Docker Tutorial',        // Has "tutorial" pattern
+        'Git',                    // Valid concept
+        'Docker',                 // Valid concept
+      ],
+    });
+
+    await initializeEntityIndex(tempVault);
+
+    const result = suggestRelatedLinks('Learning about Git and Docker today');
+
+    // Should suggest the concept names, not the article titles
+    const suggestions = result.suggestions.map(s => s.toLowerCase());
+    expect(suggestions.some(s => s.includes('cheatsheet'))).toBe(false);
+    expect(suggestions.some(s => s.includes('tutorial'))).toBe(false);
+  });
+
+  it('should NOT suggest "How to" style entities', async () => {
+    await createEntityCache(tempVault, {
+      other: [
+        'How to Code Well',      // Article title
+        'Coding',                 // Valid concept
+      ],
+    });
+
+    await initializeEntityIndex(tempVault);
+
+    const result = suggestRelatedLinks('Today I worked on coding skills');
+
+    for (const suggestion of result.suggestions) {
+      expect(suggestion.toLowerCase()).not.toContain('how to');
+    }
+  });
+});
+
+describe('suggestion quality - word count filter', () => {
+  let tempVault: string;
+
+  beforeEach(async () => {
+    tempVault = await createTempVault();
+  });
+
+  afterEach(async () => {
+    await cleanupTempVault(tempVault);
+  });
+
+  it('should accept 3-word entities', async () => {
+    await createEntityCache(tempVault, {
+      technologies: ['Azure App Service'],
+    });
+
+    await initializeEntityIndex(tempVault);
+
+    const result = suggestRelatedLinks('Deployed to Azure App Service');
+
+    expect(result.suggestions).toContain('Azure App Service');
+  });
+
+  it('should reject >3-word entities', async () => {
+    await createEntityCache(tempVault, {
+      other: ['Very Long Name Here'], // 4 words - rejected
+    });
+
+    await initializeEntityIndex(tempVault);
+
+    const result = suggestRelatedLinks('Working on Very Long Name Here');
+
+    expect(result.suggestions).not.toContain('Very Long Name Here');
+  });
+});
+
+describe('suggestion quality - real-world scenarios', () => {
+  let tempVault: string;
+
+  beforeEach(async () => {
+    tempVault = await createTempVault();
+  });
+
+  afterEach(async () => {
+    await cleanupTempVault(tempVault);
+  });
+
+  it('should handle typical clipping-style long titles (integration)', async () => {
+    // These are realistic entity names that might come from a clippings folder
+    await createEntityCache(tempVault, {
+      other: [
+        'Complete Guide To Fat Loss Checklist included',  // Article title (filtered by length)
+        'Buy Bentley Designs Natural Vintage Weathered Oak', // Shopping (filtered by length)
+        'An AI Model Just Compressed An Entire Encyclopedia', // News (filtered by length)
+        'Flywheel',                                         // Valid project
+        'Fat Loss',                                         // Valid concept (if user has it)
+      ],
+    });
+
+    await initializeEntityIndex(tempVault);
+
+    const result = suggestRelatedLinks('Completed version 0.5.1 of Flywheel Crank');
+
+    // Should suggest Flywheel (exact match), not the clipping titles
+    expect(result.suggestions.some(s => s === 'Flywheel')).toBe(true);
+
+    // Should NOT suggest article titles
+    for (const suggestion of result.suggestions) {
+      expect(suggestion).not.toContain('Guide');
+      expect(suggestion).not.toContain('Buy');
+      expect(suggestion).not.toContain('Encyclopedia');
+    }
+  });
+
+  it('should prefer concept names over partial word matches', async () => {
+    await createEntityCache(tempVault, {
+      technologies: ['TypeScript', 'JavaScript'],
+      other: ['Scripting', 'Type Systems'],
+    });
+
+    await initializeEntityIndex(tempVault);
+
+    const result = suggestRelatedLinks('Working on TypeScript today');
+
+    // TypeScript should be the highest scored match
+    if (result.suggestions.length > 0) {
+      expect(result.suggestions[0]).toBe('TypeScript');
     }
   });
 });
