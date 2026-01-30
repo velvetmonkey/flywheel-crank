@@ -580,7 +580,7 @@ describe('extractLinkedEntities', () => {
     const content = 'Working with [[Jordan Smith]] on the project';
     const linked = extractLinkedEntities(content);
 
-    expect(linked.has('dave evans')).toBe(true);
+    expect(linked.has('jordan smith')).toBe(true);
     expect(linked.size).toBe(1);
   });
 
@@ -597,7 +597,7 @@ describe('extractLinkedEntities', () => {
     const content = 'See [[Jordan Smith|Jordan]] for details';
     const linked = extractLinkedEntities(content);
 
-    expect(linked.has('dave evans')).toBe(true);
+    expect(linked.has('jordan smith')).toBe(true);
     expect(linked.size).toBe(1);
   });
 

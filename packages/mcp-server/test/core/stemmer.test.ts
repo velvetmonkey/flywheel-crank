@@ -142,8 +142,8 @@ describe('tokenize', () => {
       // Note: "working" is now a stopword
       const tokens = tokenize('Collaborating with [[Jordan Smith]] regarding [[Project Alpha]]');
       expect(tokens).toContain('collaborating');
-      expect(tokens).toContain('dave');
-      expect(tokens).toContain('evans');
+      expect(tokens).toContain('jordan');
+      expect(tokens).toContain('smith');
       expect(tokens).toContain('project');
       expect(tokens).toContain('alpha');
       expect(tokens).toContain('regarding');
@@ -151,8 +151,8 @@ describe('tokenize', () => {
 
     it('should handle aliased wikilinks', () => {
       const tokens = tokenize('See [[Jordan Smith|Jordan]] for info');
-      expect(tokens).toContain('dave');
-      expect(tokens).toContain('evans');
+      expect(tokens).toContain('jordan');
+      expect(tokens).toContain('smith');
       expect(tokens).toContain('info');
     });
 
