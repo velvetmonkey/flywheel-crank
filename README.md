@@ -197,9 +197,12 @@ See [Configuration Guide](./docs/configuration.md) for complete options.
 
 ## Documentation
 
+- **[Examples](./docs/EXAMPLES.md)** — Quick start, all 11 tools with copy-paste examples, workflow scenarios
 - **[Configuration Guide](./docs/configuration.md)** — Environment variables, permissions, tool parameters
 - **[Auto-Wikilinks](./docs/wikilinks.md)** — Entity inference, excluded folders
 - **[Tools Reference](./docs/tools-reference.md)** — Complete tool documentation
+- **[Performance](./docs/PERFORMANCE.md)** — Benchmarks and optimization
+- **[Troubleshooting](./docs/TROUBLESHOOTING.md)** — Common issues and fixes
 - **[Testing](./docs/testing.md)** — Manual MCP testing procedures
 
 ---

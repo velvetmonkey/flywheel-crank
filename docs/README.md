@@ -8,16 +8,25 @@ Flywheel Crank is the deterministic write companion to Flywheel MCP. While Flywh
 
 | I want to... | Read this |
 |--------------|-----------|
+| See examples and quick start | [EXAMPLES.md](EXAMPLES.md) |
 | Get started with Flywheel Crank | [configuration.md](configuration.md) |
 | Learn what tools are available | [tools-reference.md](tools-reference.md) |
 | Guide Claude to better tool choices | [guiding-claude.md](guiding-claude.md) |
 | Understand auto-wikilinks | [wikilinks.md](wikilinks.md) |
 | Know how my data is handled | [privacy.md](privacy.md) |
+| Check performance benchmarks | [PERFORMANCE.md](PERFORMANCE.md) |
+| Troubleshoot issues | [TROUBLESHOOTING.md](TROUBLESHOOTING.md) |
+| Check compatibility | [COMPATIBILITY.md](COMPATIBILITY.md) |
 | Run tests or contribute | [testing.md](testing.md) |
 
 ---
 
 ## Documentation Guide
+
+### [EXAMPLES.md](EXAMPLES.md)
+Quick start guide with copy-paste examples for all 11 tools. Includes 3 workflow scenarios (Daily Standup, Meeting Notes, Project Update) using the Flywheel demo vaults.
+
+**Read when:** You want to get started quickly or see real-world usage patterns.
 
 ### [tools-reference.md](tools-reference.md)
 Complete reference for all 11 MCP tools with visual examples, decision guides, and parameter documentation. Covers mutation tools, task operations, frontmatter management, and note lifecycle operations.
@@ -44,8 +53,23 @@ Architectural overview of data handling. Explains what runs locally, what gets i
 
 **Read when:** You have sensitive data in your vault or need to understand the privacy implications.
 
+### [PERFORMANCE.md](PERFORMANCE.md)
+Performance benchmarks and optimization guidance. Covers mutation timing, entity index performance, and memory usage.
+
+**Read when:** Working with large vaults or optimizing performance.
+
+### [TROUBLESHOOTING.md](TROUBLESHOOTING.md)
+Common issues and solutions for MCP setup, tool behavior, and platform-specific problems.
+
+**Read when:** Something isn't working as expected.
+
+### [COMPATIBILITY.md](COMPATIBILITY.md)
+Platform compatibility matrix and known limitations across macOS, Linux, Windows, and WSL.
+
+**Read when:** Setting up on a new platform or encountering platform-specific issues.
+
 ### [testing.md](testing.md)
-Automated test suite overview (242 tests), manual MCP testing procedures, and git integration behavior. Includes common development workflows.
+Automated test suite overview (487 tests), manual MCP testing procedures, and git integration behavior. Includes common development workflows.
 
 **Read when:** Contributing to Flywheel Crank or debugging tool behavior.
 
@@ -54,18 +78,20 @@ Automated test suite overview (242 tests), manual MCP testing procedures, and gi
 ## Recommended Reading Order
 
 **New users:**
-1. [configuration.md](configuration.md) - Get set up
-2. [tools-reference.md](tools-reference.md) - Learn the tools
-3. [guiding-claude.md](guiding-claude.md) - Master the feedback loop
-4. [wikilinks.md](wikilinks.md) - Understand auto-linking
+1. [EXAMPLES.md](EXAMPLES.md) - Quick start with copy-paste examples
+2. [configuration.md](configuration.md) - Get set up
+3. [tools-reference.md](tools-reference.md) - Learn the tools
+4. [guiding-claude.md](guiding-claude.md) - Master the feedback loop
+5. [wikilinks.md](wikilinks.md) - Understand auto-linking
 
 **Privacy-focused users:**
 1. [privacy.md](privacy.md) - Understand data flow
 2. [configuration.md](configuration.md) - Set up with recommended permissions
 
 **Contributors:**
-1. [testing.md](testing.md) - Understand the test suite
+1. [testing.md](testing.md) - Understand the test suite (487 tests)
 2. [tools-reference.md](tools-reference.md) - Learn tool patterns
+3. [PERFORMANCE.md](PERFORMANCE.md) - Understand benchmarks
 
 ---
 
