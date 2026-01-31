@@ -25,6 +25,7 @@ import {
 } from '../helpers/testUtils.js';
 import { mkdir, writeFile, readFile } from 'fs/promises';
 import path from 'path';
+import { ENTITY_CACHE_VERSION } from '@velvetmonkey/vault-core';
 
 // ========================================
 // Entity Index State Tests
@@ -1683,7 +1684,7 @@ describe('alias matching', () => {
           generated_at: new Date().toISOString(),
           vault_path: tempVault,
           source: 'test',
-          version: 2,
+          version: ENTITY_CACHE_VERSION,
           total_entities: 1,
         },
         technologies: [],
@@ -1722,7 +1723,7 @@ describe('alias matching', () => {
           generated_at: new Date().toISOString(),
           vault_path: tempVault,
           source: 'test',
-          version: 2,
+          version: ENTITY_CACHE_VERSION,
           total_entities: 1,
         },
         technologies: [],
@@ -1761,7 +1762,7 @@ describe('alias matching', () => {
           generated_at: new Date().toISOString(),
           vault_path: tempVault,
           source: 'test',
-          version: 2,
+          version: ENTITY_CACHE_VERSION,
           total_entities: 2,
         },
         technologies: [],
@@ -1812,7 +1813,7 @@ describe('alias matching', () => {
           generated_at: new Date().toISOString(),
           vault_path: tempVault,
           source: 'test',
-          version: 2,
+          version: ENTITY_CACHE_VERSION,
           total_entities: 1,
         },
         technologies: [],
@@ -1854,7 +1855,7 @@ describe('alias matching', () => {
           generated_at: new Date().toISOString(),
           vault_path: tempVault,
           source: 'test',
-          version: 2,
+          version: ENTITY_CACHE_VERSION,
           total_entities: 1,
         },
         technologies: [],
@@ -1896,7 +1897,7 @@ describe('alias matching', () => {
           generated_at: new Date().toISOString(),
           vault_path: tempVault,
           source: 'test',
-          version: 2,
+          version: ENTITY_CACHE_VERSION,
           total_entities: 1,
         },
         technologies: [],
@@ -1942,7 +1943,7 @@ describe('alias matching', () => {
           generated_at: new Date().toISOString(),
           vault_path: tempVault,
           source: 'test',
-          version: 2,
+          version: ENTITY_CACHE_VERSION,
           total_entities: 1,
         },
         technologies: [],
@@ -1974,7 +1975,7 @@ describe('alias matching', () => {
           generated_at: new Date().toISOString(),
           vault_path: tempVault,
           source: 'test',
-          version: 2,
+          version: ENTITY_CACHE_VERSION,
           total_entities: 1,
         },
         technologies: [

@@ -5,6 +5,7 @@
 import { mkdtemp, writeFile, readFile, rm, mkdir } from 'fs/promises';
 import path from 'path';
 import os from 'os';
+import { ENTITY_CACHE_VERSION } from '@velvetmonkey/vault-core';
 
 /**
  * Create a temporary vault directory for testing
@@ -222,7 +223,7 @@ export async function createEntityCache(
       generated_at: (generatedAt || new Date()).toISOString(),
       vault_path: vaultPath,
       source: 'test-utils createEntityCache',
-      version: 2, // Current cache version with alias support
+      version: ENTITY_CACHE_VERSION, // Use current cache version from vault-core
       total_entities:
         (entities.people?.length || 0) +
         (entities.projects?.length || 0) +
