@@ -638,3 +638,76 @@ interface Config {
     expect(normalizeLineEndings(result)).toBe(normalizeLineEndings(expected));
   });
 });
+
+describe('Battle-hardening edge cases', () => {
+  let tempVault: string;
+
+  beforeEach(async () => {
+    tempVault = await createTempVault();
+  });
+
+  afterEach(async () => {
+    await cleanupTempVault(tempVault);
+  });
+
+  it('should preserve 6+ levels of deep nesting', async () => {
+    const input = await readGoldenFile(INPUT_DIR, 'deep-nesting.md');
+    const expected = await readGoldenFile(EXPECTED_DIR, 'deep-nesting.add-deep.md');
+
+    await fs.writeFile(path.join(tempVault, 'test.md'), input);
+
+    const { content, frontmatter, lineEnding } = await readVaultFile(tempVault, 'test.md');
+    const section = findSection(content, 'Active')!;
+    // Append at section end - verify deep nesting is preserved
+    const modified = insertInSection(content, section, '- New item at section end', 'append');
+    await writeVaultFile(tempVault, 'test.md', modified, frontmatter, lineEnding);
+
+    const result = await fs.readFile(path.join(tempVault, 'test.md'), 'utf-8');
+    expect(normalizeLineEndings(result)).toBe(normalizeLineEndings(expected));
+
+    // Also verify the deep nesting structure is preserved
+    expect(result).toContain('          - Level 6 item');
+    expect(result).toContain('            - Level 7 item');
+  });
+
+  it('should preserve mixed numbered/bullet list markers', async () => {
+    const input = await readGoldenFile(INPUT_DIR, 'mixed-list-markers.md');
+    const expected = await readGoldenFile(EXPECTED_DIR, 'mixed-list-markers.add-numbered-sublist.md');
+
+    await fs.writeFile(path.join(tempVault, 'test.md'), input);
+
+    const { content, frontmatter, lineEnding } = await readVaultFile(tempVault, 'test.md');
+    const section = findSection(content, 'Today')!;
+    // Append at section end - verify all marker types are preserved
+    const modified = insertInSection(content, section, '- New bullet item', 'append');
+    await writeVaultFile(tempVault, 'test.md', modified, frontmatter, lineEnding);
+
+    const result = await fs.readFile(path.join(tempVault, 'test.md'), 'utf-8');
+    expect(normalizeLineEndings(result)).toBe(normalizeLineEndings(expected));
+
+    // Verify mixed markers are preserved
+    expect(result).toContain('   - Bullet subitem with dash');
+    expect(result).toContain('   * Asterisk subitem');
+    expect(result).toContain('   + Plus subitem');
+  });
+
+  it('should preserve tab indentation', async () => {
+    const input = await readGoldenFile(INPUT_DIR, 'tab-indentation.md');
+    const expected = await readGoldenFile(EXPECTED_DIR, 'tab-indentation.add-tabbed.md');
+
+    await fs.writeFile(path.join(tempVault, 'test.md'), input);
+
+    const { content, frontmatter, lineEnding } = await readVaultFile(tempVault, 'test.md');
+    const section = findSection(content, 'Log')!;
+    // Append with tab-style bullet to match file convention
+    const modified = insertInSection(content, section, '-\tNew tabbed item', 'append');
+    await writeVaultFile(tempVault, 'test.md', modified, frontmatter, lineEnding);
+
+    const result = await fs.readFile(path.join(tempVault, 'test.md'), 'utf-8');
+    expect(normalizeLineEndings(result)).toBe(normalizeLineEndings(expected));
+
+    // Verify tabs are preserved in existing content
+    expect(result).toContain('\t-\tNested with tab');
+    expect(result).toContain('\t\t-\tDouble nested');
+  });
+});

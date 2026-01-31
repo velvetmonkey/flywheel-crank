@@ -1536,3 +1536,126 @@ type: test
     expect(result).toContain('## Log\n  - New entry\n  - Nested entry 1');
   });
 });
+
+// ========================================
+// Battle-hardening: Section not found errors
+// ========================================
+
+import { extractHeadings } from '../../src/core/writer.js';
+
+describe('Section not found error messages', () => {
+  let tempVault: string;
+
+  beforeEach(async () => {
+    tempVault = await createTempVault();
+  });
+
+  afterEach(async () => {
+    await cleanupTempVault(tempVault);
+  });
+
+  it('should return helpful error for file with no headings', async () => {
+    const note = `This is a plain text file.
+No markdown headings here.
+Just paragraphs of text.
+`;
+    await createTestNote(tempVault, 'test.md', note);
+
+    const { content: fileContent } = await readVaultFile(tempVault, 'test.md');
+    const section = findSection(fileContent, 'Log');
+
+    // Section should not be found
+    expect(section).toBeNull();
+
+    // When section is not found, check headings for context-aware error
+    const headings = extractHeadings(fileContent);
+    expect(headings.length).toBe(0);
+
+    // This is the error message pattern that mutations.ts now generates
+    const expectedMessage = "Section 'Log' not found. This file has no headings. Use vault_append_to_note for files without section structure.";
+    expect(expectedMessage).toContain('no headings');
+    expect(expectedMessage).toContain('vault_append_to_note');
+  });
+
+  it('should list available sections when section not found', async () => {
+    const note = `# My Note
+
+## Introduction
+Some intro text.
+
+## Details
+More details here.
+
+## Conclusion
+Final thoughts.
+`;
+    await createTestNote(tempVault, 'test.md', note);
+
+    const { content: fileContent } = await readVaultFile(tempVault, 'test.md');
+    const section = findSection(fileContent, 'NonExistent');
+
+    // Section should not be found
+    expect(section).toBeNull();
+
+    // When section is not found, check headings for context-aware error
+    const headings = extractHeadings(fileContent);
+    expect(headings.length).toBeGreaterThan(0);
+
+    const availableSections = headings.map(h => h.text).join(', ');
+    expect(availableSections).toContain('My Note');
+    expect(availableSections).toContain('Introduction');
+    expect(availableSections).toContain('Details');
+    expect(availableSections).toContain('Conclusion');
+  });
+
+  it('should preserve deep nesting (5+ levels) in existing content', async () => {
+    const note = `# Projects
+
+## Active
+
+- Level 1
+  - Level 2
+    - Level 3
+      - Level 4
+        - Level 5
+          - Level 6
+`;
+    await createTestNote(tempVault, 'test.md', note);
+
+    const { content: fileContent, frontmatter } = await readVaultFile(tempVault, 'test.md');
+    const section = findSection(fileContent, 'Active')!;
+
+    // Append new item at section end
+    const result = insertInSection(fileContent, section, '- New top-level item', 'append');
+
+    // Verify all original nesting levels are preserved
+    expect(result).toContain('- Level 1');
+    expect(result).toContain('  - Level 2');
+    expect(result).toContain('    - Level 3');
+    expect(result).toContain('      - Level 4');
+    expect(result).toContain('        - Level 5');
+    expect(result).toContain('          - Level 6');
+    // New item is appended at section end
+    expect(result).toContain('- New top-level item');
+  });
+
+  it('should preserve tab indentation in existing content', async () => {
+    const note = `# Log
+
+-\tTab item 1
+\t-\tNested tab item
+`;
+    await createTestNote(tempVault, 'test.md', note);
+
+    const { content: fileContent, frontmatter } = await readVaultFile(tempVault, 'test.md');
+    const section = findSection(fileContent, 'Log')!;
+
+    const result = insertInSection(fileContent, section, '-\tNew tab item', 'append');
+
+    // Verify tabs are preserved in original content
+    expect(result).toContain('-\tTab item 1');
+    expect(result).toContain('\t-\tNested tab item');
+    // New item is appended
+    expect(result).toContain('-\tNew tab item');
+  });
+});

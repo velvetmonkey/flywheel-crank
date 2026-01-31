@@ -13,6 +13,7 @@ import {
   insertInSection,
   removeFromSection,
   replaceInSection,
+  extractHeadings,
   type MatchMode,
 } from '../core/writer.js';
 import type { MutationResult, FormatType, Position } from '../core/types.js';
@@ -82,9 +83,18 @@ export function registerMutationTools(
         // 4. Find the section
         const sectionBoundary = findSection(fileContent, section);
         if (!sectionBoundary) {
+          // Provide context-aware error message
+          const headings = extractHeadings(fileContent);
+          let message: string;
+          if (headings.length === 0) {
+            message = `Section '${section}' not found. This file has no headings. Use vault_append_to_note for files without section structure.`;
+          } else {
+            const availableSections = headings.map(h => h.text).join(', ');
+            message = `Section '${section}' not found. Available sections: ${availableSections}`;
+          }
           const result: MutationResult = {
             success: false,
-            message: `Section not found: ${section}`,
+            message,
             path: notePath,
             tokensEstimate: 0,
           };
@@ -226,9 +236,18 @@ export function registerMutationTools(
         // 3. Find the section
         const sectionBoundary = findSection(fileContent, section);
         if (!sectionBoundary) {
+          // Provide context-aware error message
+          const headings = extractHeadings(fileContent);
+          let message: string;
+          if (headings.length === 0) {
+            message = `Section '${section}' not found. This file has no headings. Use vault_append_to_note for files without section structure.`;
+          } else {
+            const availableSections = headings.map(h => h.text).join(', ');
+            message = `Section '${section}' not found. Available sections: ${availableSections}`;
+          }
           const result: MutationResult = {
             success: false,
-            message: `Section not found: ${section}`,
+            message,
             path: notePath,
             tokensEstimate: 0,
           };
@@ -340,9 +359,18 @@ export function registerMutationTools(
         // 3. Find the section
         const sectionBoundary = findSection(fileContent, section);
         if (!sectionBoundary) {
+          // Provide context-aware error message
+          const headings = extractHeadings(fileContent);
+          let message: string;
+          if (headings.length === 0) {
+            message = `Section '${section}' not found. This file has no headings. Use vault_append_to_note for files without section structure.`;
+          } else {
+            const availableSections = headings.map(h => h.text).join(', ');
+            message = `Section '${section}' not found. Available sections: ${availableSections}`;
+          }
           const result: MutationResult = {
             success: false,
-            message: `Section not found: ${section}`,
+            message,
             path: notePath,
             tokensEstimate: 0,
           };

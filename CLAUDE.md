@@ -62,7 +62,7 @@ Modern agentic AI faces a fundamental tension:
 - Git integration (auto-commit + undo)
 - Section-scoped operations (safe, reversible)
 - Permission model (read-broad, write-narrow)
-- 504 automated tests (production hardened with edge cases, benchmarks, stress tests)
+- 645 automated tests (production hardened with edge cases, benchmarks, stress tests)
 - Smart template handling (replace empty placeholders like `1. ` or `- `)
 - Wikilink integration (auto-wikilinks on by default, opt-out via `skipWikilinks`)
 - `@velvetmonkey/vault-core` shared package (entity scanning, protected zones, wikilink application)
@@ -374,14 +374,14 @@ test/
 │   ├── git.test.ts          # 10 tests - git operations
 │   └── vaultRoot.test.ts    # 8 tests - vault detection
 ├── tools/
-│   ├── mutations.test.ts    # 56 tests - add/remove/replace with error handling
+│   ├── mutations.test.ts    # 64 tests - add/remove/replace with error handling, battle-hardening
 │   ├── tasks.test.ts        # 31 tests - toggle/add tasks with suggestions
 │   ├── frontmatter.test.ts  # 14 tests - frontmatter ops
 │   ├── notes.test.ts        # 14 tests - create/delete notes
 │   ├── system.test.ts       # 13 tests - list sections, undo
 │   └── git-integration.test.ts # 21 tests - git commit integration
 ├── golden/
-│   └── goldenTests.test.ts  # 29 tests - format preservation golden files
+│   └── goldenTests.test.ts  # 37 tests - format preservation, battle-hardening edge cases
 ├── performance/
 │   └── benchmarks.test.ts   # 8 tests - performance baselines
 ├── stress/
@@ -390,7 +390,7 @@ test/
     └── workflows.test.ts    # 15 tests - end-to-end workflow scenarios
 ```
 
-**Total: 487 tests**
+**Total: 645 tests**
 
 **See [docs/testing.md](./docs/testing.md) for:**
 - Manual MCP testing procedures
@@ -517,6 +517,21 @@ npm run test:watch
 |------|-------------|
 | `vault_list_sections` | List all headings in a note |
 | `vault_undo_last_mutation` | Undo last git commit (soft reset) |
+
+---
+
+## Known Limitations
+
+### Heading Format
+Only ATX-style headings (`# Title`) are supported. Setext-style headings (`Title\n===` or `Title\n---`) are not recognized for section operations.
+
+### Files Without Headings
+`vault_add_to_section`, `vault_remove_from_section`, and `vault_replace_in_section` require markdown headings to identify sections. For plain text files without section structure, use `vault_append_to_note` instead.
+
+When attempting to use section tools on files without headings, you'll receive a helpful error:
+```
+Section 'Log' not found. This file has no headings. Use vault_append_to_note for files without section structure.
+```
 
 ---
 
