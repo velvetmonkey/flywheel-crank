@@ -41,7 +41,7 @@
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.25.1",
-    "@velvetmonkey/vault-core": "^0.2.0",
+    "@velvetmonkey/vault-core": "^0.2.2",
     "gray-matter": "^4.0.3",
     "simple-git": "^3.22.0",
     "zod": "^3.22.4"
