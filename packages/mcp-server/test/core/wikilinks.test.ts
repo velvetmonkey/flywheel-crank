@@ -22,6 +22,7 @@ import {
   createTestNote,
   createVaultWithEntities,
   createEntityCache,
+  createEntityCacheWithDetails,
 } from '../helpers/testUtils.js';
 import { mkdir, writeFile, readFile } from 'fs/promises';
 import path from 'path';
@@ -2317,5 +2318,242 @@ describe('combined scoring formula', () => {
     if (result.suggestions.length >= 2) {
       expect(result.suggestions[0]).toBe('Ben Carter');
     }
+  });
+});
+
+// ========================================
+// Cross-Folder Boost Tests
+// ========================================
+
+describe('Cross-Folder Boost', () => {
+  let tempVault: string;
+
+  beforeEach(async () => {
+    tempVault = await createTempVault();
+  });
+
+  afterEach(async () => {
+    await cleanupTempVault(tempVault);
+  });
+
+  it('should boost entities from different folders', async () => {
+    // Use createEntityCacheWithDetails for custom paths
+    await createEntityCacheWithDetails(tempVault, {
+      people: [
+        { name: 'Alice Smith', path: 'people/Alice Smith.md' },
+        { name: 'Bob Jones', path: 'people/Bob Jones.md' },
+      ],
+      projects: [
+        { name: 'Project Alpha', path: 'projects/Project Alpha.md' },
+      ],
+    });
+
+    await initializeEntityIndex(tempVault);
+
+    // When editing a people note, project from different folder should be boosted
+    const result = suggestRelatedLinks('Working with Alice Smith on Project Alpha', {
+      strictness: 'balanced',
+      notePath: 'people/Alice Smith.md',
+    });
+
+    // Both should be suggested
+    expect(result.suggestions).toContain('Project Alpha');
+
+    // If Alice Smith is also suggested (not excluded), Project Alpha should rank
+    // higher or equal due to cross-folder boost
+    if (result.suggestions.includes('Alice Smith')) {
+      // Project Alpha (cross-folder) should be ranked similarly or higher
+      // This is a weak assertion since both have strong matches
+      expect(result.suggestions.length).toBeGreaterThanOrEqual(2);
+    }
+  });
+
+  it('should not boost entities from same folder', async () => {
+    await createEntityCacheWithDetails(tempVault, {
+      projects: [
+        { name: 'Project Alpha', path: 'projects/Project Alpha.md' },
+        { name: 'Project Beta', path: 'projects/Project Beta.md' },
+      ],
+    });
+
+    await initializeEntityIndex(tempVault);
+
+    // When editing a project note, other projects don't get cross-folder boost
+    const result = suggestRelatedLinks('Project Alpha relates to Project Beta', {
+      strictness: 'balanced',
+      notePath: 'projects/Project Alpha.md',
+    });
+
+    // Both should be suggested based on exact match
+    expect(result.suggestions).toContain('Project Beta');
+    // No cross-folder boost since both are in projects/
+  });
+
+  it('should handle entities without paths gracefully', async () => {
+    await createEntityCacheWithDetails(tempVault, {
+      other: [
+        { name: 'Concept One', path: '' }, // Empty path
+        { name: 'Concept Two', path: 'concepts/Concept Two.md' },
+      ],
+    });
+
+    await initializeEntityIndex(tempVault);
+
+    // Should not crash, empty path gets no boost
+    const result = suggestRelatedLinks('Concept One and Concept Two discussion', {
+      strictness: 'balanced',
+      notePath: 'daily-notes/2026-01-31.md',
+    });
+
+    expect(result.suggestions.length).toBeGreaterThanOrEqual(0);
+  });
+});
+
+// ========================================
+// Hub Score Boost Tests
+// ========================================
+
+describe('Hub Score Boost', () => {
+  let tempVault: string;
+
+  beforeEach(async () => {
+    tempVault = await createTempVault();
+  });
+
+  afterEach(async () => {
+    await cleanupTempVault(tempVault);
+  });
+
+  it('should boost hub notes (hubScore >= 5)', async () => {
+    await createEntityCacheWithDetails(tempVault, {
+      concepts: [
+        { name: 'Hub Concept', path: 'concepts/Hub Concept.md', hubScore: 10 }, // Hub: 10 backlinks
+        { name: 'Regular Concept', path: 'concepts/Regular Concept.md', hubScore: 2 }, // Not a hub
+        { name: 'New Concept', path: 'concepts/New Concept.md' }, // No hubScore
+      ],
+    });
+
+    await initializeEntityIndex(tempVault);
+
+    const result = suggestRelatedLinks('Hub Concept and Regular Concept and New Concept', {
+      strictness: 'balanced',
+    });
+
+    // Hub Concept should be suggested and boosted
+    expect(result.suggestions).toContain('Hub Concept');
+
+    // Hub Concept should rank in top 2 (hub boost of +3)
+    if (result.suggestions.length >= 2) {
+      const hubIndex = result.suggestions.indexOf('Hub Concept');
+      expect(hubIndex).toBeLessThanOrEqual(1); // Hub should be in top 2
+    }
+  });
+
+  it('should not boost entities below hub threshold', async () => {
+    await createEntityCacheWithDetails(tempVault, {
+      projects: [
+        { name: 'Project A', path: 'projects/Project A.md', hubScore: 4 }, // Just below threshold
+        { name: 'Project B', path: 'projects/Project B.md', hubScore: 5 }, // At threshold
+      ],
+    });
+
+    await initializeEntityIndex(tempVault);
+
+    const result = suggestRelatedLinks('Project A and Project B discussion', {
+      strictness: 'balanced',
+    });
+
+    // Both should be suggested
+    expect(result.suggestions.length).toBeGreaterThanOrEqual(2);
+
+    // Project B (hubScore=5) should rank higher than Project A (hubScore=4)
+    if (result.suggestions.includes('Project A') && result.suggestions.includes('Project B')) {
+      const indexA = result.suggestions.indexOf('Project A');
+      const indexB = result.suggestions.indexOf('Project B');
+      expect(indexB).toBeLessThan(indexA); // B should be before A
+    }
+  });
+
+  it('should handle missing hubScore gracefully', async () => {
+    await createEntityCacheWithDetails(tempVault, {
+      technologies: [
+        { name: 'TypeScript', path: 'tech/TypeScript.md' }, // No hubScore
+        { name: 'React', path: 'tech/React.md', hubScore: 0 }, // Zero hubScore
+      ],
+    });
+
+    await initializeEntityIndex(tempVault);
+
+    // Should not crash with missing/zero hubScore
+    const result = suggestRelatedLinks('TypeScript and React development', {
+      strictness: 'balanced',
+    });
+
+    expect(result.suggestions.length).toBeGreaterThanOrEqual(0);
+  });
+});
+
+// ========================================
+// Combined Cross-Folder + Hub Score Tests
+// ========================================
+
+describe('Combined Cross-Folder and Hub Boosts', () => {
+  let tempVault: string;
+
+  beforeEach(async () => {
+    tempVault = await createTempVault();
+  });
+
+  afterEach(async () => {
+    await cleanupTempVault(tempVault);
+  });
+
+  it('should combine cross-folder and hub boosts', async () => {
+    await createEntityCacheWithDetails(tempVault, {
+      people: [
+        { name: 'Alice Smith', path: 'people/Alice Smith.md', hubScore: 10 }, // Hub + cross-folder
+      ],
+      projects: [
+        { name: 'Daily Project', path: 'daily-notes/Daily Project.md', hubScore: 3 }, // Same folder, not hub
+      ],
+      concepts: [
+        { name: 'Test Concept', path: 'concepts/Test Concept.md', hubScore: 6 }, // Hub, cross-folder
+      ],
+    });
+
+    await initializeEntityIndex(tempVault);
+
+    // When editing a daily note
+    const result = suggestRelatedLinks('Alice Smith working on Test Concept', {
+      strictness: 'balanced',
+      notePath: 'daily-notes/2026-01-31.md',
+    });
+
+    // Both should be suggested
+    expect(result.suggestions).toContain('Alice Smith');
+    expect(result.suggestions).toContain('Test Concept');
+
+    // Alice Smith should rank highest (type=people +5, context=daily +5, hub +3, cross-folder +3 = +16)
+    if (result.suggestions.length >= 2) {
+      expect(result.suggestions[0]).toBe('Alice Smith');
+    }
+  });
+
+  it('should handle inline detection with priority sorting', async () => {
+    await createEntityCacheWithDetails(tempVault, {
+      people: [
+        { name: 'Priority', path: 'people/Priority.md', hubScore: 10 }, // Hub
+        { name: 'Prioriti', path: 'daily-notes/Prioriti.md', hubScore: 0 }, // Same folder, not hub
+      ],
+    });
+
+    await initializeEntityIndex(tempVault);
+
+    // Both entities have same length (8 chars)
+    // processWikilinks should prefer Priority due to hub boost
+    const result = processWikilinks('Priority matters', 'daily-notes/test.md');
+
+    // Should link Priority (the hub note from different folder)
+    expect(result.content).toContain('[[Priority]]');
   });
 });

@@ -7,13 +7,15 @@ How Flywheel-Crank suggests contextual wikilinks for your content.
 ## Table of Contents
 
 - [Overview](#overview)
-- [The 7-Layer Scoring Pipeline](#the-7-layer-scoring-pipeline)
+- [The 9-Layer Scoring Pipeline](#the-9-layer-scoring-pipeline)
 - [Quality Filters (Layers 1a-1b)](#quality-filters-layers-1a-1b)
 - [Word Matching (Layers 2-3)](#word-matching-layers-2-3)
 - [Co-occurrence Boost (Layer 4)](#co-occurrence-boost-layer-4)
 - [Type Boost (Layer 5)](#type-boost-layer-5)
 - [Context Boost (Layer 6)](#context-boost-layer-6)
 - [Recency Boost (Layer 7)](#recency-boost-layer-7)
+- [Cross-Folder Boost (Layer 8)](#cross-folder-boost-layer-8)
+- [Hub Score Boost (Layer 9)](#hub-score-boost-layer-9)
 - [Strictness Modes](#strictness-modes)
 - [Adaptive Thresholds](#adaptive-thresholds)
 - [Worked Example](#worked-example)
@@ -35,11 +37,11 @@ The result: suggestions that feel intelligent but are fully deterministic and re
 
 ---
 
-## The 7-Layer Scoring Pipeline
+## The 9-Layer Scoring Pipeline
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
-│  Input: Content text, vault entity index                        │
+│  Input: Content text, vault entity index, note path             │
 ├─────────────────────────────────────────────────────────────────┤
 │                                                                 │
 │  Layer 1a: Length Filter                                        │
@@ -65,6 +67,12 @@ The result: suggestions that feel intelligent but are fully deterministic and re
 │                                                                 │
 │  Layer 7: Recency Boost                                        │
 │  └── Boost recently-mentioned entities                          │
+│                                                                 │
+│  Layer 8: Cross-Folder Boost                 [NEW]              │
+│  └── +3 for entities from different folder                      │
+│                                                                 │
+│  Layer 9: Hub Score Boost                    [NEW]              │
+│  └── +3 for well-connected entities (5+ backlinks)              │
 │                                                                 │
 ├─────────────────────────────────────────────────────────────────┤
 │  Output: Top N entities sorted by score                         │
@@ -309,6 +317,68 @@ Days since mention | Boost
 
 ---
 
+## Cross-Folder Boost (Layer 8)
+
+Entities from different top-level folders get a boost to encourage cross-cutting connections.
+
+**Boost value:** +3 points
+
+**How it works:**
+1. Compare the top-level folder of the entity (`entity.path`) with the current note (`notePath`)
+2. If they differ, apply the boost
+
+**Example:**
+```
+Editing: "daily-notes/2026-01-31.md"
+Entity: "Project Alpha" in "projects/Project Alpha.md"
+
+Top-level folders:
+- Note: "daily-notes"
+- Entity: "projects"
+
+Different folders → +3 cross-folder boost
+```
+
+**Rationale:** Cross-cutting connections are more valuable for knowledge graphs. A person note linking to a project creates a richer network than project notes only linking to other projects.
+
+**No boost cases:**
+- Same folder (e.g., both in `projects/`)
+- Entity has no path
+- Note path not provided
+
+---
+
+## Hub Score Boost (Layer 9)
+
+Well-connected entities (hub notes) get a boost based on their backlink count.
+
+**Threshold:** 5 backlinks minimum
+**Boost value:** +3 points
+
+**How it works:**
+1. Flywheel computes backlink counts during graph build
+2. Entities with 5+ backlinks are marked as hub notes
+3. Hub notes get boosted in suggestions
+
+**Example:**
+```
+Entity: "TypeScript" (hubScore: 15 backlinks)
+Entity: "New Framework" (hubScore: 1 backlink)
+
+For content "TypeScript and New Framework discussion":
+- TypeScript: base score + hub boost (+3) = higher rank
+- New Framework: base score only
+```
+
+**Rationale:** Hub notes are central to your knowledge graph. They're well-established concepts that many other notes reference, making them more valuable to link to.
+
+**Requirements:**
+- Flywheel must be running and have built the vault index
+- Hub scores are exported to the entity cache after each graph build
+- Entities without hubScore or with hubScore < 5 receive no boost
+
+---
+
 ## Strictness Modes
 
 Three predefined configurations trade off precision vs. recall.
@@ -396,25 +466,25 @@ Path contains "projects/" → context = "project"
 
 **Step 3: Score entities**
 
-| Entity | Category | Word Match | Type Boost | Context Boost | Total |
-|--------|----------|------------|------------|---------------|-------|
-| Sarah | person | +10 (exact) | +5 | +0 | 15 |
-| Project Alpha | project | +20 (2 exact) | +3 | +5 | 28 |
-| Migration | concept | +3 (stem: "migrat") | +1 | +0 | 4 |
-| React | technology | +0 (no match) | +0 | +2 | 2 |
+| Entity | Category | Word Match | Type | Context | Cross-Folder | Hub | Total |
+|--------|----------|------------|------|---------|--------------|-----|-------|
+| Sarah | person | +10 (exact) | +5 | +0 | +3 (from people/) | +3 (10 backlinks) | 21 |
+| Project Alpha | project | +20 (2 exact) | +3 | +5 | +0 (same folder) | +0 (new project) | 28 |
+| Migration | concept | +3 (stem) | +1 | +0 | +3 (from concepts/) | +0 (2 backlinks) | 7 |
+| React | technology | +0 (no match) | +0 | +2 | +3 (from tech/) | +3 (8 backlinks) | 8 |
 
 **Step 4: Apply threshold (conservative = 15)**
 ```
 ✓ Project Alpha (28) - above threshold
-✓ Sarah (15) - meets threshold
-✗ Migration (4) - below threshold
-✗ React (2) - below threshold
+✓ Sarah (21) - above threshold (boosted by cross-folder + hub)
+✗ React (8) - below threshold (even with cross-folder + hub)
+✗ Migration (7) - below threshold
 ```
 
 **Step 5: Sort and limit (max 3)**
 ```
 1. Project Alpha (28)
-2. Sarah (15)
+2. Sarah (21)
 ```
 
 **Output:**
@@ -426,7 +496,7 @@ Path contains "projects/" → context = "project"
 
 ## Summary
 
-The wikilink inference algorithm uses 7 deterministic layers:
+The wikilink inference algorithm uses 9 deterministic layers:
 
 1. **Quality filters** - Remove article titles and long names
 2. **Exact matching** - Core word overlap
@@ -435,8 +505,14 @@ The wikilink inference algorithm uses 7 deterministic layers:
 5. **Type boost** - Prioritize valuable entity types
 6. **Context boost** - Match note type to entity type
 7. **Recency boost** - Favor recently-mentioned entities
+8. **Cross-folder boost** - Prioritize cross-cutting connections
+9. **Hub score boost** - Favor well-connected notes (5+ backlinks)
 
 Each layer adds confidence to the final score. Only entities above the strictness-dependent threshold become suggestions.
+
+**New in this version:** Layers 8 and 9 add graph-aware intelligence:
+- **Cross-folder** encourages linking between different areas of your vault
+- **Hub score** surfaces your most connected and central notes
 
 ---
 

@@ -227,12 +227,49 @@ export function getEntityIndex(): EntityIndex | null {
 }
 
 /**
+ * Sort entities by priority for inline wikilink detection
+ *
+ * vault-core's applyWikilinks re-sorts by name length (longest first),
+ * but preserves order for same-length entities. By sorting by priority
+ * first, we ensure higher-priority entities (cross-folder, hub notes)
+ * get linked first when multiple entities have the same length.
+ *
+ * @param entities - Entities to sort
+ * @param notePath - Path to the note being edited (for cross-folder boost)
+ * @returns Sorted entities with highest priority first
+ */
+function sortEntitiesByPriority(entities: Entity[], notePath?: string): Entity[] {
+  return [...entities].sort((a, b) => {
+    const entityA = typeof a === 'string' ? { name: a, path: '', aliases: [] } : a;
+    const entityB = typeof b === 'string' ? { name: b, path: '', aliases: [] } : b;
+
+    // Calculate priority scores
+    let priorityA = 0;
+    let priorityB = 0;
+
+    // Cross-folder boost
+    if (notePath) {
+      priorityA += getCrossFolderBoost(entityA.path, notePath);
+      priorityB += getCrossFolderBoost(entityB.path, notePath);
+    }
+
+    // Hub score boost
+    priorityA += getHubBoost(entityA);
+    priorityB += getHubBoost(entityB);
+
+    // Higher priority first
+    return priorityB - priorityA;
+  });
+}
+
+/**
  * Process content through wikilink application
  *
  * @param content - Content to process
+ * @param notePath - Optional path to the note for priority sorting
  * @returns Content with wikilinks applied, or original if index not ready
  */
-export function processWikilinks(content: string): WikilinkResult {
+export function processWikilinks(content: string, notePath?: string): WikilinkResult {
   if (!isEntityIndexReady() || !entityIndex) {
     return {
       content,
@@ -242,7 +279,11 @@ export function processWikilinks(content: string): WikilinkResult {
   }
 
   const entities = getAllEntities(entityIndex);
-  return applyWikilinks(content, entities, {
+
+  // Sort by priority (cross-folder + hub) for same-length entity preference
+  const sortedEntities = sortEntitiesByPriority(entities, notePath);
+
+  return applyWikilinks(content, sortedEntities, {
     firstOccurrenceOnly: true,
     caseInsensitive: true,
   });
@@ -253,17 +294,19 @@ export function processWikilinks(content: string): WikilinkResult {
  *
  * @param content - Content to potentially wikilink
  * @param skipWikilinks - If true, skip wikilink processing
+ * @param notePath - Optional path to the note for priority sorting
  * @returns Processed content (with or without wikilinks)
  */
 export function maybeApplyWikilinks(
   content: string,
-  skipWikilinks: boolean
+  skipWikilinks: boolean,
+  notePath?: string
 ): { content: string; wikilinkInfo?: string } {
   if (skipWikilinks) {
     return { content };
   }
 
-  const result = processWikilinks(content);
+  const result = processWikilinks(content, notePath);
 
   if (result.linksAdded > 0) {
     return {
@@ -485,6 +528,60 @@ const TYPE_BOOST: Record<EntityCategory, number> = {
   acronyms: 0,       // Acronyms may be ambiguous
   other: 0,          // Unknown category
 };
+
+/**
+ * Cross-folder boost - prioritize cross-cutting connections
+ *
+ * Entities from different top-level folders are more valuable for
+ * building cross-cutting connections in the knowledge graph.
+ * A person note linking to a project note is more valuable than
+ * project notes linking to other project notes.
+ */
+const CROSS_FOLDER_BOOST = 3;
+
+/**
+ * Hub note boost - prioritize well-connected notes
+ *
+ * Notes with many backlinks (hub notes) are typically more central
+ * to the knowledge graph and more useful to link to.
+ */
+const HUB_THRESHOLD = 5;  // Minimum backlinks to be considered a hub
+const HUB_BOOST = 3;      // Boost for hub notes
+
+/**
+ * Get cross-folder boost for an entity
+ *
+ * @param entityPath - Path to the entity note
+ * @param notePath - Path to the note being edited
+ * @returns Boost value if cross-folder, 0 otherwise
+ */
+function getCrossFolderBoost(entityPath: string, notePath: string): number {
+  if (!entityPath || !notePath) return 0;
+
+  // Get top-level folder for each path
+  const entityFolder = entityPath.split('/')[0];
+  const noteFolder = notePath.split('/')[0];
+
+  // Boost if folders are different and both are non-empty
+  if (entityFolder && noteFolder && entityFolder !== noteFolder) {
+    return CROSS_FOLDER_BOOST;
+  }
+
+  return 0;
+}
+
+/**
+ * Get hub score boost for an entity
+ *
+ * @param entity - Entity object with optional hubScore
+ * @returns Boost value if hub note, 0 otherwise
+ */
+function getHubBoost(entity: { hubScore?: number }): number {
+  if (entity.hubScore !== undefined && entity.hubScore >= HUB_THRESHOLD) {
+    return HUB_BOOST;
+  }
+  return 0;
+}
 
 /**
  * Context-aware boost per note type and entity category
@@ -820,6 +917,14 @@ export function suggestRelatedLinks(
       score += getRecencyBoost(entityName, recencyIndex);
     }
 
+    // Layer 8: Cross-folder boost - prioritize cross-cutting connections
+    if (notePath && entity.path) {
+      score += getCrossFolderBoost(entity.path, notePath);
+    }
+
+    // Layer 9: Hub score boost - prioritize well-connected notes
+    score += getHubBoost(entity);
+
     if (score > 0) {
       directlyMatchedEntities.add(entityName);
     }
@@ -852,11 +957,13 @@ export function suggestRelatedLinks(
         if (existing) {
           existing.score += boost;
         } else {
-          // For purely co-occurrence-based suggestions, also add type, context, and recency boost
+          // For purely co-occurrence-based suggestions, also add type, context, recency, cross-folder, and hub boosts
           const typeBoost = TYPE_BOOST[category] || 0;
           const contextBoost = contextBoosts[category] || 0;
           const recencyBoostVal = recencyIndex ? getRecencyBoost(entityName, recencyIndex) : 0;
-          const totalBoost = boost + typeBoost + contextBoost + recencyBoostVal;
+          const crossFolderBoost = (notePath && entity.path) ? getCrossFolderBoost(entity.path, notePath) : 0;
+          const hubBoost = getHubBoost(entity);
+          const totalBoost = boost + typeBoost + contextBoost + recencyBoostVal + crossFolderBoost + hubBoost;
           if (totalBoost >= adaptiveMinScore) {
             // Add entity if boost meets threshold
             scoredEntities.push({ name: entityName, score: totalBoost, category });

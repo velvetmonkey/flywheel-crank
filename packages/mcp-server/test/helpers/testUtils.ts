@@ -263,3 +263,79 @@ export async function createEntityCache(
     JSON.stringify(cache, null, 2)
   );
 }
+
+/**
+ * Full entity details for createEntityCacheWithDetails
+ */
+export interface EntityDetails {
+  name: string;
+  path: string;
+  aliases?: string[];
+  hubScore?: number;
+}
+
+/**
+ * Entity categories with full details for createEntityCacheWithDetails
+ */
+export interface EntityCategoriesWithDetails {
+  people?: EntityDetails[];
+  projects?: EntityDetails[];
+  technologies?: EntityDetails[];
+  acronyms?: EntityDetails[];
+  concepts?: EntityDetails[];
+  organizations?: EntityDetails[];
+  locations?: EntityDetails[];
+  other?: EntityDetails[];
+}
+
+/**
+ * Create a pre-populated entity cache file with full entity details
+ * Supports custom paths and hubScores for testing cross-folder and hub boosts
+ */
+export async function createEntityCacheWithDetails(
+  vaultPath: string,
+  entities: EntityCategoriesWithDetails,
+  generatedAt?: Date
+): Promise<void> {
+  const cacheDir = path.join(vaultPath, '.claude');
+  await mkdir(cacheDir, { recursive: true });
+
+  const normalizeEntities = (entityList?: EntityDetails[]) =>
+    (entityList || []).map((e) => ({
+      name: e.name,
+      path: e.path,
+      aliases: e.aliases || [],
+      hubScore: e.hubScore,
+    }));
+
+  const cache = {
+    _metadata: {
+      generated_at: (generatedAt || new Date()).toISOString(),
+      vault_path: vaultPath,
+      source: 'test-utils createEntityCacheWithDetails',
+      version: ENTITY_CACHE_VERSION,
+      total_entities:
+        (entities.people?.length || 0) +
+        (entities.projects?.length || 0) +
+        (entities.technologies?.length || 0) +
+        (entities.acronyms?.length || 0) +
+        (entities.concepts?.length || 0) +
+        (entities.organizations?.length || 0) +
+        (entities.locations?.length || 0) +
+        (entities.other?.length || 0),
+    },
+    people: normalizeEntities(entities.people),
+    projects: normalizeEntities(entities.projects),
+    technologies: normalizeEntities(entities.technologies),
+    acronyms: normalizeEntities(entities.acronyms),
+    concepts: normalizeEntities(entities.concepts),
+    organizations: normalizeEntities(entities.organizations),
+    locations: normalizeEntities(entities.locations),
+    other: normalizeEntities(entities.other),
+  };
+
+  await writeFile(
+    path.join(cacheDir, 'wikilink-entities.json'),
+    JSON.stringify(cache, null, 2)
+  );
+}
