@@ -22,6 +22,7 @@
 import {
   scanVaultEntities,
   getAllEntities,
+  getAllEntitiesWithTypes,
   getEntityName,
   getEntityAliases,
   applyWikilinks,
@@ -29,11 +30,13 @@ import {
   saveEntityCache,
   ENTITY_CACHE_VERSION,
   type EntityIndex,
+  type EntityCategory,
+  type EntityWithType,
   type WikilinkResult,
   type Entity,
 } from '@velvetmonkey/vault-core';
 import path from 'path';
-import type { SuggestOptions, SuggestResult, SuggestionConfig, StrictnessMode } from './types.js';
+import type { SuggestOptions, SuggestResult, SuggestionConfig, StrictnessMode, NoteContext } from './types.js';
 import { stem, tokenize } from './stemmer.js';
 import {
   mineCooccurrences,
@@ -42,6 +45,14 @@ import {
   deserializeCooccurrenceIndex,
   type CooccurrenceIndex,
 } from './cooccurrence.js';
+import {
+  buildRecencyIndex,
+  getRecencyBoost,
+  loadRecencyCache,
+  saveRecencyCache,
+  RECENCY_CACHE_VERSION,
+  type RecencyIndex,
+} from './recency.js';
 
 /**
  * Global entity index state
@@ -54,6 +65,11 @@ let indexError: Error | null = null;
  * Global co-occurrence index state
  */
 let cooccurrenceIndex: CooccurrenceIndex | null = null;
+
+/**
+ * Global recency index state
+ */
+let recencyIndex: RecencyIndex | null = null;
 
 /**
  * Folders to exclude from entity scanning
@@ -140,15 +156,42 @@ async function rebuildIndex(vaultPath: string, cacheFile: string): Promise<void>
   const entityDuration = Date.now() - startTime;
   console.error(`[Crank] Entity index built: ${entityIndex._metadata.total_entities} entities in ${entityDuration}ms`);
 
+  // Get entities for secondary indexes
+  const entities = getAllEntities(entityIndex);
+
   // Mine co-occurrences for conceptual suggestions
   try {
     const cooccurrenceStart = Date.now();
-    const entities = getAllEntities(entityIndex);
     cooccurrenceIndex = await mineCooccurrences(vaultPath, entities);
     const cooccurrenceDuration = Date.now() - cooccurrenceStart;
     console.error(`[Crank] Co-occurrence index built: ${cooccurrenceIndex._metadata.total_associations} associations in ${cooccurrenceDuration}ms`);
   } catch (e) {
     console.error(`[Crank] Failed to build co-occurrence index: ${e}`);
+  }
+
+  // Build recency index for temporal suggestions
+  const recencyCacheFile = path.join(vaultPath, '.claude', 'entity-recency.json');
+  try {
+    // Try loading from cache first
+    const cachedRecency = await loadRecencyCache(recencyCacheFile);
+    const cacheAgeMs = cachedRecency ? Date.now() - cachedRecency.lastUpdated : Infinity;
+
+    if (cachedRecency && cacheAgeMs < 60 * 60 * 1000) {
+      // Cache is valid and less than 1 hour old
+      recencyIndex = cachedRecency;
+      console.error(`[Crank] Recency index loaded from cache (${recencyIndex.lastMentioned.size} entities)`);
+    } else {
+      // Build fresh recency index
+      const recencyStart = Date.now();
+      recencyIndex = await buildRecencyIndex(vaultPath, entities);
+      const recencyDuration = Date.now() - recencyStart;
+      console.error(`[Crank] Recency index built: ${recencyIndex.lastMentioned.size} entities in ${recencyDuration}ms`);
+
+      // Save to cache
+      await saveRecencyCache(recencyCacheFile, recencyIndex);
+    }
+  } catch (e) {
+    console.error(`[Crank] Failed to build recency index: ${e}`);
   }
 
   // Save to cache
@@ -426,6 +469,116 @@ const STRICTNESS_CONFIGS: Record<StrictnessMode, SuggestionConfig> = {
  */
 const DEFAULT_STRICTNESS: StrictnessMode = 'conservative';
 
+/**
+ * Type-based score boost per entity category
+ *
+ * People and projects are typically more useful to link than
+ * common technologies (which may over-saturate links).
+ */
+const TYPE_BOOST: Record<EntityCategory, number> = {
+  people: 5,         // Names are high value for connections
+  projects: 3,       // Projects provide context
+  organizations: 2,  // Companies/teams relevant
+  locations: 1,      // Geographic context
+  concepts: 1,       // Abstract concepts
+  technologies: 0,   // Common, avoid over-suggesting
+  acronyms: 0,       // Acronyms may be ambiguous
+  other: 0,          // Unknown category
+};
+
+/**
+ * Context-aware boost per note type and entity category
+ *
+ * Boosts entity types that are more relevant to specific note contexts:
+ * - Daily notes: people are most relevant (who did I interact with?)
+ * - Project notes: projects and technologies are most relevant
+ * - Tech docs: technologies and acronyms are most relevant
+ */
+const CONTEXT_BOOST: Record<NoteContext, Partial<Record<EntityCategory, number>>> = {
+  daily: {
+    people: 5,       // Daily notes often mention people
+    projects: 2,     // Work updates reference projects
+  },
+  project: {
+    projects: 5,     // Project docs reference other projects
+    technologies: 2, // Technical dependencies
+  },
+  tech: {
+    technologies: 5, // Tech docs reference technologies
+    acronyms: 3,     // Technical acronyms
+  },
+  general: {},       // No context-specific boost
+};
+
+/**
+ * Detect note context from path
+ *
+ * Analyzes path segments to determine note type for context-aware boosting.
+ *
+ * @param notePath - Path to the note (vault-relative)
+ * @returns Detected note context
+ */
+function getNoteContext(notePath: string): NoteContext {
+  const lower = notePath.toLowerCase();
+
+  // Daily notes, journals, logs
+  if (
+    lower.includes('daily-notes') ||
+    lower.includes('daily/') ||
+    lower.includes('journal') ||
+    lower.includes('logs/') ||
+    lower.includes('/log/')
+  ) {
+    return 'daily';
+  }
+
+  // Project and systems documentation
+  if (
+    lower.includes('projects/') ||
+    lower.includes('project/') ||
+    lower.includes('systems/') ||
+    lower.includes('initiatives/')
+  ) {
+    return 'project';
+  }
+
+  // Technical documentation
+  if (
+    lower.includes('tech/') ||
+    lower.includes('code/') ||
+    lower.includes('engineering/') ||
+    lower.includes('docs/') ||
+    lower.includes('documentation/')
+  ) {
+    return 'tech';
+  }
+
+  return 'general';
+}
+
+/**
+ * Get adaptive minimum score based on content length
+ *
+ * Short content (<50 chars) needs lower thresholds to get any suggestions.
+ * Long content (>200 chars) should require stronger matches to avoid noise.
+ *
+ * @param contentLength - Length of content in characters
+ * @param baseScore - Base minimum score from strictness config
+ * @returns Adjusted minimum score
+ */
+function getAdaptiveMinScore(contentLength: number, baseScore: number): number {
+  if (contentLength < 50) {
+    // Short content: lower threshold to allow suggestions
+    return Math.max(5, Math.floor(baseScore * 0.6));
+  }
+  if (contentLength > 200) {
+    // Long content: higher threshold for stronger matches
+    return Math.floor(baseScore * 1.2);
+  }
+  // Standard threshold for medium-length content
+  return baseScore;
+}
+
 // Legacy constants (kept for backward compatibility, use STRICTNESS_CONFIGS instead)
 const MIN_SUGGESTION_SCORE = STRICTNESS_CONFIGS.balanced.minSuggestionScore;
 const MIN_MATCH_RATIO = STRICTNESS_CONFIGS.balanced.minMatchRatio;
@@ -587,11 +740,19 @@ export function suggestRelatedLinks(
   const {
     maxSuggestions = 3,
     excludeLinked = true,
-    strictness = DEFAULT_STRICTNESS
+    strictness = DEFAULT_STRICTNESS,
+    notePath
   } = options;
 
   // Get config for the specified strictness mode
   const config = STRICTNESS_CONFIGS[strictness];
+
+  // Compute adaptive minimum score based on content length
+  const adaptiveMinScore = getAdaptiveMinScore(content.length, config.minSuggestionScore);
+
+  // Detect note context for context-aware boosting
+  const noteContext = notePath ? getNoteContext(notePath) : 'general';
+  const contextBoosts = CONTEXT_BOOST[noteContext];
 
   // Empty result for quick returns
   const emptyResult: SuggestResult = { suggestions: [], suffix: '' };
@@ -606,9 +767,9 @@ export function suggestRelatedLinks(
     return emptyResult;
   }
 
-  // Get all entities
-  const entities = getAllEntities(entityIndex);
-  if (entities.length === 0) {
+  // Get all entities with type information for category-based boosting
+  const entitiesWithTypes = getAllEntitiesWithTypes(entityIndex);
+  if (entitiesWithTypes.length === 0) {
     return emptyResult;
   }
 
@@ -622,12 +783,12 @@ export function suggestRelatedLinks(
   const linkedEntities = excludeLinked ? extractLinkedEntities(content) : new Set<string>();
 
   // First pass: Score entities and track which ones matched directly
-  const scoredEntities: Array<{ name: string; score: number }> = [];
+  const scoredEntities: Array<{ name: string; score: number; category: EntityCategory }> = [];
   const directlyMatchedEntities = new Set<string>();
 
-  for (const entity of entities) {
-    // Get entity name using helper (handles both string and object formats)
-    const entityName = getEntityName(entity);
+  for (const { entity, category } of entitiesWithTypes) {
+    // Get entity name
+    const entityName = entity.name;
     if (!entityName) continue;
 
     // Layer 1a: Length filter - skip article titles, clippings (>25 chars)
@@ -646,15 +807,26 @@ export function suggestRelatedLinks(
     }
 
     // Layers 2+3: Exact match, stem match, and alias matching (bonuses depend on strictness)
-    const score = scoreEntity(entity, contentTokens, contentStems, config);
+    let score = scoreEntity(entity, contentTokens, contentStems, config);
+
+    // Layer 5: Type boost - prioritize people, projects over common technologies
+    score += TYPE_BOOST[category] || 0;
+
+    // Layer 6: Context boost - boost types relevant to note context
+    score += contextBoosts[category] || 0;
+
+    // Layer 7: Recency boost - boost recently-mentioned entities
+    if (recencyIndex) {
+      score += getRecencyBoost(entityName, recencyIndex);
+    }
 
     if (score > 0) {
       directlyMatchedEntities.add(entityName);
     }
 
-    // Minimum threshold depends on strictness mode
-    if (score >= config.minSuggestionScore) {
-      scoredEntities.push({ name: entityName, score });
+    // Minimum threshold (adaptive based on content length)
+    if (score >= adaptiveMinScore) {
+      scoredEntities.push({ name: entityName, score, category });
     }
   }
 
@@ -662,8 +834,8 @@ export function suggestRelatedLinks(
   // This allows entities that didn't match directly but are conceptually related
   // to be suggested
   if (cooccurrenceIndex && directlyMatchedEntities.size > 0) {
-    for (const entity of entities) {
-      const entityName = getEntityName(entity);
+    for (const { entity, category } of entitiesWithTypes) {
+      const entityName = entity.name;
       if (!entityName) continue;
 
       // Skip if already scored, already linked, too long, or article-like
@@ -679,9 +851,16 @@ export function suggestRelatedLinks(
         const existing = scoredEntities.find(e => e.name === entityName);
         if (existing) {
           existing.score += boost;
-        } else if (boost >= config.minSuggestionScore) {
-          // Add entity if boost alone meets threshold
-          scoredEntities.push({ name: entityName, score: boost });
+        } else {
+          // For purely co-occurrence-based suggestions, also add type, context, and recency boost
+          const typeBoost = TYPE_BOOST[category] || 0;
+          const contextBoost = contextBoosts[category] || 0;
+          const recencyBoostVal = recencyIndex ? getRecencyBoost(entityName, recencyIndex) : 0;
+          const totalBoost = boost + typeBoost + contextBoost + recencyBoostVal;
+          if (totalBoost >= adaptiveMinScore) {
+            // Add entity if boost meets threshold
+            scoredEntities.push({ name: entityName, score: totalBoost, category });
+          }
         }
       }
     }

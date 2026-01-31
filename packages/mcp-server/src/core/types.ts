@@ -73,6 +73,17 @@ export interface InsertionOptions {
 export type StrictnessMode = 'conservative' | 'balanced' | 'aggressive';
 
 /**
+ * Note context type inferred from path
+ *
+ * Used for context-aware entity boosting:
+ * - 'daily': Daily notes, journals, logs - prioritize people mentions
+ * - 'project': Project notes, systems - prioritize project/tech entities
+ * - 'tech': Technical docs, code notes - prioritize technologies/acronyms
+ * - 'general': Other notes - no context-specific boost
+ */
+export type NoteContext = 'daily' | 'project' | 'tech' | 'general';
+
+/**
  * Configuration for suggestion scoring algorithm
  */
 export interface SuggestionConfig {
@@ -94,6 +105,7 @@ export interface SuggestOptions {
   maxSuggestions?: number;    // default: 3
   excludeLinked?: boolean;    // exclude entities already in content (default: true)
   strictness?: StrictnessMode; // default: 'conservative'
+  notePath?: string;          // path to note for context-aware boosting
 }
 
 export interface SuggestResult {
