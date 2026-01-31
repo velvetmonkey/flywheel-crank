@@ -547,3 +547,94 @@ describe('CRLF Round-Trip Preservation', () => {
     expect(result).not.toContain('\r\n');
   });
 });
+
+describe('Block-Aware Formatting Golden Tests', () => {
+  let tempVault: string;
+
+  beforeEach(async () => {
+    tempVault = await createTempVault();
+  });
+
+  afterEach(async () => {
+    await cleanupTempVault(tempVault);
+  });
+
+  it('should preserve table alignment when adding log entry with embedded table', async () => {
+    const input = await readGoldenFile(INPUT_DIR, 'complex-log-entry.md');
+    const expected = await readGoldenFile(EXPECTED_DIR, 'complex-log-entry.add-table.md');
+
+    await fs.writeFile(path.join(tempVault, 'test.md'), input);
+
+    const { content, frontmatter, lineEnding } = await readVaultFile(tempVault, 'test.md');
+    const section = findSection(content, 'Log')!;
+
+    // Add a log entry with an embedded table
+    const newContent = `- **11:00** Released v0.10.1
+| Component | Version | Status |
+| --------- | ------- | ------ |
+| Server    | 0.10.1  | OK     |
+| Client    | 0.10.1  | OK     |`;
+
+    const modified = insertInSection(content, section, newContent, 'append');
+    await writeVaultFile(tempVault, 'test.md', modified, frontmatter, lineEnding);
+
+    const result = await fs.readFile(path.join(tempVault, 'test.md'), 'utf-8');
+    expect(normalizeLineEndings(result)).toBe(normalizeLineEndings(expected));
+  });
+
+  it('should preserve code block fences when adding log entry with code', async () => {
+    const input = await readGoldenFile(INPUT_DIR, 'code-in-bullet.md');
+    const expected = await readGoldenFile(EXPECTED_DIR, 'code-in-bullet.add-code.md');
+
+    await fs.writeFile(path.join(tempVault, 'test.md'), input);
+
+    const { content, frontmatter, lineEnding } = await readVaultFile(tempVault, 'test.md');
+    const section = findSection(content, 'Log')!;
+
+    // Add a log entry with an embedded code block
+    const newContent = `- **10:00** Found the bug:
+\`\`\`javascript
+function broken() {
+  return undefined;
+}
+\`\`\``;
+
+    const modified = insertInSection(content, section, newContent, 'append');
+    await writeVaultFile(tempVault, 'test.md', modified, frontmatter, lineEnding);
+
+    const result = await fs.readFile(path.join(tempVault, 'test.md'), 'utf-8');
+    expect(normalizeLineEndings(result)).toBe(normalizeLineEndings(expected));
+  });
+
+  it('should preserve mixed structures (blockquote, table, code) in single entry', async () => {
+    const input = await readGoldenFile(INPUT_DIR, 'mixed-structures.md');
+    const expected = await readGoldenFile(EXPECTED_DIR, 'mixed-structures.add-complex.md');
+
+    await fs.writeFile(path.join(tempVault, 'test.md'), input);
+
+    const { content, frontmatter, lineEnding } = await readVaultFile(tempVault, 'test.md');
+    const section = findSection(content, 'Discussion')!;
+
+    // Add content with blockquote, table, and code block
+    const newContent = `- Review of architecture:
+> The key insight is that we need
+> to separate concerns properly.
+
+| Module | Owner | Status |
+| ------ | ----- | ------ |
+| Auth   | Alice | Done   |
+| API    | Bob   | WIP    |
+
+\`\`\`typescript
+interface Config {
+  debug: boolean;
+}
+\`\`\``;
+
+    const modified = insertInSection(content, section, newContent, 'append');
+    await writeVaultFile(tempVault, 'test.md', modified, frontmatter, lineEnding);
+
+    const result = await fs.readFile(path.join(tempVault, 'test.md'), 'utf-8');
+    expect(normalizeLineEndings(result)).toBe(normalizeLineEndings(expected));
+  });
+});

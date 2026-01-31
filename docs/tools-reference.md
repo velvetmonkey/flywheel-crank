@@ -88,6 +88,9 @@ Add content to a markdown section with automatic formatting.
 | `skipWikilinks` | boolean | No | Disable auto-wikilinks (default: `false`) |
 | `suggestOutgoingLinks` | boolean | No | Append entity suggestions (default: `true`) |
 | `maxSuggestions` | number | No | Max suggested wikilinks (1-10, default: `3`) |
+| `validate` | boolean | No | Check input for common issues (default: `true`) |
+| `normalize` | boolean | No | Auto-fix common issues like non-markdown bullets (default: `true`) |
+| `guardrails` | `warn` \| `strict` \| `off` | No | Output validation mode (default: `warn`) |
 
 **Format Types:**
 | Format | Output Example |
@@ -168,6 +171,9 @@ Replace content in a section (supports regex capture groups).
 | `skipWikilinks` | boolean | No | Disable auto-wikilinks on replacement |
 | `suggestOutgoingLinks` | boolean | No | Append entity suggestions (default: `true`) |
 | `maxSuggestions` | number | No | Max suggested wikilinks (1-10, default: `3`) |
+| `validate` | boolean | No | Check input for common issues (default: `true`) |
+| `normalize` | boolean | No | Auto-fix common issues like non-markdown bullets (default: `true`) |
+| `guardrails` | `warn` \| `strict` \| `off` | No | Output validation mode (default: `warn`) |
 
 **Example with Regex Capture:**
 
@@ -238,6 +244,9 @@ Add a new task to a section.
 | `skipWikilinks` | boolean | No | Disable auto-wikilinks |
 | `suggestOutgoingLinks` | boolean | No | Append entity suggestions (default: `true`) |
 | `maxSuggestions` | number | No | Max suggested wikilinks (1-10, default: `3`) |
+| `validate` | boolean | No | Check input for common issues (default: `true`) |
+| `normalize` | boolean | No | Auto-fix common issues like non-markdown bullets (default: `true`) |
+| `guardrails` | `warn` \| `strict` \| `off` | No | Output validation mode (default: `warn`) |
 
 **Example:**
 
@@ -461,6 +470,73 @@ Crank automatically applies wikilinks to content containing known entities.
 
 ---
 
+## Input Validation & Output Guardrails
+
+Crank v0.11.0 introduces three layers of content protection to prevent formatting issues.
+
+### Validation Warnings
+
+When `validate: true` (default), the tool checks for common input issues:
+
+| Warning Type | Example | Suggestion |
+|--------------|---------|------------|
+| `double-timestamp` | Content `**12:30** text` with `format: timestamp-bullet` | Use `format: 'plain'` instead |
+| `non-markdown-bullets` | Content uses `•` or `◦` characters | Use `-` for markdown bullets |
+| `embedded-heading` | Content contains `## Heading` syntax | Use bold `**text**` instead |
+| `orphaned-fence` | Odd number of ``` markers | Ensure code blocks are closed |
+
+### Normalization
+
+When `normalize: true` (default), common issues are auto-fixed:
+
+| Issue | Normalization |
+|-------|---------------|
+| `•` or `◦` bullets | Replaced with `-` |
+| Duplicate timestamps | Stripped when format is `timestamp-bullet` |
+| Excessive blank lines | Reduced to max 2 consecutive |
+
+### Guardrails Modes
+
+The `guardrails` parameter controls output validation behavior:
+
+| Mode | Behavior |
+|------|----------|
+| `warn` (default) | Check output, include warnings in response, proceed with write |
+| `strict` | Check output, **block write** if errors detected (e.g., broken table, orphaned fence) |
+| `off` | Skip output validation |
+
+### Output Issues Detected
+
+| Issue Type | Severity | Description |
+|------------|----------|-------------|
+| `broken-table` | error | Table rows have inconsistent pipe counts |
+| `orphaned-fence` | error | Odd number of code fence markers |
+| `indented-fence` | warning | Code fence marker is indented (may break rendering) |
+| `broken-blockquote` | warning | Blockquote continuation missing `>` prefix |
+
+### Block-Aware Formatting
+
+Content containing structured markdown elements is preserved without indentation:
+- **Code blocks** - Fence markers and content preserved as-is
+- **Tables** - Pipe alignment maintained
+- **Blockquotes** - `>` prefix structure preserved
+- **Horizontal rules** - `---`, `***`, `___` not indented
+
+**Example:**
+
+```markdown
+## Log
+
+- **10:00** Released version 0.11.0
+| Component | Status |
+| --------- | ------ |
+| Server    | OK     |
+```
+
+The table is added without corrupting the pipe alignment.
+
+---
+
 ## Configuration
 
 ### Environment Variables
@@ -524,9 +600,12 @@ interface MutationResult {
   success: boolean;
   message: string;
   path: string;
-  preview?: string;      // Content preview if applicable
-  gitCommit?: string;    // Commit hash if committed
-  gitError?: string;     // Git error if commit failed
+  preview?: string;           // Content preview if applicable
+  gitCommit?: string;         // Commit hash if committed
+  gitError?: string;          // Git error if commit failed
+  warnings?: ValidationWarning[];      // Input validation warnings
+  outputIssues?: OutputIssue[];        // Output guardrail issues
+  normalizationChanges?: string[];     // Changes made by normalizer
 }
 ```
 

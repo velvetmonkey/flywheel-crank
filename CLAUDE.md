@@ -311,10 +311,51 @@ export function registerMutationTools(
 ### `git.ts` ✅
 
 - `isGitRepo(vaultPath)` - Check if directory is a git repo
-- `commitChange(vaultPath, filePath, messagePrefix)` - Commit a file change
+- `commitChange(vaultPath, filePath, messagePrefix)` - Commit a file change (tracks for safe undo)
 - `getLastCommit(vaultPath)` - Get last commit info (hash, message, date, author)
 - `undoLastCommit(vaultPath)` - Soft reset to HEAD~1
 - `hasUncommittedChanges(vaultPath)` - Check for uncommitted changes
+- `saveLastCrankCommit(vaultPath, hash, message)` - Track last Crank commit for safe undo
+- `getLastCrankCommit(vaultPath)` - Get tracked Crank commit info
+- `clearLastCrankCommit(vaultPath)` - Clear tracking after successful undo
+
+---
+
+## Git Strategy: Best-Effort Commits
+
+### Design Philosophy
+Crank treats git commits as **best-effort** - file mutations always succeed, even if git operations fail.
+
+### Success/Failure Semantics
+
+| Scenario | `success` | `gitCommit` | `gitError` |
+|----------|-----------|-------------|------------|
+| Mutation + commit succeed | `true` | `"abc123"` | - |
+| Mutation succeeds, git fails | `true` | - | `"lock error..."` |
+| Mutation fails | `false` | - | - |
+
+**Key principle:** `success: true` means the file was mutated. Git status is separate.
+
+### Lock Contention Handling
+When multiple processes compete for `.git/index.lock`:
+1. File mutation proceeds normally
+2. Git commit fails with lock error
+3. `gitError` field captures the failure
+4. `success` remains `true` (file was changed)
+
+### Undo Safety
+`vault_undo_last_mutation` tracks the last successful Crank commit:
+- Stores tracking in `.claude/last-crank-commit.json`
+- Only allows undo if HEAD matches the expected commit
+- Prevents accidental undo of unrelated commits
+- Warns if another process committed after your mutation
+- Clears tracking after successful undo
+
+### Why This Design?
+- **Prioritizes data integrity** - your content changes are never blocked
+- **Handles concurrent access** - multiple Claude instances can work safely
+- **Graceful degradation** - git is optional, not required
+- **Safe undo** - prevents undoing commits from other processes
 
 ---
 
@@ -449,15 +490,15 @@ npm run test:watch
 ### Mutation Tools (`mutations.ts`)
 | Tool | Description |
 |------|-------------|
-| `vault_add_to_section` | Add content to a section with formatting options. `preserveListNesting=true` (default) respects existing list indentation when appending/prepending to nested lists. `suggestOutgoingLinks=true` (default) appends contextual wikilink suggestions (e.g., `→ [[AI]] [[Philosophy]]`). |
+| `vault_add_to_section` | Add content to a section with formatting options. `preserveListNesting=true` (default) respects existing list indentation. `suggestOutgoingLinks=true` (default) appends contextual wikilink suggestions. Now includes input validation (`validate`, `normalize`) and output guardrails (`guardrails`). Block-aware: preserves code blocks, tables, blockquotes without corrupting indentation. |
 | `vault_remove_from_section` | Remove matching lines from a section |
-| `vault_replace_in_section` | Replace content in a section. `suggestOutgoingLinks=true` (default) appends contextual wikilink suggestions. |
+| `vault_replace_in_section` | Replace content in a section. `suggestOutgoingLinks=true` (default) appends contextual wikilink suggestions. Includes validation and guardrails options. |
 
 ### Task Tools (`tasks.ts`)
 | Tool | Description |
 |------|-------------|
 | `vault_toggle_task` | Toggle task checkbox (checked/unchecked) |
-| `vault_add_task` | Add a new task to a section. `suggestOutgoingLinks=true` (default) appends contextual wikilink suggestions. |
+| `vault_add_task` | Add a new task to a section. `suggestOutgoingLinks=true` (default) appends contextual wikilink suggestions. Includes validation and guardrails options. |
 
 ### Frontmatter Tools (`frontmatter.ts`)
 | Tool | Description |

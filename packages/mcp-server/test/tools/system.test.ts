@@ -13,6 +13,9 @@ import {
   getLastCommit,
   undoLastCommit,
   commitChange,
+  saveLastCrankCommit,
+  getLastCrankCommit,
+  clearLastCrankCommit,
 } from '../../src/core/git.js';
 import {
   createTempVault,
@@ -280,5 +283,142 @@ describe('vault_undo_last_mutation integration workflow', () => {
     expect(result).toBe(false);
 
     await cleanupTempVault(nonGitVault);
+  });
+});
+
+describe('Crank commit tracking for safe undo', () => {
+  let tempVault: string;
+
+  beforeEach(async () => {
+    tempVault = await createTempVault();
+    // Initialize git repo
+    const git = simpleGit(tempVault);
+    await git.init();
+    await git.addConfig('user.email', 'test@test.com');
+    await git.addConfig('user.name', 'Test User');
+  });
+
+  afterEach(async () => {
+    await cleanupTempVault(tempVault);
+  });
+
+  it('commitChange should save tracking info after successful commit', async () => {
+    await createTestNote(tempVault, 'test.md', '# Test');
+    await commitChange(tempVault, 'test.md', '[Crank]');
+
+    const tracked = await getLastCrankCommit(tempVault);
+    expect(tracked).not.toBeNull();
+    expect(tracked?.hash).toBeDefined();
+    expect(tracked?.message).toContain('[Crank]');
+    expect(tracked?.timestamp).toBeDefined();
+  });
+
+  it('getLastCrankCommit should return null when no tracking exists', async () => {
+    const result = await getLastCrankCommit(tempVault);
+    expect(result).toBeNull();
+  });
+
+  it('clearLastCrankCommit should remove tracking file', async () => {
+    // Save some tracking
+    await saveLastCrankCommit(tempVault, 'abc123', 'Test message');
+
+    // Verify it exists
+    const before = await getLastCrankCommit(tempVault);
+    expect(before).not.toBeNull();
+
+    // Clear it
+    await clearLastCrankCommit(tempVault);
+
+    // Verify it's gone
+    const after = await getLastCrankCommit(tempVault);
+    expect(after).toBeNull();
+  });
+
+  it('clearLastCrankCommit should not throw when no tracking exists', async () => {
+    // Should not throw
+    await expect(clearLastCrankCommit(tempVault)).resolves.not.toThrow();
+  });
+
+  it('saveLastCrankCommit should create .claude directory if needed', async () => {
+    await saveLastCrankCommit(tempVault, 'abc123', 'Test message');
+
+    const tracked = await getLastCrankCommit(tempVault);
+    expect(tracked?.hash).toBe('abc123');
+    expect(tracked?.message).toBe('Test message');
+  });
+
+  it('undo should succeed when HEAD matches tracked commit', async () => {
+    // Create initial commit
+    await createTestNote(tempVault, 'test.md', '# Original');
+    await commitChange(tempVault, 'test.md', '[Crank:Setup]');
+
+    // Make a tracked change
+    await createTestNote(tempVault, 'test.md', '# Modified');
+    await commitChange(tempVault, 'test.md', '[Crank:Modify]');
+
+    // Undo should succeed because HEAD matches tracked commit
+    const result = await undoLastCommit(tempVault);
+    expect(result.success).toBe(true);
+  });
+
+  it('undo should work when no tracking exists (backwards compatibility)', async () => {
+    // Create commits without tracking
+    await createTestNote(tempVault, 'test.md', '# Original');
+    const git = simpleGit(tempVault);
+    await git.add('test.md');
+    await git.commit('Manual commit');
+
+    await createTestNote(tempVault, 'test.md', '# Modified');
+    await git.add('test.md');
+    await git.commit('Another manual commit');
+
+    // Undo should succeed even without tracking
+    const result = await undoLastCommit(tempVault);
+    expect(result.success).toBe(true);
+  });
+
+  it('should detect when HEAD does not match tracked commit', async () => {
+    // This tests the safety check logic used by vault_undo_last_mutation
+    // Step 1: Create a Crank commit (tracked)
+    await createTestNote(tempVault, 'test.md', '# Original');
+    await commitChange(tempVault, 'test.md', '[Crank]');
+
+    const trackedCommit = await getLastCrankCommit(tempVault);
+    expect(trackedCommit).not.toBeNull();
+
+    // Step 2: Make a manual commit (HEAD moves, tracking stays)
+    await createTestNote(tempVault, 'other.md', '# Other');
+    const git = simpleGit(tempVault);
+    await git.add('other.md');
+    await git.commit('Manual commit from another process');
+
+    // Step 3: Verify HEAD no longer matches tracked commit
+    const currentHead = await getLastCommit(tempVault);
+    expect(currentHead).not.toBeNull();
+    expect(currentHead!.hash).not.toBe(trackedCommit!.hash);
+
+    // This is the condition that vault_undo_last_mutation checks
+    // If HEAD !== tracked, it should refuse to undo
+  });
+
+  it('should clear tracking after undo so subsequent undos work normally', async () => {
+    // Create two Crank commits
+    await createTestNote(tempVault, 'test.md', '# Original');
+    await commitChange(tempVault, 'test.md', '[Crank:1]');
+
+    await createTestNote(tempVault, 'test.md', '# Modified');
+    await commitChange(tempVault, 'test.md', '[Crank:2]');
+
+    // Tracking should point to second commit
+    const tracked = await getLastCrankCommit(tempVault);
+    expect(tracked?.message).toContain('[Crank:2]');
+
+    // Undo and clear tracking (simulating what tool handler does)
+    await undoLastCommit(tempVault);
+    await clearLastCrankCommit(tempVault);
+
+    // After clearing, tracking should be null
+    const afterClear = await getLastCrankCommit(tempVault);
+    expect(afterClear).toBeNull();
   });
 });

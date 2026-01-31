@@ -3,6 +3,20 @@
  *
  * Manages entity index lifecycle and provides wikilink processing
  * for mutation tools. Mirrors Flywheel's startup pattern.
+ *
+ * ARCHITECTURE NOTE: Crank maintains its own entity index independent of Flywheel.
+ * This is by design for resilience - Crank works even if Flywheel isn't running.
+ * Both Flywheel and Crank use @velvetmonkey/vault-core for consistent scanning
+ * logic, but each maintains its own cached copy of the entity index.
+ *
+ * Cache file: .claude/wikilink-entities.json (managed by vault-core)
+ *
+ * Lifecycle:
+ * 1. On startup: Load from cache file if valid, else full vault scan
+ * 2. Cache includes version number for migration detection
+ * 3. Index is held in memory for the duration of the MCP session
+ * 4. Flywheel exposes entity data via MCP for LLM queries
+ * 5. Crank uses its local copy for wikilink application during mutations
  */
 
 import {

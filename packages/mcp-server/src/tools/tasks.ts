@@ -15,6 +15,10 @@ import {
 import type { MutationResult, Position } from '../core/types.js';
 import { commitChange } from '../core/git.js';
 import { maybeApplyWikilinks, suggestRelatedLinks } from '../core/wikilinks.js';
+import {
+  runValidationPipeline,
+  type GuardrailMode,
+} from '../core/validator.js';
 import { estimateTokens } from '../core/constants.js';
 import fs from 'fs/promises';
 import path from 'path';
@@ -239,8 +243,11 @@ export function registerTaskTools(
       suggestOutgoingLinks: z.boolean().default(true).describe('Append suggested outgoing wikilinks based on content (e.g., "→ [[AI]] [[Philosophy]]"). Set false to disable.'),
       maxSuggestions: z.number().min(1).max(10).default(3).describe('Maximum number of suggested wikilinks to append (1-10, default: 3)'),
       preserveListNesting: z.boolean().default(true).describe('Preserve indentation when inserting into nested lists. Default: true'),
+      validate: z.boolean().default(true).describe('Check input for common issues'),
+      normalize: z.boolean().default(true).describe('Auto-fix common issues before formatting'),
+      guardrails: z.enum(['warn', 'strict', 'off']).default('warn').describe('Output validation mode'),
     },
-    async ({ path: notePath, section, task, position, completed, commit, skipWikilinks, suggestOutgoingLinks, maxSuggestions, preserveListNesting }) => {
+    async ({ path: notePath, section, task, position, completed, commit, skipWikilinks, suggestOutgoingLinks, maxSuggestions, preserveListNesting, validate, normalize, guardrails }) => {
       try {
         // 1. Check if file exists
         const fullPath = path.join(vaultPath, notePath);
@@ -273,10 +280,34 @@ export function registerTaskTools(
           return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
         }
 
-        // 4. Apply wikilinks to task text (unless skipped)
-        let { content: processedTask, wikilinkInfo } = maybeApplyWikilinks(task.trim(), skipWikilinks);
+        // 4. Run validation pipeline on task text
+        const validationResult = runValidationPipeline(task.trim(), 'task', {
+          validate,
+          normalize,
+          guardrails: guardrails as GuardrailMode,
+        });
 
-        // 4b. Suggest outgoing links (enabled by default)
+        // If guardrails=strict and validation failed, abort
+        if (validationResult.blocked) {
+          const result: MutationResult = {
+            success: false,
+            message: validationResult.blockReason || 'Output validation failed',
+            path: notePath,
+            warnings: validationResult.inputWarnings,
+            outputIssues: validationResult.outputIssues,
+            tokensEstimate: 0,
+          };
+          result.tokensEstimate = estimateTokens(result);
+          return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
+        }
+
+        // Use normalized task text
+        let workingTask = validationResult.content;
+
+        // 4b. Apply wikilinks to task text (unless skipped)
+        let { content: processedTask, wikilinkInfo } = maybeApplyWikilinks(workingTask, skipWikilinks);
+
+        // 4c. Suggest outgoing links (enabled by default)
         let suggestInfo: string | undefined;
         if (suggestOutgoingLinks && !skipWikilinks) {
           const result = suggestRelatedLinks(processedTask, { maxSuggestions });
@@ -323,6 +354,10 @@ export function registerTaskTools(
           gitCommit,
           gitError,
           tokensEstimate: 0,
+          // Include validation info if present
+          ...(validationResult.inputWarnings.length > 0 && { warnings: validationResult.inputWarnings }),
+          ...(validationResult.outputIssues.length > 0 && { outputIssues: validationResult.outputIssues }),
+          ...(validationResult.normalizationChanges.length > 0 && { normalizationChanges: validationResult.normalizationChanges }),
         };
         result.tokensEstimate = estimateTokens(result);
 

@@ -4,6 +4,69 @@
 
 import { simpleGit, SimpleGit, CheckRepoActions } from 'simple-git';
 import path from 'path';
+import fs from 'fs/promises';
+
+const LAST_COMMIT_FILE = '.claude/last-crank-commit.json';
+
+/**
+ * Tracking data for the last successful Crank commit.
+ * Used to prevent accidental undo of unrelated commits.
+ */
+export interface LastCrankCommit {
+  hash: string;
+  message: string;
+  timestamp: string;
+}
+
+/**
+ * Save tracking info for the last successful Crank commit.
+ * This enables safe undo verification.
+ */
+export async function saveLastCrankCommit(
+  vaultPath: string,
+  hash: string,
+  message: string
+): Promise<void> {
+  const filePath = path.join(vaultPath, LAST_COMMIT_FILE);
+  const dirPath = path.dirname(filePath);
+
+  // Ensure .claude directory exists
+  await fs.mkdir(dirPath, { recursive: true });
+
+  const data: LastCrankCommit = {
+    hash,
+    message,
+    timestamp: new Date().toISOString(),
+  };
+  await fs.writeFile(filePath, JSON.stringify(data, null, 2));
+}
+
+/**
+ * Get the last tracked Crank commit, if any.
+ */
+export async function getLastCrankCommit(
+  vaultPath: string
+): Promise<LastCrankCommit | null> {
+  try {
+    const filePath = path.join(vaultPath, LAST_COMMIT_FILE);
+    const content = await fs.readFile(filePath, 'utf-8');
+    return JSON.parse(content) as LastCrankCommit;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Clear the last Crank commit tracking (after successful undo).
+ */
+export async function clearLastCrankCommit(vaultPath: string): Promise<void> {
+  try {
+    const filePath = path.join(vaultPath, LAST_COMMIT_FILE);
+    await fs.unlink(filePath);
+  } catch {
+    // File doesn't exist, ignore
+  }
+}
 
 export interface GitCommitResult {
   success: boolean;
@@ -54,6 +117,11 @@ export async function commitChange(
 
     // Commit
     const result = await git.commit(commitMessage);
+
+    // Track this commit for safe undo verification
+    if (result.commit) {
+      await saveLastCrankCommit(vaultPath, result.commit, commitMessage);
+    }
 
     return {
       success: true,

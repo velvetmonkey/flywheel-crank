@@ -199,11 +199,71 @@ export function findSection(content: string, sectionName: string): SectionBounda
 }
 
 /**
+ * Check if we're inside a code block at the given line index.
+ * Counts code fence markers (```) before the current line.
+ * An odd count means we're inside a code block.
+ */
+export function isInsideCodeBlock(lines: string[], currentIndex: number): boolean {
+  let fenceCount = 0;
+  for (let i = 0; i < currentIndex; i++) {
+    if (lines[i].trim().startsWith('```')) {
+      fenceCount++;
+    }
+  }
+  return fenceCount % 2 === 1;
+}
+
+/**
+ * Detect lines that represent structured markdown elements that shouldn't be indented.
+ * These include:
+ * - Table rows (starting with |)
+ * - Blockquotes (starting with >)
+ * - Code fence markers (```)
+ * - Horizontal rules (---, ***, ___)
+ */
+export function isStructuredLine(line: string): boolean {
+  const trimmed = line.trimStart();
+  return (
+    trimmed.startsWith('|') ||           // Table row
+    trimmed.startsWith('>') ||           // Blockquote
+    trimmed.startsWith('```') ||         // Code fence
+    /^-{3,}$/.test(trimmed) ||           // Horizontal rule (dashes)
+    /^\*{3,}$/.test(trimmed) ||          // Horizontal rule (asterisks)
+    /^_{3,}$/.test(trimmed)              // Horizontal rule (underscores)
+  );
+}
+
+/**
+ * Check if a line is a code fence marker (```)
+ */
+export function isCodeFenceLine(line: string): boolean {
+  return line.trim().startsWith('```');
+}
+
+/**
+ * Check if content is already a pre-formatted markdown list.
+ * Returns true if the first non-empty line starts with a list marker.
+ * This prevents double-wrapping when content is already structured.
+ */
+export function isPreformattedList(content: string): boolean {
+  const trimmed = content.trim();
+  if (!trimmed) return false;
+  const firstLine = trimmed.split('\n')[0];
+  // Check for bullet (-, *, +), numbered (1.), or task list (- [ ])
+  return /^[-*+]\s/.test(firstLine) ||           // Bullet
+         /^\d+\.\s/.test(firstLine) ||            // Numbered
+         /^[-*+]\s*\[[ xX]\]/.test(firstLine);    // Task
+}
+
+/**
  * Format content according to format type.
  *
  * For multi-line content, continuation lines are indented to align under
  * the parent bullet/task/number text, ensuring proper markdown rendering.
  * Empty lines are preserved as empty (not indented).
+ *
+ * Block-aware: Code blocks, tables, blockquotes, and horizontal rules
+ * are preserved as-is without indentation to maintain their structure.
  */
 export function formatContent(content: string, format: FormatType): string {
   const trimmed = content.trim();
@@ -212,44 +272,80 @@ export function formatContent(content: string, format: FormatType): string {
     case 'plain':
       return trimmed;
     case 'bullet': {
+      // If content is already a list, preserve it as-is
+      if (isPreformattedList(trimmed)) {
+        return trimmed;
+      }
       // Indent continuation lines with 2 spaces to align under "- " text
       // Keep empty lines empty for proper markdown paragraphs
+      // Preserve structured blocks (code, tables, blockquotes) as-is
       const lines = trimmed.split('\n');
       return lines.map((line, i) => {
         if (i === 0) return `- ${line}`;
         if (line === '') return '';
+        // Preserve structured lines and lines inside code blocks
+        if (isInsideCodeBlock(lines, i) || isStructuredLine(line)) {
+          return line;
+        }
         return `  ${line}`;
       }).join('\n');
     }
     case 'task': {
+      // If content is already a list, preserve it as-is
+      if (isPreformattedList(trimmed)) {
+        return trimmed;
+      }
       // Indent continuation lines with 6 spaces to align under "- [ ] " text
+      // Preserve structured blocks (code, tables, blockquotes) as-is
       const lines = trimmed.split('\n');
       return lines.map((line, i) => {
         if (i === 0) return `- [ ] ${line}`;
         if (line === '') return '';
+        // Preserve structured lines and lines inside code blocks
+        if (isInsideCodeBlock(lines, i) || isStructuredLine(line)) {
+          return line;
+        }
         return `      ${line}`;
       }).join('\n');
     }
     case 'numbered': {
+      // If content is already a list, preserve it as-is
+      if (isPreformattedList(trimmed)) {
+        return trimmed;
+      }
       // Indent continuation lines with 3 spaces to align under "1. " text
+      // Preserve structured blocks (code, tables, blockquotes) as-is
       const lines = trimmed.split('\n');
       return lines.map((line, i) => {
         if (i === 0) return `1. ${line}`;
         if (line === '') return '';
+        // Preserve structured lines and lines inside code blocks
+        if (isInsideCodeBlock(lines, i) || isStructuredLine(line)) {
+          return line;
+        }
         return `   ${line}`;
       }).join('\n');
     }
     case 'timestamp-bullet': {
+      // If content is already a list, preserve it as-is
+      if (isPreformattedList(trimmed)) {
+        return trimmed;
+      }
       const now = new Date();
       const hours = String(now.getHours()).padStart(2, '0');
       const minutes = String(now.getMinutes()).padStart(2, '0');
       const prefix = `- **${hours}:${minutes}** `;
       const lines = trimmed.split('\n');
       // Indent continuation lines to align under the text after "- "
+      // Preserve structured blocks (code, tables, blockquotes) as-is
       const indent = '  ';
       return lines.map((line, i) => {
         if (i === 0) return `${prefix}${line}`;
         if (line === '') return '';
+        // Preserve structured lines and lines inside code blocks
+        if (isInsideCodeBlock(lines, i) || isStructuredLine(line)) {
+          return line;
+        }
         return `${indent}${line}`;
       }).join('\n');
     }
@@ -382,9 +478,15 @@ export function insertInSection(
       }
 
       if (indent) {
-        const indentedContent = formattedContent
-          .split('\n')
-          .map(line => indent + line)
+        const contentLines = formattedContent.split('\n');
+        const indentedContent = contentLines
+          .map((line, i) => {
+            // Preserve structured lines and lines inside code blocks
+            if (line === '' || isInsideCodeBlock(contentLines, i) || isStructuredLine(line)) {
+              return line;
+            }
+            return indent + line;
+          })
           .join('\n');
         lines.splice(section.contentStartLine, 0, indentedContent);
       } else {
@@ -410,9 +512,15 @@ export function insertInSection(
       // Apply section base indentation if preserveListNesting is enabled
       if (options?.preserveListNesting) {
         const indent = detectSectionBaseIndentation(lines, section.contentStartLine, section.endLine);
-        const indentedContent = formattedContent
-          .split('\n')
-          .map(line => indent + line)
+        const contentLines = formattedContent.split('\n');
+        const indentedContent = contentLines
+          .map((line, i) => {
+            // Preserve structured lines and lines inside code blocks
+            if (line === '' || isInsideCodeBlock(contentLines, i) || isStructuredLine(line)) {
+              return line;
+            }
+            return indent + line;
+          })
           .join('\n');
         lines[lastContentLineIdx] = indentedContent;
       } else {
@@ -444,9 +552,15 @@ export function insertInSection(
       // not the last item's indentation which could be nested
       if (options?.preserveListNesting) {
         const indent = detectSectionBaseIndentation(lines, section.contentStartLine, section.endLine);
-        const indentedContent = formattedContent
-          .split('\n')
-          .map(line => indent + line)
+        const contentLines = formattedContent.split('\n');
+        const indentedContent = contentLines
+          .map((line, i) => {
+            // Preserve structured lines and lines inside code blocks
+            if (line === '' || isInsideCodeBlock(contentLines, i) || isStructuredLine(line)) {
+              return line;
+            }
+            return indent + line;
+          })
           .join('\n');
         lines.splice(insertLine, 0, indentedContent);
       } else {

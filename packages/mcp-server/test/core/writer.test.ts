@@ -15,6 +15,10 @@ import {
   readVaultFile,
   writeVaultFile,
   isEmptyPlaceholder,
+  isInsideCodeBlock,
+  isStructuredLine,
+  isCodeFenceLine,
+  isPreformattedList,
 } from '../../src/core/writer.js';
 import fs from 'fs/promises';
 import path from 'path';
@@ -316,6 +320,193 @@ describe('formatContent', () => {
       const result = formatContent(content, 'bullet');
       expect(result).toBe('- Parent item\n    - Nested item\n    - Another nested');
     });
+  });
+
+  // Block-awareness tests
+  describe('block-aware formatting', () => {
+    it('should preserve code blocks without indenting content inside', () => {
+      const content = 'Description\n```javascript\nconst x = 1;\nfunction foo() {\n  return x;\n}\n```';
+      const result = formatContent(content, 'bullet');
+      expect(result).toBe('- Description\n```javascript\nconst x = 1;\nfunction foo() {\n  return x;\n}\n```');
+    });
+
+    it('should not indent code fence markers', () => {
+      const content = 'Code example:\n```\ncode here\n```';
+      const result = formatContent(content, 'bullet');
+      // Code fence markers should not be indented
+      expect(result).toContain('```\ncode here\n```');
+      expect(result).not.toContain('  ```');
+    });
+
+    it('should preserve table rows without indentation', () => {
+      const content = 'Table below:\n| Header 1 | Header 2 |\n| -------- | -------- |\n| Cell 1   | Cell 2   |';
+      const result = formatContent(content, 'bullet');
+      expect(result).toBe('- Table below:\n| Header 1 | Header 2 |\n| -------- | -------- |\n| Cell 1   | Cell 2   |');
+    });
+
+    it('should preserve blockquotes without indentation', () => {
+      const content = 'Quote:\n> This is a quote\n> Second line of quote';
+      const result = formatContent(content, 'bullet');
+      expect(result).toBe('- Quote:\n> This is a quote\n> Second line of quote');
+    });
+
+    it('should preserve horizontal rules', () => {
+      const content = 'Before rule\n---\nAfter rule';
+      const result = formatContent(content, 'bullet');
+      expect(result).toBe('- Before rule\n---\n  After rule');
+    });
+
+    it('should preserve asterisk horizontal rules', () => {
+      const content = 'Before rule\n***\nAfter rule';
+      const result = formatContent(content, 'bullet');
+      expect(result).toBe('- Before rule\n***\n  After rule');
+    });
+
+    it('should preserve underscore horizontal rules', () => {
+      const content = 'Before rule\n___\nAfter rule';
+      const result = formatContent(content, 'bullet');
+      expect(result).toBe('- Before rule\n___\n  After rule');
+    });
+
+    it('should handle mixed content with code blocks and tables', () => {
+      const content = 'Log entry with data:\n| Col A | Col B |\n| ----- | ----- |\n| 1     | 2     |\n\n```\ncode\n```\n\nRegular text continues here';
+      const result = formatContent(content, 'bullet');
+      // Tables and code should be preserved
+      expect(result).toContain('| Col A | Col B |');
+      expect(result).toContain('```\ncode\n```');
+      // Regular text should be indented
+      expect(result).toContain('  Regular text continues here');
+    });
+
+    it('should handle task format with code blocks', () => {
+      const content = 'Review code:\n```js\nconst test = 1;\n```';
+      const result = formatContent(content, 'task');
+      expect(result).toBe('- [ ] Review code:\n```js\nconst test = 1;\n```');
+    });
+
+    it('should handle numbered format with tables', () => {
+      const content = 'Step with table:\n| A | B |\n| - | - |\n| 1 | 2 |';
+      const result = formatContent(content, 'numbered');
+      expect(result).toBe('1. Step with table:\n| A | B |\n| - | - |\n| 1 | 2 |');
+    });
+
+    it('should handle timestamp-bullet format with blockquotes', () => {
+      const content = 'Discussion:\n> Important quote\n> More quote';
+      const result = formatContent(content, 'timestamp-bullet');
+      const lines = result.split('\n');
+      expect(lines[0]).toMatch(/^- \*\*\d{2}:\d{2}\*\* Discussion:$/);
+      expect(lines[1]).toBe('> Important quote');
+      expect(lines[2]).toBe('> More quote');
+    });
+  });
+
+  // Preformatted list preservation tests
+  describe('preformatted list preservation', () => {
+    it('should preserve bullet list content unchanged', () => {
+      const content = '- Item 1\n  - Nested item\n  - Another nested';
+      const result = formatContent(content, 'bullet');
+      expect(result).toBe('- Item 1\n  - Nested item\n  - Another nested');
+    });
+
+    it('should preserve task list content unchanged', () => {
+      const content = '- [ ] Task 1\n  - [ ] Nested task';
+      const result = formatContent(content, 'task');
+      expect(result).toBe('- [ ] Task 1\n  - [ ] Nested task');
+    });
+
+    it('should preserve numbered list content unchanged', () => {
+      const content = '1. First item\n   1. Nested item';
+      const result = formatContent(content, 'numbered');
+      expect(result).toBe('1. First item\n   1. Nested item');
+    });
+
+    it('should preserve bullet list in timestamp-bullet format', () => {
+      const content = '- Already formatted\n  - Nested';
+      const result = formatContent(content, 'timestamp-bullet');
+      expect(result).toBe('- Already formatted\n  - Nested');
+    });
+
+    it('should still format plain text that is not a list', () => {
+      const content = 'Plain text item';
+      const result = formatContent(content, 'bullet');
+      expect(result).toBe('- Plain text item');
+    });
+
+    it('should format text starting with dash but no space', () => {
+      const content = '-not a list marker';
+      const result = formatContent(content, 'bullet');
+      expect(result).toBe('- -not a list marker');
+    });
+
+    it('should preserve asterisk bullet lists', () => {
+      const content = '* Item 1\n* Item 2';
+      const result = formatContent(content, 'bullet');
+      expect(result).toBe('* Item 1\n* Item 2');
+    });
+
+    it('should preserve plus bullet lists', () => {
+      const content = '+ Item 1\n+ Item 2';
+      const result = formatContent(content, 'bullet');
+      expect(result).toBe('+ Item 1\n+ Item 2');
+    });
+
+    it('should preserve completed task lists', () => {
+      const content = '- [x] Done task\n- [ ] Todo task';
+      const result = formatContent(content, 'task');
+      expect(result).toBe('- [x] Done task\n- [ ] Todo task');
+    });
+  });
+});
+
+describe('isPreformattedList', () => {
+  it('should detect bullet list with dash', () => {
+    expect(isPreformattedList('- Item 1')).toBe(true);
+    expect(isPreformattedList('- Item 1\n- Item 2')).toBe(true);
+  });
+
+  it('should detect bullet list with asterisk', () => {
+    expect(isPreformattedList('* Item 1')).toBe(true);
+  });
+
+  it('should detect bullet list with plus', () => {
+    expect(isPreformattedList('+ Item 1')).toBe(true);
+  });
+
+  it('should detect numbered list', () => {
+    expect(isPreformattedList('1. First item')).toBe(true);
+    expect(isPreformattedList('42. Item')).toBe(true);
+  });
+
+  it('should detect unchecked task list', () => {
+    expect(isPreformattedList('- [ ] Task')).toBe(true);
+  });
+
+  it('should detect checked task list', () => {
+    expect(isPreformattedList('- [x] Done')).toBe(true);
+    expect(isPreformattedList('- [X] Done')).toBe(true);
+  });
+
+  it('should return false for plain text', () => {
+    expect(isPreformattedList('Plain text')).toBe(false);
+    expect(isPreformattedList('Some content here')).toBe(false);
+  });
+
+  it('should return false for empty content', () => {
+    expect(isPreformattedList('')).toBe(false);
+    expect(isPreformattedList('   ')).toBe(false);
+  });
+
+  it('should return false for dash without space', () => {
+    expect(isPreformattedList('-no space')).toBe(false);
+  });
+
+  it('should return false for number without dot', () => {
+    expect(isPreformattedList('1 Item')).toBe(false);
+  });
+
+  it('should handle leading whitespace in content', () => {
+    expect(isPreformattedList('  - Item')).toBe(true);
+    expect(isPreformattedList('\n- Item')).toBe(true);
   });
 });
 
@@ -765,6 +956,82 @@ describe('detectListIndentation', () => {
     const lines = ['## Log', '  + Item 1', '  + Item 2'];
     const indent = detectListIndentation(lines, 3, 1);
     expect(indent).toBe('  ');
+  });
+});
+
+describe('isInsideCodeBlock', () => {
+  it('should detect when inside a code block', () => {
+    const lines = ['text', '```', 'code', 'more code'];
+    expect(isInsideCodeBlock(lines, 2)).toBe(true);
+    expect(isInsideCodeBlock(lines, 3)).toBe(true);
+  });
+
+  it('should detect when not inside a code block', () => {
+    const lines = ['text', '```', 'code', '```', 'after'];
+    expect(isInsideCodeBlock(lines, 0)).toBe(false);
+    expect(isInsideCodeBlock(lines, 4)).toBe(false);
+  });
+
+  it('should handle multiple code blocks', () => {
+    const lines = ['text', '```', 'code1', '```', 'between', '```', 'code2', '```', 'end'];
+    expect(isInsideCodeBlock(lines, 2)).toBe(true);   // inside first block
+    expect(isInsideCodeBlock(lines, 4)).toBe(false);  // between blocks
+    expect(isInsideCodeBlock(lines, 6)).toBe(true);   // inside second block
+    expect(isInsideCodeBlock(lines, 8)).toBe(false);  // after blocks
+  });
+
+  it('should handle code block with language specifier', () => {
+    const lines = ['text', '```javascript', 'const x = 1;', '```'];
+    expect(isInsideCodeBlock(lines, 2)).toBe(true);
+  });
+});
+
+describe('isStructuredLine', () => {
+  it('should detect table rows', () => {
+    expect(isStructuredLine('| A | B |')).toBe(true);
+    expect(isStructuredLine('|---|---|')).toBe(true);
+    expect(isStructuredLine('  | indented |')).toBe(true);
+  });
+
+  it('should detect blockquotes', () => {
+    expect(isStructuredLine('> quote')).toBe(true);
+    expect(isStructuredLine('>quote without space')).toBe(true);
+    expect(isStructuredLine('  > indented quote')).toBe(true);
+  });
+
+  it('should detect code fences', () => {
+    expect(isStructuredLine('```')).toBe(true);
+    expect(isStructuredLine('```javascript')).toBe(true);
+    expect(isStructuredLine('  ```')).toBe(true);
+  });
+
+  it('should detect horizontal rules', () => {
+    expect(isStructuredLine('---')).toBe(true);
+    expect(isStructuredLine('----')).toBe(true);
+    expect(isStructuredLine('***')).toBe(true);
+    expect(isStructuredLine('___')).toBe(true);
+  });
+
+  it('should not detect regular lines', () => {
+    expect(isStructuredLine('regular text')).toBe(false);
+    expect(isStructuredLine('- bullet')).toBe(false);
+    expect(isStructuredLine('1. numbered')).toBe(false);
+    expect(isStructuredLine('## heading')).toBe(false);
+  });
+});
+
+describe('isCodeFenceLine', () => {
+  it('should detect code fence markers', () => {
+    expect(isCodeFenceLine('```')).toBe(true);
+    expect(isCodeFenceLine('```js')).toBe(true);
+    expect(isCodeFenceLine('```typescript')).toBe(true);
+    expect(isCodeFenceLine('  ```')).toBe(true);
+  });
+
+  it('should not detect non-fence lines', () => {
+    expect(isCodeFenceLine('normal text')).toBe(false);
+    expect(isCodeFenceLine('inline `code`')).toBe(false);
+    expect(isCodeFenceLine('``not a fence``')).toBe(false);
   });
 });
 

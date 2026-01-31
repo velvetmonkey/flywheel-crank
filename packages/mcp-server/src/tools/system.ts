@@ -6,7 +6,13 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
 import { readVaultFile, extractHeadings, validatePath } from '../core/writer.js';
-import { undoLastCommit, getLastCommit, isGitRepo } from '../core/git.js';
+import {
+  undoLastCommit,
+  getLastCommit,
+  isGitRepo,
+  getLastCrankCommit,
+  clearLastCrankCommit,
+} from '../core/git.js';
 import type { MutationResult } from '../core/types.js';
 import fs from 'fs/promises';
 import path from 'path';
@@ -144,7 +150,23 @@ export function registerSystemTools(
           return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
         }
 
-        // 3. Perform undo
+        // 3. Verify HEAD matches expected Crank commit (safety check)
+        const lastCrankCommit = await getLastCrankCommit(vaultPath);
+        const lastCommit = await getLastCommit(vaultPath);
+
+        if (lastCrankCommit && lastCommit) {
+          if (lastCommit.hash !== lastCrankCommit.hash) {
+            const result: MutationResult = {
+              success: false,
+              message: `Cannot undo: HEAD (${lastCommit.hash.substring(0, 7)}) doesn't match last Crank commit (${lastCrankCommit.hash.substring(0, 7)}). Another process may have committed since your mutation.`,
+              path: '',
+              preview: `Expected: ${lastCrankCommit.hash.substring(0, 7)} "${lastCrankCommit.message}"\nActual HEAD: ${lastCommit.hash.substring(0, 7)} "${lastCommit.message}"`,
+            };
+            return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
+          }
+        }
+
+        // 4. Perform undo
         const undoResult = await undoLastCommit(vaultPath);
 
         if (!undoResult.success) {
@@ -155,6 +177,9 @@ export function registerSystemTools(
           };
           return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
         }
+
+        // 5. Clear tracking after successful undo
+        await clearLastCrankCommit(vaultPath);
 
         const result: MutationResult = {
           success: true,

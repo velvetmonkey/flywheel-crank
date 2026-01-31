@@ -16,6 +16,10 @@ import {
   type MatchMode,
 } from '../core/writer.js';
 import type { MutationResult, FormatType, Position } from '../core/types.js';
+import {
+  runValidationPipeline,
+  type GuardrailMode,
+} from '../core/validator.js';
 import { commitChange } from '../core/git.js';
 import { maybeApplyWikilinks, suggestRelatedLinks } from '../core/wikilinks.js';
 import { estimateTokens } from '../core/constants.js';
@@ -49,8 +53,11 @@ export function registerMutationTools(
       preserveListNesting: z.boolean().default(true).describe('Detect and preserve the indentation level of surrounding list items. Set false to disable.'),
       suggestOutgoingLinks: z.boolean().default(true).describe('Append suggested outgoing wikilinks based on content (e.g., "→ [[AI]] [[Philosophy]]"). Set false to disable.'),
       maxSuggestions: z.number().min(1).max(10).default(3).describe('Maximum number of suggested wikilinks to append (1-10, default: 3)'),
+      validate: z.boolean().default(true).describe('Check input for common issues (double timestamps, non-markdown bullets, etc.)'),
+      normalize: z.boolean().default(true).describe('Auto-fix common issues before formatting (replace • with -, trim excessive whitespace, etc.)'),
+      guardrails: z.enum(['warn', 'strict', 'off']).default('warn').describe('Output validation mode: "warn" returns issues but proceeds, "strict" blocks on errors, "off" disables'),
     },
-    async ({ path: notePath, section, content, position, format, commit, skipWikilinks, preserveListNesting, suggestOutgoingLinks, maxSuggestions }) => {
+    async ({ path: notePath, section, content, position, format, commit, skipWikilinks, preserveListNesting, suggestOutgoingLinks, maxSuggestions, validate, normalize, guardrails }) => {
       try {
         // 1. Validate path (security check)
         const fullPath = path.join(vaultPath, notePath);
@@ -85,10 +92,34 @@ export function registerMutationTools(
           return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
         }
 
-        // 5. Apply wikilinks to content (unless skipped)
-        let { content: processedContent, wikilinkInfo } = maybeApplyWikilinks(content, skipWikilinks);
+        // 5. Run validation pipeline on input
+        const validationResult = runValidationPipeline(content, format as FormatType, {
+          validate,
+          normalize,
+          guardrails: guardrails as GuardrailMode,
+        });
 
-        // 5b. Suggest outgoing links (enabled by default)
+        // If guardrails=strict and validation failed, abort
+        if (validationResult.blocked) {
+          const result: MutationResult = {
+            success: false,
+            message: validationResult.blockReason || 'Output validation failed',
+            path: notePath,
+            warnings: validationResult.inputWarnings,
+            outputIssues: validationResult.outputIssues,
+            tokensEstimate: 0,
+          };
+          result.tokensEstimate = estimateTokens(result);
+          return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
+        }
+
+        // Use normalized content
+        let workingContent = validationResult.content;
+
+        // 5b. Apply wikilinks to content (unless skipped)
+        let { content: processedContent, wikilinkInfo } = maybeApplyWikilinks(workingContent, skipWikilinks);
+
+        // 5c. Suggest outgoing links (enabled by default)
         let suggestInfo: string | undefined;
         if (suggestOutgoingLinks && !skipWikilinks) {
           const result = suggestRelatedLinks(processedContent, { maxSuggestions });
@@ -137,6 +168,10 @@ export function registerMutationTools(
           gitCommit,
           gitError,
           tokensEstimate: 0, // Will be set below
+          // Include validation info if present
+          ...(validationResult.inputWarnings.length > 0 && { warnings: validationResult.inputWarnings }),
+          ...(validationResult.outputIssues.length > 0 && { outputIssues: validationResult.outputIssues }),
+          ...(validationResult.normalizationChanges.length > 0 && { normalizationChanges: validationResult.normalizationChanges }),
         };
         result.tokensEstimate = estimateTokens(result);
 
@@ -278,8 +313,11 @@ export function registerMutationTools(
       skipWikilinks: z.boolean().default(false).describe('If true, skip auto-wikilink application on replacement text'),
       suggestOutgoingLinks: z.boolean().default(true).describe('Append suggested outgoing wikilinks based on content (e.g., "→ [[AI]] [[Philosophy]]"). Set false to disable.'),
       maxSuggestions: z.number().min(1).max(10).default(3).describe('Maximum number of suggested wikilinks to append (1-10, default: 3)'),
+      validate: z.boolean().default(true).describe('Check input for common issues (double timestamps, non-markdown bullets, etc.)'),
+      normalize: z.boolean().default(true).describe('Auto-fix common issues before formatting (replace • with -, trim excessive whitespace, etc.)'),
+      guardrails: z.enum(['warn', 'strict', 'off']).default('warn').describe('Output validation mode: "warn" returns issues but proceeds, "strict" blocks on errors, "off" disables'),
     },
-    async ({ path: notePath, section, search, replacement, mode, useRegex, commit, skipWikilinks, suggestOutgoingLinks, maxSuggestions }) => {
+    async ({ path: notePath, section, search, replacement, mode, useRegex, commit, skipWikilinks, suggestOutgoingLinks, maxSuggestions, validate, normalize, guardrails }) => {
       try {
         // 1. Check if file exists
         const fullPath = path.join(vaultPath, notePath);
@@ -312,10 +350,34 @@ export function registerMutationTools(
           return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
         }
 
-        // 4. Apply wikilinks to replacement text (unless skipped)
-        let { content: processedReplacement, wikilinkInfo } = maybeApplyWikilinks(replacement, skipWikilinks);
+        // 4. Run validation pipeline on replacement text
+        const validationResult = runValidationPipeline(replacement, 'plain', {
+          validate,
+          normalize,
+          guardrails: guardrails as GuardrailMode,
+        });
 
-        // 4b. Suggest outgoing links (enabled by default)
+        // If guardrails=strict and validation failed, abort
+        if (validationResult.blocked) {
+          const result: MutationResult = {
+            success: false,
+            message: validationResult.blockReason || 'Output validation failed',
+            path: notePath,
+            warnings: validationResult.inputWarnings,
+            outputIssues: validationResult.outputIssues,
+            tokensEstimate: 0,
+          };
+          result.tokensEstimate = estimateTokens(result);
+          return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
+        }
+
+        // Use normalized replacement
+        let workingReplacement = validationResult.content;
+
+        // 4b. Apply wikilinks to replacement text (unless skipped)
+        let { content: processedReplacement, wikilinkInfo } = maybeApplyWikilinks(workingReplacement, skipWikilinks);
+
+        // 4c. Suggest outgoing links (enabled by default)
         let suggestInfo: string | undefined;
         if (suggestOutgoingLinks && !skipWikilinks) {
           const result = suggestRelatedLinks(processedReplacement, { maxSuggestions });
@@ -374,6 +436,10 @@ export function registerMutationTools(
           gitCommit,
           gitError,
           tokensEstimate: 0,
+          // Include validation info if present
+          ...(validationResult.inputWarnings.length > 0 && { warnings: validationResult.inputWarnings }),
+          ...(validationResult.outputIssues.length > 0 && { outputIssues: validationResult.outputIssues }),
+          ...(validationResult.normalizationChanges.length > 0 && { normalizationChanges: validationResult.normalizationChanges }),
         };
         result.tokensEstimate = estimateTokens(result);
 

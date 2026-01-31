@@ -21,6 +21,27 @@ export interface MutationResult {
   hintWritten?: boolean;
   /** Estimated token count for this response (helps track API costs) */
   tokensEstimate?: number;
+  /** Input validation warnings (when validate: true) */
+  warnings?: ValidationWarning[];
+  /** Output guardrail issues (when guardrails: 'warn') */
+  outputIssues?: OutputIssue[];
+  /** Normalization changes applied (when normalize: true) */
+  normalizationChanges?: string[];
+}
+
+/** Warning from input validation */
+export interface ValidationWarning {
+  type: string;
+  message: string;
+  suggestion: string;
+}
+
+/** Issue detected by output guardrails */
+export interface OutputIssue {
+  type: string;
+  severity: 'error' | 'warning';
+  message: string;
+  line?: number;
 }
 
 export interface SectionInfo {
