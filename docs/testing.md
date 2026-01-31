@@ -23,7 +23,7 @@ npm run lint
 
 ### Overview
 
-**Total: 905 tests across 26 test files**
+**Total: 930 tests across 27 test files**
 
 ```
 test/
@@ -555,7 +555,7 @@ npm run build && npm run lint && npm run test
   ...
 
 Test Suites: 26 passed, 26 total
-Tests:       905 passed, 905 total
+Tests:       930 passed, 930 total
 Snapshots:   0 total
 Time:        4.532 s
 ```

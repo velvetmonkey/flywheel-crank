@@ -357,6 +357,128 @@ Agents can:
 
 ---
 
+## Multi-Agent Safety & Collision Handling
+
+When multiple agents (or multiple Claude Code sessions) access the same vault concurrently, collisions can occur. This section explains what Crank handles and what it doesn't.
+
+### The Collision Problem
+
+```
+┌─────────────────┐     ┌─────────────────┐
+│   Agent A       │     │   Agent B       │
+│   (Session 1)   │     │   (Session 2)   │
+└────────┬────────┘     └────────┬────────┘
+         │                       │
+         │  read daily-note.md   │
+         ├───────────────────────┤
+         │                       │  read daily-note.md
+         │                       ├───────────────────
+         │  write Log entry 1    │
+         ├───────────────────────┤
+         │                       │  write Log entry 2
+         │                       ├────────────────────
+         ▼                       ▼
+    ┌─────────────────────────────────┐
+    │  daily-note.md                  │
+    │  Which write wins? Both? One?   │
+    └─────────────────────────────────┘
+```
+
+### What Crank DOES Handle
+
+| Scenario | Crank's Behavior | Safety Level |
+|----------|------------------|--------------|
+| **Concurrent writes to different sections** | Both succeed | Safe |
+| **Concurrent writes to same section** | Both succeed (append semantics) | Safe |
+| **Git lock contention** | Mutation succeeds, git commit fails gracefully | Safe (file written) |
+| **Rapid sequential writes** | All succeed, no file corruption | Safe |
+
+**Best-effort commits:** If git is locked by another process, the file mutation still succeeds. The `gitError` field in the response indicates the commit failed.
+
+```javascript
+// Response when git lock is held
+{
+  success: true,        // File was mutated
+  message: "Added to Log section",
+  gitCommit: undefined, // No commit created
+  gitError: "Could not obtain lock on .git/index.lock"
+}
+```
+
+**Commit tracking for safe undo:** Crank tracks the last commit it created in `.claude/last-crank-commit.json`. When you call `vault_undo_last_mutation`:
+- It checks if HEAD matches the expected commit
+- Warns if another process committed after your mutation
+- Prevents accidentally undoing external commits
+
+### What Crank Does NOT Handle
+
+| Scenario | What Happens | Mitigation |
+|----------|--------------|------------|
+| **Cross-file transactions** | No atomicity across files | Design workflows to be single-file when possible |
+| **Merge conflicts** | Can occur if both agents modify same lines | Use different sections per agent |
+| **Semantic conflicts** | Agent A archives what Agent B expects to read | Coordination notes (see above) |
+| **Read-modify-write races** | Agent A reads, Agent B writes, Agent A writes stale data | Use append-only patterns |
+
+### Recommended Patterns
+
+| Pattern | Description | Use Case |
+|---------|-------------|----------|
+| **Section-per-agent** | Each agent writes to its own dedicated section | Parallel work on same file |
+| **Append-only** | Never read-modify-write; only add new content | Logs, journals, queues |
+| **Sequential handoffs** | Agent A completes, Agent B starts | Complex workflows |
+| **Coordination notes** | Explicit "In Progress" tracking | Avoiding duplicate work |
+
+**Section-per-agent example:**
+```markdown
+## Agent-Research
+<!-- Research agent writes here -->
+
+## Agent-Implementation
+<!-- Implementation agent writes here -->
+
+## Agent-Review
+<!-- Review agent writes here -->
+```
+
+**Append-only pattern:**
+```javascript
+// Safe: always appends, never reads first
+vault_add_to_section({
+  path: "daily-notes/2026-01-31.md",
+  section: "Log",
+  content: "Agent A: Completed task X",
+  position: "end"  // Append semantics
+})
+```
+
+### Detecting External Changes
+
+To detect if another process modified a file between your read and write:
+
+```javascript
+// 1. Read content with metadata
+const before = await flywheel.get_note_metadata({ path: "note.md" });
+
+// 2. Do your work...
+
+// 3. Check before writing
+const after = await flywheel.get_note_metadata({ path: "note.md" });
+if (after.modified !== before.modified) {
+  // File was changed externally - handle appropriately
+}
+```
+
+### Summary
+
+Crank provides **operational safety** (mutations don't corrupt files, git failures don't block work) but not **transactional safety** (no ACID guarantees across files or between read and write). Design your multi-agent workflows accordingly:
+
+1. Prefer append-only operations
+2. Use dedicated sections per agent
+3. Use coordination notes for complex workflows
+4. Check for external changes when order matters
+
+---
+
 ## Troubleshooting
 
 ### "Agent doesn't check memory"

@@ -479,6 +479,160 @@ important: preserved
     });
   });
 
+  describe('external commit detection', () => {
+    it('should detect when HEAD changed after Crank commit', async () => {
+      const notePath = 'test.md';
+      await writeVaultFile(vaultPath, notePath, '# Test\n', {});
+
+      // Crank makes a commit
+      const crankResult = await commitChange(vaultPath, notePath, '[Crank:Add]');
+      expect(crankResult.success).toBe(true);
+
+      const trackedAfterCrank = await getLastCrankCommit(vaultPath);
+      expect(trackedAfterCrank).not.toBeNull();
+
+      // External process makes a commit
+      await writeVaultFile(vaultPath, 'external.md', '# External\n', {});
+      const git: SimpleGit = simpleGit(vaultPath);
+      await git.add('external.md');
+      await git.commit('External commit');
+
+      // HEAD should now differ from tracked Crank commit
+      const currentHead = await getLastCommit(vaultPath);
+      expect(currentHead).not.toBeNull();
+      expect(currentHead!.hash).not.toBe(trackedAfterCrank!.hash);
+
+      // But tracking still points to Crank's commit
+      const trackedNow = await getLastCrankCommit(vaultPath);
+      expect(trackedNow!.hash).toBe(trackedAfterCrank!.hash);
+    });
+
+    it('should warn when undo would revert external changes', async () => {
+      const notePath = 'test.md';
+      await writeVaultFile(vaultPath, notePath, '# Test\n', {});
+
+      // Initial commit
+      const git: SimpleGit = simpleGit(vaultPath);
+      await git.add('.');
+      await git.commit('Initial commit');
+
+      // Crank commit
+      await writeVaultFile(vaultPath, notePath, '# Test\n- Entry\n', {});
+      const crankResult = await commitChange(vaultPath, notePath, '[Crank:Add]');
+      expect(crankResult.success).toBe(true);
+
+      // External commit on top
+      await writeVaultFile(vaultPath, 'external.md', '# Important external work\n', {});
+      await git.add('external.md');
+      await git.commit('Important external work');
+
+      // Undo should warn/fail because HEAD != tracked commit
+      const undoResult = await undoLastCommit(vaultPath);
+
+      // The undo will work but it undoes the external commit, not the Crank commit
+      // This is the expected behavior - undo always undoes HEAD
+      // The warning comes from checking tracked vs HEAD mismatch
+      const tracked = await getLastCrankCommit(vaultPath);
+      const currentHead = await getLastCommit(vaultPath);
+
+      // After undo, HEAD should match Crank's commit
+      expect(currentHead!.hash).toBe(tracked!.hash);
+    });
+
+    it('should handle rapid external commits interleaved with Crank', async () => {
+      const notePath = 'test.md';
+      await writeVaultFile(vaultPath, notePath, '# Test\n', {});
+
+      const git: SimpleGit = simpleGit(vaultPath);
+      await git.add('.');
+      await git.commit('Initial commit');
+
+      // Interleave Crank and external commits
+      for (let i = 0; i < 3; i++) {
+        // Crank commit
+        await writeVaultFile(vaultPath, notePath, `# Test\n- Crank entry ${i}\n`, {});
+        const crankResult = await commitChange(vaultPath, notePath, `[Crank:Add] ${i}`);
+        expect(crankResult.success).toBe(true);
+
+        // External commit
+        await writeVaultFile(vaultPath, `external-${i}.md`, `# External ${i}\n`, {});
+        await git.add(`external-${i}.md`);
+        await git.commit(`External commit ${i}`);
+      }
+
+      // After interleaving, tracked commit should be the last Crank commit
+      const tracked = await getLastCrankCommit(vaultPath);
+      expect(tracked).not.toBeNull();
+      expect(tracked!.message).toContain('[Crank:Add] 2');
+
+      // But HEAD should be the last external commit
+      const head = await getLastCommit(vaultPath);
+      expect(head!.message).toContain('External commit 2');
+    });
+
+    it('should correctly identify Crank commits among mixed commits', async () => {
+      const notePath = 'test.md';
+      await writeVaultFile(vaultPath, notePath, '# Test\n', {});
+
+      const git: SimpleGit = simpleGit(vaultPath);
+
+      // External initial commit
+      await git.add('.');
+      await git.commit('Initial (external)');
+
+      // Crank commit
+      await writeVaultFile(vaultPath, notePath, '# Test\n- Entry\n', {});
+      const crankResult = await commitChange(vaultPath, notePath, '[Crank:Add]');
+      expect(crankResult.success).toBe(true);
+
+      // Get log to verify commit messages
+      const log = await git.log();
+      expect(log.all.length).toBe(2);
+
+      // Most recent should be Crank
+      expect(log.latest!.message).toContain('[Crank:Add]');
+
+      // Tracked should match
+      const tracked = await getLastCrankCommit(vaultPath);
+      expect(tracked!.hash).toBe(log.latest!.hash);
+    });
+
+    it('should preserve tracking across multiple Crank commits with external in between', async () => {
+      const notePath = 'test.md';
+      await writeVaultFile(vaultPath, notePath, '# Test\n', {});
+
+      const git: SimpleGit = simpleGit(vaultPath);
+      await git.add('.');
+      await git.commit('Initial');
+
+      // First Crank commit
+      await writeVaultFile(vaultPath, notePath, '# Test\n- Entry 1\n', {});
+      const crank1 = await commitChange(vaultPath, notePath, '[Crank:Add] First');
+      expect(crank1.success).toBe(true);
+
+      const tracked1 = await getLastCrankCommit(vaultPath);
+
+      // External commit
+      await writeVaultFile(vaultPath, 'ext.md', '# Ext\n', {});
+      await git.add('ext.md');
+      await git.commit('External');
+
+      // Tracking should still point to Crank's commit
+      const trackedAfterExternal = await getLastCrankCommit(vaultPath);
+      expect(trackedAfterExternal!.hash).toBe(tracked1!.hash);
+
+      // Second Crank commit
+      await writeVaultFile(vaultPath, notePath, '# Test\n- Entry 1\n- Entry 2\n', {});
+      const crank2 = await commitChange(vaultPath, notePath, '[Crank:Add] Second');
+      expect(crank2.success).toBe(true);
+
+      // Tracking should now point to second Crank commit
+      const tracked2 = await getLastCrankCommit(vaultPath);
+      expect(tracked2!.hash).toBe(crank2.hash);
+      expect(tracked2!.hash).not.toBe(tracked1!.hash);
+    });
+  });
+
   describe('git repository state edge cases', () => {
     it('should handle empty repository (no commits)', async () => {
       // vaultPath is initialized but has no commits

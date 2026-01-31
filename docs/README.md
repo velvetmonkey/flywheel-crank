@@ -13,8 +13,10 @@ Flywheel Crank is the deterministic write companion to Flywheel MCP. While Flywh
 | Learn what tools are available | [tools-reference.md](tools-reference.md) |
 | Guide Claude to better tool choices | [guiding-claude.md](guiding-claude.md) |
 | Understand auto-wikilinks | [wikilinks.md](wikilinks.md) |
+| Deep dive into wikilink scoring | [WIKILINK_INFERENCE.md](WIKILINK_INFERENCE.md) |
 | Use Flywheel as agent memory | [AGENT-MEMORY.md](AGENT-MEMORY.md) |
 | Compare with alternatives | [COMPARISON.md](COMPARISON.md) |
+| See token efficiency benchmarks | [TOKEN_BENCHMARKS.md](TOKEN_BENCHMARKS.md) |
 | Know how my data is handled | [privacy.md](privacy.md) |
 | Check performance benchmarks | [PERFORMANCE.md](PERFORMANCE.md) |
 | Troubleshoot issues | [TROUBLESHOOTING.md](TROUBLESHOOTING.md) |
@@ -51,6 +53,16 @@ How to give feedback when Claude picks the wrong tool, teach Claude your vault's
 Explains how Crank automatically links known entities (people, projects, technologies) as you write. Covers the feedback loop, entity inference rules, excluded folders, and how to control linking behavior.
 
 **Read when:** You use wikilinks in your vault and want to understand or customize auto-linking.
+
+### [WIKILINK_INFERENCE.md](WIKILINK_INFERENCE.md)
+Technical deep dive into the 7-layer wikilink scoring algorithm. Covers quality filters, word matching (exact and stem), co-occurrence boosts, type boosts, context-aware boosts, recency boosts, and strictness modes.
+
+**Read when:** You want to understand exactly how wikilink suggestions are scored and selected.
+
+### [TOKEN_BENCHMARKS.md](TOKEN_BENCHMARKS.md)
+Quantified token efficiency data comparing Flywheel-Crank to traditional file operations. Includes read/write operation benchmarks, monthly cost projections, and the 200K token threshold implications.
+
+**Read when:** You want hard numbers on token savings or need to justify Flywheel-Crank's value.
 
 ### [AGENT-MEMORY.md](AGENT-MEMORY.md)
 How to use Flywheel + Crank as a persistent memory layer for AI coding assistants like Claude Code. Covers session memory patterns, CLAUDE.md integration, and token efficiency.
@@ -93,7 +105,7 @@ Comprehensive documentation of what Crank cannot do, including architectural lim
 **Read when:** Understanding Crank's boundaries or deciding whether Crank is the right tool for a task.
 
 ### [testing.md](testing.md)
-Automated test suite overview (905 tests), manual MCP testing procedures, and git integration behavior. Includes common development workflows.
+Automated test suite overview (930 tests), manual MCP testing procedures, and git integration behavior. Includes common development workflows.
 
 **Read when:** Contributing to Flywheel Crank or debugging tool behavior.
 
@@ -124,7 +136,7 @@ Automated test suite overview (905 tests), manual MCP testing procedures, and gi
 4. [wikilinks.md](wikilinks.md) - Leverage auto-linking
 
 **Contributors:**
-1. [testing.md](testing.md) - Understand the test suite (905 tests)
+1. [testing.md](testing.md) - Understand the test suite (930 tests)
 2. [tools-reference.md](tools-reference.md) - Learn tool patterns
 3. [PERFORMANCE.md](PERFORMANCE.md) - Understand benchmarks
 

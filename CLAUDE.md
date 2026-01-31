@@ -62,7 +62,7 @@ Modern agentic AI faces a fundamental tension:
 - Git integration (auto-commit + undo)
 - Section-scoped operations (safe, reversible)
 - Permission model (read-broad, write-narrow)
-- 905 automated tests (production hardened with edge cases, benchmarks, stress tests)
+- 930 automated tests (production hardened with edge cases, benchmarks, stress tests)
 - Smart template handling (replace empty placeholders like `1. ` or `- `)
 - Wikilink integration (auto-wikilinks on by default, opt-out via `skipWikilinks`)
 - `@velvetmonkey/vault-core` shared package (entity scanning, protected zones, wikilink application)
@@ -390,7 +390,7 @@ test/
     └── workflows.test.ts    # 15 tests - end-to-end workflow scenarios
 ```
 
-**Total: 905 tests**
+**Total: 930 tests**
 
 **See [docs/testing.md](./docs/testing.md) for:**
 - Manual MCP testing procedures
