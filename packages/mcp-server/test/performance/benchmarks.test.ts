@@ -108,6 +108,40 @@ describe('performance benchmarks', () => {
       expect(elapsed).toBeLessThan(500);
     });
 
+    it('should mutate 100000-line file in <2000ms', async () => {
+      // Generate a 100000-line markdown file (battle-hardening requirement)
+      const lines: string[] = [
+        '---',
+        'type: stress-test',
+        '---',
+        '',
+        '# Massive File Test',
+        '',
+        '## Log',
+        '',
+      ];
+
+      for (let i = 0; i < 99992; i++) {
+        lines.push(`- Entry ${i + 1}: Lorem ipsum dolor sit amet consectetur adipiscing elit sed do eiusmod tempor`);
+      }
+
+      const content = lines.join('\n');
+      await createTestNote(tempVault, 'massive.md', content);
+
+      // Measure mutation time
+      const start = performance.now();
+
+      const { content: fileContent, frontmatter, lineEnding } = await readVaultFile(tempVault, 'massive.md');
+      const section = findSection(fileContent, 'Log')!;
+      const modified = insertInSection(fileContent, section, '- New entry at the end of massive file', 'append');
+      await writeVaultFile(tempVault, 'massive.md', modified, frontmatter, lineEnding);
+
+      const elapsed = performance.now() - start;
+
+      console.log(`  100000-line mutation: ${elapsed.toFixed(2)}ms`);
+      expect(elapsed).toBeLessThan(2000);
+    });
+
     it('should handle 100 consecutive mutations without degradation', async () => {
       const content = `---
 type: test
