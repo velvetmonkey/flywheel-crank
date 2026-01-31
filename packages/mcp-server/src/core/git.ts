@@ -9,6 +9,25 @@ import fs from 'fs/promises';
 const LAST_COMMIT_FILE = '.claude/last-crank-commit.json';
 
 /**
+ * Configuration for retry logic on lock contention
+ */
+interface RetryConfig {
+  maxAttempts: number;
+  baseDelayMs: number;
+  maxDelayMs: number;
+  jitter: boolean;
+}
+
+const DEFAULT_RETRY: RetryConfig = {
+  maxAttempts: 3,
+  baseDelayMs: 100,
+  maxDelayMs: 500,
+  jitter: true,
+};
+
+const STALE_LOCK_THRESHOLD_MS = 30_000; // 30 seconds
+
+/**
  * Tracking data for the last successful Crank commit.
  * Used to prevent accidental undo of unrelated commits.
  */
@@ -72,6 +91,12 @@ export interface GitCommitResult {
   success: boolean;
   hash?: string;
   error?: string;
+  /** True only if commit succeeded and undo is available */
+  undoAvailable: boolean;
+  /** True if a stale lock (>30s old) was detected during retries */
+  staleLockDetected?: boolean;
+  /** Age of the lock file in milliseconds (if detected) */
+  lockAgeMs?: number;
 }
 
 /**
@@ -88,51 +113,152 @@ export async function isGitRepo(vaultPath: string): Promise<boolean> {
 }
 
 /**
+ * Check if the git index lock file exists and get its age
+ * @returns null if no lock exists, or an object with stale status and age
+ */
+async function checkLockFile(vaultPath: string): Promise<{ stale: boolean; ageMs: number } | null> {
+  const lockPath = path.join(vaultPath, '.git/index.lock');
+  try {
+    const stat = await fs.stat(lockPath);
+    const ageMs = Date.now() - stat.mtimeMs;
+    return { stale: ageMs > STALE_LOCK_THRESHOLD_MS, ageMs };
+  } catch {
+    return null; // No lock exists
+  }
+}
+
+/**
+ * Check if an error is a lock contention error
+ */
+function isLockContentionError(error: unknown): boolean {
+  if (error instanceof Error) {
+    const msg = error.message.toLowerCase();
+    return msg.includes('index.lock') ||
+           msg.includes('unable to create') ||
+           msg.includes('could not obtain lock');
+  }
+  return false;
+}
+
+/**
+ * Sleep for a given number of milliseconds
+ */
+function sleep(ms: number): Promise<void> {
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+/**
+ * Calculate delay with exponential backoff and optional jitter
+ */
+function calculateDelay(attempt: number, config: RetryConfig): number {
+  // Exponential backoff: baseDelay * 2^attempt
+  let delay = config.baseDelayMs * Math.pow(2, attempt);
+  delay = Math.min(delay, config.maxDelayMs);
+
+  if (config.jitter) {
+    // Add random jitter between 0-50% of delay to prevent thundering herd
+    delay = delay + Math.random() * delay * 0.5;
+  }
+
+  return Math.round(delay);
+}
+
+/**
  * Commit a change to a specific file
- * Non-blocking - returns success even if commit fails
+ * Includes retry logic for lock contention with exponential backoff
  */
 export async function commitChange(
   vaultPath: string,
   filePath: string,
-  messagePrefix: string
+  messagePrefix: string,
+  retryConfig: RetryConfig = DEFAULT_RETRY
 ): Promise<GitCommitResult> {
-  try {
-    const git: SimpleGit = simpleGit(vaultPath);
-
-    // Check if repo
-    const isRepo = await isGitRepo(vaultPath);
-    if (!isRepo) {
-      return {
-        success: false,
-        error: 'Not a git repository',
-      };
-    }
-
-    // Stage the file
-    await git.add(filePath);
-
-    // Create commit message
-    const fileName = path.basename(filePath);
-    const commitMessage = `${messagePrefix} Update ${fileName}`;
-
-    // Commit
-    const result = await git.commit(commitMessage);
-
-    // Track this commit for safe undo verification
-    if (result.commit) {
-      await saveLastCrankCommit(vaultPath, result.commit, commitMessage);
-    }
-
-    return {
-      success: true,
-      hash: result.commit,
-    };
-  } catch (error) {
+  // Check if repo first (no retry needed for this)
+  const isRepo = await isGitRepo(vaultPath);
+  if (!isRepo) {
     return {
       success: false,
-      error: error instanceof Error ? error.message : String(error),
+      error: 'Not a git repository',
+      undoAvailable: false,
     };
   }
+
+  const git: SimpleGit = simpleGit(vaultPath);
+  let lastError: Error | undefined;
+  let staleLockDetected = false;
+  let lockAgeMs: number | undefined;
+
+  for (let attempt = 0; attempt < retryConfig.maxAttempts; attempt++) {
+    try {
+      // Check lock status before each attempt (for reporting)
+      const lockInfo = await checkLockFile(vaultPath);
+      if (lockInfo) {
+        lockAgeMs = lockInfo.ageMs;
+        if (lockInfo.stale) {
+          staleLockDetected = true;
+        }
+      }
+
+      // Stage the file
+      await git.add(filePath);
+
+      // Create commit message
+      const fileName = path.basename(filePath);
+      const commitMessage = `${messagePrefix} Update ${fileName}`;
+
+      // Commit
+      const result = await git.commit(commitMessage);
+
+      // Track this commit for safe undo verification
+      if (result.commit) {
+        await saveLastCrankCommit(vaultPath, result.commit, commitMessage);
+      }
+
+      return {
+        success: true,
+        hash: result.commit,
+        undoAvailable: !!result.commit,
+        // Report stale lock if detected during retries, even if we succeeded
+        ...(staleLockDetected && { staleLockDetected: true }),
+        ...(lockAgeMs !== undefined && staleLockDetected && { lockAgeMs }),
+      };
+    } catch (error) {
+      lastError = error instanceof Error ? error : new Error(String(error));
+
+      // Only retry on lock contention errors
+      if (!isLockContentionError(error)) {
+        return {
+          success: false,
+          error: lastError.message,
+          undoAvailable: false,
+        };
+      }
+
+      // Check if lock is stale before retrying
+      const lockInfo = await checkLockFile(vaultPath);
+      if (lockInfo) {
+        lockAgeMs = lockInfo.ageMs;
+        if (lockInfo.stale) {
+          staleLockDetected = true;
+        }
+      }
+
+      // Wait before retry (unless this was the last attempt)
+      if (attempt < retryConfig.maxAttempts - 1) {
+        const delay = calculateDelay(attempt, retryConfig);
+        await sleep(delay);
+      }
+    }
+  }
+
+  // All retries exhausted
+  return {
+    success: false,
+    error: lastError?.message ?? 'Lock contention - all retries exhausted',
+    undoAvailable: false,
+    ...(staleLockDetected && { staleLockDetected: true }),
+    ...(lockAgeMs !== undefined && { lockAgeMs }),
+  };
 }
 
 export interface CommitInfo {

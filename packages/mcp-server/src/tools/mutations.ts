@@ -127,12 +127,12 @@ export function registerMutationTools(
         let workingContent = validationResult.content;
 
         // 5b. Apply wikilinks to content (unless skipped)
-        let { content: processedContent, wikilinkInfo } = maybeApplyWikilinks(workingContent, skipWikilinks);
+        let { content: processedContent, wikilinkInfo } = maybeApplyWikilinks(workingContent, skipWikilinks, notePath);
 
         // 5c. Suggest outgoing links (enabled by default)
         let suggestInfo: string | undefined;
         if (suggestOutgoingLinks && !skipWikilinks) {
-          const result = suggestRelatedLinks(processedContent, { maxSuggestions });
+          const result = suggestRelatedLinks(processedContent, { maxSuggestions, notePath });
           if (result.suffix) {
             processedContent = processedContent + ' ' + result.suffix;
             suggestInfo = `Suggested: ${result.suggestions.join(', ')}`;
@@ -156,13 +156,19 @@ export function registerMutationTools(
 
         // 9. Commit if requested
         let gitCommit: string | undefined;
-        let gitError: string | undefined;
+        let undoAvailable: boolean | undefined;
+        let staleLockDetected: boolean | undefined;
+        let lockAgeMs: number | undefined;
         if (commit) {
           const gitResult = await commitChange(vaultPath, notePath, '[Crank:Add]');
-          if (gitResult.success) {
+          if (gitResult.success && gitResult.hash) {
             gitCommit = gitResult.hash;
-          } else {
-            gitError = gitResult.error;
+            undoAvailable = gitResult.undoAvailable;
+          }
+          // Pass through stale lock info regardless of success
+          if (gitResult.staleLockDetected) {
+            staleLockDetected = gitResult.staleLockDetected;
+            lockAgeMs = gitResult.lockAgeMs;
           }
         }
 
@@ -176,7 +182,9 @@ export function registerMutationTools(
           path: notePath,
           preview,
           gitCommit,
-          gitError,
+          undoAvailable,
+          staleLockDetected,
+          lockAgeMs,
           tokensEstimate: 0, // Will be set below
           // Include validation info if present
           ...(validationResult.inputWarnings.length > 0 && { warnings: validationResult.inputWarnings }),
@@ -280,13 +288,18 @@ export function registerMutationTools(
 
         // 6. Commit if requested
         let gitCommit: string | undefined;
-        let gitError: string | undefined;
+        let undoAvailable: boolean | undefined;
+        let staleLockDetected: boolean | undefined;
+        let lockAgeMs: number | undefined;
         if (commit) {
           const gitResult = await commitChange(vaultPath, notePath, '[Crank:Remove]');
-          if (gitResult.success) {
+          if (gitResult.success && gitResult.hash) {
             gitCommit = gitResult.hash;
-          } else {
-            gitError = gitResult.error;
+            undoAvailable = gitResult.undoAvailable;
+          }
+          if (gitResult.staleLockDetected) {
+            staleLockDetected = gitResult.staleLockDetected;
+            lockAgeMs = gitResult.lockAgeMs;
           }
         }
 
@@ -296,7 +309,9 @@ export function registerMutationTools(
           path: notePath,
           preview: removeResult.removedLines.join('\n'),
           gitCommit,
-          gitError,
+          undoAvailable,
+          staleLockDetected,
+          lockAgeMs,
           tokensEstimate: 0,
         };
         result.tokensEstimate = estimateTokens(result);
@@ -403,12 +418,12 @@ export function registerMutationTools(
         let workingReplacement = validationResult.content;
 
         // 4b. Apply wikilinks to replacement text (unless skipped)
-        let { content: processedReplacement, wikilinkInfo } = maybeApplyWikilinks(workingReplacement, skipWikilinks);
+        let { content: processedReplacement, wikilinkInfo } = maybeApplyWikilinks(workingReplacement, skipWikilinks, notePath);
 
         // 4c. Suggest outgoing links (enabled by default)
         let suggestInfo: string | undefined;
         if (suggestOutgoingLinks && !skipWikilinks) {
-          const result = suggestRelatedLinks(processedReplacement, { maxSuggestions });
+          const result = suggestRelatedLinks(processedReplacement, { maxSuggestions, notePath });
           if (result.suffix) {
             processedReplacement = processedReplacement + ' ' + result.suffix;
             suggestInfo = `Suggested: ${result.suggestions.join(', ')}`;
@@ -441,13 +456,18 @@ export function registerMutationTools(
 
         // 6. Commit if requested
         let gitCommit: string | undefined;
-        let gitError: string | undefined;
+        let undoAvailable: boolean | undefined;
+        let staleLockDetected: boolean | undefined;
+        let lockAgeMs: number | undefined;
         if (commit) {
           const gitResult = await commitChange(vaultPath, notePath, '[Crank:Replace]');
-          if (gitResult.success) {
+          if (gitResult.success && gitResult.hash) {
             gitCommit = gitResult.hash;
-          } else {
-            gitError = gitResult.error;
+            undoAvailable = gitResult.undoAvailable;
+          }
+          if (gitResult.staleLockDetected) {
+            staleLockDetected = gitResult.staleLockDetected;
+            lockAgeMs = gitResult.lockAgeMs;
           }
         }
 
@@ -462,7 +482,9 @@ export function registerMutationTools(
           path: notePath,
           preview: previewLines.join('\n'),
           gitCommit,
-          gitError,
+          undoAvailable,
+          staleLockDetected,
+          lockAgeMs,
           tokensEstimate: 0,
           // Include validation info if present
           ...(validationResult.inputWarnings.length > 0 && { warnings: validationResult.inputWarnings }),

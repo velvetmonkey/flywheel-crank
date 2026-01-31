@@ -113,8 +113,9 @@ export function registerSystemTools(
     'Undo the last git commit (typically the last Crank mutation). Performs a soft reset.',
     {
       confirm: z.boolean().default(false).describe('Must be true to confirm undo operation'),
+      hash: z.string().optional().describe('Expected commit hash. If provided, undo only proceeds if HEAD matches this hash. Prevents accidentally undoing the wrong commit.'),
     },
-    async ({ confirm }) => {
+    async ({ confirm, hash }) => {
       try {
         // 1. Require confirmation
         if (!confirm) {
@@ -148,6 +149,31 @@ export function registerSystemTools(
             path: '',
           };
           return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
+        }
+
+        // 2b. If hash provided, verify HEAD matches before proceeding
+        if (hash) {
+          const currentHead = await getLastCommit(vaultPath);
+          if (!currentHead) {
+            const result: MutationResult = {
+              success: false,
+              message: 'No commits found to verify against',
+              path: '',
+            };
+            return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
+          }
+          // Support both full hash and short hash comparison
+          const normalizedHash = hash.toLowerCase();
+          const headHash = currentHead.hash.toLowerCase();
+          if (!headHash.startsWith(normalizedHash) && normalizedHash !== headHash) {
+            const result: MutationResult = {
+              success: false,
+              message: `HEAD mismatch - refusing to undo wrong commit. Expected ${hash.substring(0, 7)}, found ${currentHead.hash.substring(0, 7)}`,
+              path: '',
+              preview: `Expected: ${hash}\nActual HEAD: ${currentHead.hash} "${currentHead.message}"`,
+            };
+            return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
+          }
         }
 
         // 3. Verify HEAD matches expected Crank commit (safety check)

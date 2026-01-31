@@ -14,7 +14,6 @@ export interface MutationResult {
   path: string;
   preview?: string;
   gitCommit?: string;
-  gitError?: string;
   /** Content hashes for change tracking (optional) */
   contentHash?: ContentHash;
   /** Whether a hint was written for Flywheel integration */
@@ -27,6 +26,12 @@ export interface MutationResult {
   outputIssues?: OutputIssue[];
   /** Normalization changes applied (when normalize: true) */
   normalizationChanges?: string[];
+  /** True only if commit succeeded and undo is available */
+  undoAvailable?: boolean;
+  /** True if a stale lock (>30s old) was detected during retries */
+  staleLockDetected?: boolean;
+  /** Age of the lock file in milliseconds (if detected) */
+  lockAgeMs?: number;
 }
 
 /** Warning from input validation */

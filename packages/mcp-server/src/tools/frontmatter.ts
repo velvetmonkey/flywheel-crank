@@ -55,13 +55,18 @@ export function registerFrontmatterTools(
 
         // 5. Commit if requested
         let gitCommit: string | undefined;
-        let gitError: string | undefined;
+        let undoAvailable: boolean | undefined;
+        let staleLockDetected: boolean | undefined;
+        let lockAgeMs: number | undefined;
         if (commit) {
           const gitResult = await commitChange(vaultPath, notePath, '[Crank:FM]');
-          if (gitResult.success) {
+          if (gitResult.success && gitResult.hash) {
             gitCommit = gitResult.hash;
-          } else {
-            gitError = gitResult.error;
+            undoAvailable = gitResult.undoAvailable;
+          }
+          if (gitResult.staleLockDetected) {
+            staleLockDetected = gitResult.staleLockDetected;
+            lockAgeMs = gitResult.lockAgeMs;
           }
         }
 
@@ -75,7 +80,9 @@ export function registerFrontmatterTools(
           path: notePath,
           preview,
           gitCommit,
-          gitError,
+          undoAvailable,
+          staleLockDetected,
+          lockAgeMs,
         };
 
         return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
@@ -138,13 +145,18 @@ export function registerFrontmatterTools(
 
         // 6. Commit if requested
         let gitCommit: string | undefined;
-        let gitError: string | undefined;
+        let undoAvailable: boolean | undefined;
+        let staleLockDetected: boolean | undefined;
+        let lockAgeMs: number | undefined;
         if (commit) {
           const gitResult = await commitChange(vaultPath, notePath, '[Crank:FM]');
-          if (gitResult.success) {
+          if (gitResult.success && gitResult.hash) {
             gitCommit = gitResult.hash;
-          } else {
-            gitError = gitResult.error;
+            undoAvailable = gitResult.undoAvailable;
+          }
+          if (gitResult.staleLockDetected) {
+            staleLockDetected = gitResult.staleLockDetected;
+            lockAgeMs = gitResult.lockAgeMs;
           }
         }
 
@@ -154,7 +166,9 @@ export function registerFrontmatterTools(
           path: notePath,
           preview: `${key}: ${JSON.stringify(value)}`,
           gitCommit,
-          gitError,
+          undoAvailable,
+          staleLockDetected,
+          lockAgeMs,
         };
 
         return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };

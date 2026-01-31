@@ -188,13 +188,18 @@ export function registerTaskTools(
 
         // 8. Commit if requested
         let gitCommit: string | undefined;
-        let gitError: string | undefined;
+        let undoAvailable: boolean | undefined;
+        let staleLockDetected: boolean | undefined;
+        let lockAgeMs: number | undefined;
         if (commit) {
           const gitResult = await commitChange(vaultPath, notePath, '[Crank:Task]');
-          if (gitResult.success) {
+          if (gitResult.success && gitResult.hash) {
             gitCommit = gitResult.hash;
-          } else {
-            gitError = gitResult.error;
+            undoAvailable = gitResult.undoAvailable;
+          }
+          if (gitResult.staleLockDetected) {
+            staleLockDetected = gitResult.staleLockDetected;
+            lockAgeMs = gitResult.lockAgeMs;
           }
         }
 
@@ -207,7 +212,9 @@ export function registerTaskTools(
           path: notePath,
           preview: `${checkbox} ${matchingTask.text}`,
           gitCommit,
-          gitError,
+          undoAvailable,
+          staleLockDetected,
+          lockAgeMs,
           tokensEstimate: 0,
         };
         result.tokensEstimate = estimateTokens(result);
@@ -305,12 +312,12 @@ export function registerTaskTools(
         let workingTask = validationResult.content;
 
         // 4b. Apply wikilinks to task text (unless skipped)
-        let { content: processedTask, wikilinkInfo } = maybeApplyWikilinks(workingTask, skipWikilinks);
+        let { content: processedTask, wikilinkInfo } = maybeApplyWikilinks(workingTask, skipWikilinks, notePath);
 
         // 4c. Suggest outgoing links (enabled by default)
         let suggestInfo: string | undefined;
         if (suggestOutgoingLinks && !skipWikilinks) {
-          const result = suggestRelatedLinks(processedTask, { maxSuggestions });
+          const result = suggestRelatedLinks(processedTask, { maxSuggestions, notePath });
           if (result.suffix) {
             processedTask = processedTask + ' ' + result.suffix;
             suggestInfo = `Suggested: ${result.suggestions.join(', ')}`;
@@ -335,13 +342,18 @@ export function registerTaskTools(
 
         // 8. Commit if requested
         let gitCommit: string | undefined;
-        let gitError: string | undefined;
+        let undoAvailable: boolean | undefined;
+        let staleLockDetected: boolean | undefined;
+        let lockAgeMs: number | undefined;
         if (commit) {
           const gitResult = await commitChange(vaultPath, notePath, '[Crank:Task]');
-          if (gitResult.success) {
+          if (gitResult.success && gitResult.hash) {
             gitCommit = gitResult.hash;
-          } else {
-            gitError = gitResult.error;
+            undoAvailable = gitResult.undoAvailable;
+          }
+          if (gitResult.staleLockDetected) {
+            staleLockDetected = gitResult.staleLockDetected;
+            lockAgeMs = gitResult.lockAgeMs;
           }
         }
 
@@ -352,7 +364,9 @@ export function registerTaskTools(
           path: notePath,
           preview: taskLine + (infoLines.length > 0 ? `\n(${infoLines.join('; ')})` : ''),
           gitCommit,
-          gitError,
+          undoAvailable,
+          staleLockDetected,
+          lockAgeMs,
           tokensEstimate: 0,
           // Include validation info if present
           ...(validationResult.inputWarnings.length > 0 && { warnings: validationResult.inputWarnings }),
