@@ -217,6 +217,18 @@ Add to your `.mcp.json`:
 
 See [Configuration Guide](./docs/configuration.md) for complete options.
 
+### Auto-Wikilink Suggestions
+
+Mutations automatically suggest related entities from your vault:
+
+| Parameter | Default | Description |
+|-----------|---------|-------------|
+| `suggestOutgoingLinks` | `true` | Append wikilink suggestions (e.g., `→ [[Entity1]] [[Entity2]]`) |
+| `maxSuggestions` | `3` | Number of suggestions (1-10) |
+| `strictnessMode` | `conservative` | Detection mode: `conservative`, `balanced`, or `aggressive` |
+
+Disable for a single call: `suggestOutgoingLinks: false`
+
 ---
 
 ## Documentation
