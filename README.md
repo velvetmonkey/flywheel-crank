@@ -122,6 +122,27 @@ Crank only touched the ## Timeline section. The rest of the file was untouched.
 | **Format consistency** | Obsidian conventions enforced |
 | **Section-scoped** | Changes confined to target section |
 | **Git-integrated** | Optional commit per mutation, easy undo |
+| **Block-aware** | Code blocks, tables, blockquotes preserved |
+| **Input validation** | Detects common issues before writing |
+| **Output guardrails** | Prevents corrupted markdown |
+
+---
+
+## Who Uses Flywheel-Crank?
+
+Same folks who use [Flywheel](https://github.com/velvetmonkey/flywheel#who-uses-flywheel) — but now they want to **write**, not just read:
+
+| Persona | Your Problem | Crank Gives You |
+|---------|--------------|-----------------|
+| 🧠 **PKM Practitioner** | Manual linking is tedious | Auto-wikilinks on every write |
+| 🤖 **Agent Builder** | Agents can't safely mutate vaults | Deterministic, section-scoped writes |
+| 📓 **Daily Noters** | Logging breaks flow | One-liner adds with timestamp formatting |
+| 📊 **Knowledge Worker** | Frontmatter updates are manual | Structured field mutations |
+| 🔄 **Workflow Automators** | Scripts corrupt formatting | Block-aware, format-preserving edits |
+
+**The pattern:** Flywheel sees → Crank touches → Flywheel verifies.
+
+See [Flywheel's audience section](https://github.com/velvetmonkey/flywheel#who-uses-flywheel) for the full persona breakdown and inspiration from builders in public.
 
 ---
 
@@ -190,6 +211,9 @@ Add to your `.mcp.json`:
 |-----------|---------|-------------|
 | `commit` | `false` | Git commit after mutation (creates undo point) |
 | `skipWikilinks` | `false` | Disable auto-wikilinks for this call |
+| `validate` | `true` | Check input for common issues (double timestamps, etc.) |
+| `normalize` | `true` | Auto-fix issues like `•` → `-` bullets |
+| `guardrails` | `warn` | Output validation: `warn`, `strict`, or `off` |
 
 See [Configuration Guide](./docs/configuration.md) for complete options.
 
