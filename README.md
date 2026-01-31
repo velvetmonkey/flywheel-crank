@@ -225,7 +225,6 @@ Mutations automatically suggest related entities from your vault:
 |-----------|---------|-------------|
 | `suggestOutgoingLinks` | `true` | Append wikilink suggestions (e.g., `→ [[Entity1]] [[Entity2]]`) |
 | `maxSuggestions` | `3` | Number of suggestions (1-10) |
-| `strictnessMode` | `conservative` | Detection mode: `conservative`, `balanced`, or `aggressive` |
 
 Disable for a single call: `suggestOutgoingLinks: false`
 

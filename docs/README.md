@@ -93,7 +93,7 @@ Comprehensive documentation of what Crank cannot do, including architectural lim
 **Read when:** Understanding Crank's boundaries or deciding whether Crank is the right tool for a task.
 
 ### [testing.md](testing.md)
-Automated test suite overview (523 tests), manual MCP testing procedures, and git integration behavior. Includes common development workflows.
+Automated test suite overview (905 tests), manual MCP testing procedures, and git integration behavior. Includes common development workflows.
 
 **Read when:** Contributing to Flywheel Crank or debugging tool behavior.
 
@@ -124,7 +124,7 @@ Automated test suite overview (523 tests), manual MCP testing procedures, and gi
 4. [wikilinks.md](wikilinks.md) - Leverage auto-linking
 
 **Contributors:**
-1. [testing.md](testing.md) - Understand the test suite (523 tests)
+1. [testing.md](testing.md) - Understand the test suite (905 tests)
 2. [tools-reference.md](tools-reference.md) - Learn tool patterns
 3. [PERFORMANCE.md](PERFORMANCE.md) - Understand benchmarks
 

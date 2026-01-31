@@ -23,7 +23,7 @@ npm run lint
 
 ### Overview
 
-**Total: 242 tests across 10 test files**
+**Total: 905 tests across 26 test files**
 
 ```
 test/
@@ -554,8 +554,8 @@ npm run build && npm run lint && npm run test
   ✓ findSection locates section boundaries (4 ms)
   ...
 
-Test Suites: 10 passed, 10 total
-Tests:       242 passed, 242 total
+Test Suites: 26 passed, 26 total
+Tests:       905 passed, 905 total
 Snapshots:   0 total
 Time:        4.532 s
 ```

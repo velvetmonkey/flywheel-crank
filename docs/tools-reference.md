@@ -675,6 +675,181 @@ const updated = await mcp__flywheel__get_section_content({
 
 ---
 
+## End-to-End Workflow Examples
+
+### Daily Note Workflow
+
+A complete daily note workflow combining multiple tools:
+
+```
+┌─ WORKFLOW: Daily Note Setup ─────────────────────────────────────┐
+│                                                                  │
+│  Morning Setup:                                                  │
+│  1. vault_create_note → Create today's daily note               │
+│  2. vault_add_to_section → Log morning priorities               │
+│  3. vault_add_task → Add today's tasks                          │
+│                                                                  │
+│  Throughout Day:                                                 │
+│  4. vault_add_to_section → Log meetings, calls, progress        │
+│  5. vault_toggle_task → Mark tasks complete                     │
+│                                                                  │
+│  Evening Wrap:                                                   │
+│  6. vault_update_frontmatter → Update status to "complete"      │
+└──────────────────────────────────────────────────────────────────┘
+```
+
+**Step-by-step:**
+
+```javascript
+// 1. Create daily note (if not exists)
+vault_create_note({
+  path: "daily-notes/2026-01-31.md",
+  frontmatter: { type: "daily", date: "2026-01-31" },
+  content: "# 2026-01-31\n\n## Priorities\n\n## Log\n\n## Tasks"
+})
+
+// 2. Log morning priorities
+vault_add_to_section({
+  path: "daily-notes/2026-01-31.md",
+  section: "Priorities",
+  content: "Ship documentation updates for flywheel-crank",
+  format: "bullet"
+})
+
+// 3. Add tasks
+vault_add_task({
+  path: "daily-notes/2026-01-31.md",
+  section: "Tasks",
+  task: "Review PR for Project Alpha"
+})
+
+// 4. Log throughout day
+vault_add_to_section({
+  path: "daily-notes/2026-01-31.md",
+  section: "Log",
+  content: "Met with Sam Chen about API integration",
+  format: "timestamp-bullet"
+})
+// Result: - **14:32** Met with [[Sam Chen]] about API integration
+
+// 5. Mark task complete
+vault_toggle_task({
+  path: "daily-notes/2026-01-31.md",
+  task: "Review PR"  // Partial match works
+})
+
+// 6. End of day
+vault_update_frontmatter({
+  path: "daily-notes/2026-01-31.md",
+  updates: { status: "complete", mood: "productive" }
+})
+```
+
+---
+
+### Project Tracking Workflow
+
+Track project progress with status updates and task management:
+
+```javascript
+// Add progress update with auto-wikilinks
+vault_add_to_section({
+  path: "projects/mcp-server.md",
+  section: "Progress",
+  content: "Completed authentication module with OAuth support",
+  format: "timestamp-bullet",
+  commit: true  // Create undo point
+})
+// Result: - **10:15** Completed authentication module with OAuth support
+//         → [[OAuth]] [[Authentication]]
+
+// Replace status
+vault_replace_in_section({
+  path: "projects/mcp-server.md",
+  section: "Status",
+  search: "In Progress",
+  replacement: "In Review"
+})
+
+// Add blocker task
+vault_add_task({
+  path: "projects/mcp-server.md",
+  section: "Blockers",
+  task: "Waiting on security review from compliance team",
+  position: "prepend"
+})
+
+// Update frontmatter milestone
+vault_update_frontmatter({
+  path: "projects/mcp-server.md",
+  updates: {
+    milestone: "v0.12.0",
+    last_updated: "2026-01-31"
+  }
+})
+```
+
+---
+
+## Edge Cases and Error Handling
+
+### Empty Sections
+
+When adding to an empty section, content is added directly after the heading:
+
+```markdown
+## Log              ## Log
+                →   - **10:00** First entry
+## Tasks            ## Tasks
+```
+
+### Duplicate Headings
+
+If multiple sections have the same name, Crank matches the **first occurrence**:
+
+```markdown
+# Project
+## Notes          ← This "Notes" section is matched
+Some content
+
+## Archive
+### Notes         ← This nested "Notes" is NOT matched
+Old content
+```
+
+To target a specific occurrence, use more specific section names or restructure headings.
+
+### Missing Sections
+
+When a section doesn't exist, you'll receive a clear error:
+
+```json
+{
+  "success": false,
+  "message": "Section 'Meetings' not found in projects/alpha.md. Available sections: Status, Progress, Tasks, Archive"
+}
+```
+
+Use `vault_list_sections` first to discover available sections:
+
+```javascript
+vault_list_sections({ path: "projects/alpha.md" })
+// Returns: { sections: ["Status", "Progress", "Tasks", "Archive"] }
+```
+
+### Files Without Headings
+
+Section-based tools require markdown headings. For files without structure:
+
+```json
+{
+  "success": false,
+  "message": "Section 'Log' not found. This file has no headings. Consider adding markdown headings (## Section Name) to structure your content."
+}
+```
+
+---
+
 ## Glossary
 
 | Term | Definition |

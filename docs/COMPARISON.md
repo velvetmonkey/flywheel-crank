@@ -208,7 +208,7 @@ vault_toggle_task({
 | Auto-wikilinks | Yes (on mutations) | No |
 | Deterministic | Yes (predictable outputs) | Varies |
 | Git integration | Built-in commits, undo | Rare |
-| Test coverage | 523 tests | Often minimal |
+| Test coverage | 905 tests | Often minimal |
 | Token efficiency | Optimized JSON responses | Often full documents |
 
 ### Why Choose Flywheel-Crank
