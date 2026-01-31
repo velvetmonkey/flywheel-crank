@@ -4,6 +4,53 @@ Crank automatically links known entities as you write, creating a self-reinforci
 
 ---
 
+## Why This Changes Everything
+
+Most note-taking tools treat linking as **manual labor**. You write, then you link. You link, then you organize. Every connection requires intention and effort.
+
+**Flywheel inverts this.** You just write. The connections form themselves.
+
+```
+Traditional:     Write → Remember to link → Manual effort → Some connections
+Flywheel:        Write → Auto-link → Graph grows → MORE connections emerge
+```
+
+### The Compounding Effect
+
+Each note you create makes every future note more connected:
+
+| Vault State | What Happens |
+|-------------|--------------|
+| **10 notes** | Basic linking, few suggestions |
+| **50 notes** | Entity patterns emerge, suggestions improve |
+| **200 notes** | Graph intelligence kicks in, hidden connections surface |
+| **500+ notes** | Self-sustaining: mentions auto-link, co-occurrence predicts relationships |
+
+This isn't linear growth. It's **exponential discovery**.
+
+### What Makes This Different
+
+| Feature | Traditional Linking | Flywheel Auto-Links |
+|---------|---------------------|---------------------|
+| Effort | Manual every time | Zero ongoing effort |
+| Coverage | Only what you remember | Everything that matches |
+| Consistency | Human error, forgotten links | Systematic, complete |
+| Discovery | You find connections | Connections find you |
+
+### The "Aha" Moment
+
+Query your backlinks after a month of using Flywheel:
+
+```
+"Show me everything connected to [[Project Alpha]]"
+```
+
+You'll see connections you never explicitly made — meeting notes, daily logs, decisions, people — all linked because you mentioned them naturally and Flywheel did the rest.
+
+**That's the flywheel effect.** The more you use it, the more valuable it becomes. Not through configuration or setup, but through the simple act of writing.
+
+---
+
 ## Table of Contents
 
 - [The Feedback Loop](#the-feedback-loop)
@@ -14,6 +61,59 @@ Crank automatically links known entities as you write, creating a self-reinforci
 - [Template Placeholder Handling](#template-placeholder-handling)
 - [Controlling Wikilinks](#controlling-wikilinks)
 - [Suggested Outgoing Links](#suggested-outgoing-links)
+
+---
+
+## How the Intelligence Works
+
+Flywheel's linking intelligence operates through three interlocking processes:
+
+### Process 1: Build the Graph
+
+Every note you create teaches the system. Flywheel scans your vault and builds an entity index:
+
+- **Entity names** from filenames ("Sarah Chen.md" → `[[Sarah Chen]]`)
+- **Aliases** from frontmatter (aliases: [SC, Dr. Chen] → alternative matches)
+- **Derived forms** auto-generated (stems, plurals, possessives)
+- **Categories** inferred from structure (`/people/` folder → person entity)
+- **Relationships** discovered from co-occurrence (Sarah appears with [[Acme Corp]] → they're connected)
+
+**The more notes you create, the smarter the matching becomes.**
+
+### Process 2: Identify What Should Be Linked
+
+When you write content, Flywheel finds text that matches known entities:
+
+```
+Input:  "Discussed engine performance with Marcus"
+Finds:  "engine" → [[Engine Design]] (stem match)
+        "Marcus" → [[Marcus Johnson]] (first name, unique in vault)
+Output: "Discussed [[Engine Design]] performance with [[Marcus Johnson]]"
+```
+
+This isn't simple string matching. Flywheel uses:
+- **Stem matching**: "engines" finds "Engine"
+- **Alias matching**: "Dr. Chen" finds "Sarah Chen"
+- **Context scoring**: "Marcus" near "engine" boosts Marcus-the-engineer over Marcus-the-accountant
+- **Disambiguation**: ambiguous matches are skipped (better to miss than mismatch)
+
+### Process 3: Suggest What You Didn't Mention
+
+The hardest problem: suggesting entities that **should** be connected but weren't mentioned by name.
+
+```
+Input:  "Reviewed the test results from yesterday's campaign"
+Graph:  [[Test Campaign]] links to [[Marcus Johnson]]
+        [[Test Campaign]] links to [[Propulsion System]]
+Suggests: → [[Marcus Johnson]] [[Propulsion System]]
+```
+
+Flywheel uses graph algorithms (not AI) to find these hidden connections:
+- **Common neighbors**: Entities that share connections with what you mentioned
+- **Co-occurrence patterns**: Entities that frequently appear together
+- **Transitive relationships**: If A→B and B→C, maybe A→C
+
+**Result:** Your notes capture relationships you didn't explicitly think to record.
 
 ---
 
@@ -526,6 +626,48 @@ First occurrence is usually enough:
 "Met with [[Alex Rivera]] about the project. Alex said..."
 ↑ Linked first time                           ↑ Not linked again (correct)
 ```
+
+---
+
+## The Graph Intelligence: No AI Required
+
+Flywheel's link suggestions aren't powered by AI, embeddings, or cloud services. They're powered by **graph algorithms** — the same math that finds shortest paths in maps and ranks web pages.
+
+### Why Graph-Based?
+
+| AI/Embedding Approach | Flywheel's Graph Approach |
+|-----------------------|---------------------------|
+| Requires cloud/GPU | Runs locally, offline |
+| Black box decisions | Explainable: "shares 3 neighbors" |
+| Training data needed | Learns from YOUR vault |
+| Generic patterns | YOUR specific relationships |
+| Privacy concerns | Your data never leaves your machine |
+
+### The Algorithms Behind the Magic
+
+**Common Neighbors:**
+If Sarah and Marcus both link to [[Engine Design]], [[Test Campaign]], and [[Propulsion System]], they probably belong in the same note. Simple counting, powerful signal.
+
+**Adamic-Adar Index:**
+Sharing a niche connection matters more than sharing a hub. Both linking to [[Obscure Algorithm]] is more meaningful than both linking to [[Meeting Notes]]. Rare connections = stronger signal.
+
+**Co-occurrence Mining:**
+Flywheel tracks which entities appear together across your vault. If [[TypeScript]] and [[Migration]] appear in 12 notes together, mentioning one suggests the other.
+
+**Transitive Relationships:**
+If [[A]] → [[B]] and [[B]] → [[C]], then [[A]] probably relates to [[C]]. The graph reveals connections you never explicitly made.
+
+### Why This Scales
+
+These algorithms have logarithmic complexity — they get BETTER as your vault grows, not slower:
+
+| Vault Size | AI Approach | Graph Approach |
+|------------|-------------|----------------|
+| 100 notes | Fast (small data) | Fast |
+| 1,000 notes | Slow (more embeddings) | Fast (denser graph = better signals) |
+| 10,000 notes | Very slow | Still fast, even smarter suggestions |
+
+**The graph IS the intelligence.** Every link you make (or Flywheel makes for you) adds to the collective knowledge. After months of use, your vault has accumulated relationship intelligence that no generic AI could replicate.
 
 ---
 

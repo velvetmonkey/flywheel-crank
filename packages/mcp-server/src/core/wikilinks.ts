@@ -258,6 +258,9 @@ export function getEntityIndexStats(): {
       acronyms: entityIndex.acronyms.length,
       people: entityIndex.people.length,
       projects: entityIndex.projects.length,
+      organizations: entityIndex.organizations?.length ?? 0,
+      locations: entityIndex.locations?.length ?? 0,
+      concepts: entityIndex.concepts?.length ?? 0,
       other: entityIndex.other.length,
     },
   };

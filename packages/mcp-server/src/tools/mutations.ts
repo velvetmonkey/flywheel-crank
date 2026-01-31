@@ -77,8 +77,8 @@ export function registerMutationTools(
           return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
         }
 
-        // 3. Read file with frontmatter
-        const { content: fileContent, frontmatter } = await readVaultFile(vaultPath, notePath);
+        // 3. Read file with frontmatter (preserve line ending style)
+        const { content: fileContent, frontmatter, lineEnding } = await readVaultFile(vaultPath, notePath);
 
         // 4. Find the section
         const sectionBoundary = findSection(fileContent, section);
@@ -151,8 +151,8 @@ export function registerMutationTools(
           { preserveListNesting }
         );
 
-        // 8. Write file (preserving frontmatter)
-        await writeVaultFile(vaultPath, notePath, updatedContent, frontmatter);
+        // 8. Write file (preserving frontmatter and line endings)
+        await writeVaultFile(vaultPath, notePath, updatedContent, frontmatter, lineEnding);
 
         // 9. Commit if requested
         let gitCommit: string | undefined;
@@ -230,8 +230,8 @@ export function registerMutationTools(
           return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
         }
 
-        // 2. Read file with frontmatter
-        const { content: fileContent, frontmatter } = await readVaultFile(vaultPath, notePath);
+        // 2. Read file with frontmatter (preserve line ending style)
+        const { content: fileContent, frontmatter, lineEnding } = await readVaultFile(vaultPath, notePath);
 
         // 3. Find the section
         const sectionBoundary = findSection(fileContent, section);
@@ -275,8 +275,8 @@ export function registerMutationTools(
           return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
         }
 
-        // 5. Write file
-        await writeVaultFile(vaultPath, notePath, removeResult.content, frontmatter);
+        // 5. Write file (preserving line endings)
+        await writeVaultFile(vaultPath, notePath, removeResult.content, frontmatter, lineEnding);
 
         // 6. Commit if requested
         let gitCommit: string | undefined;
@@ -353,8 +353,8 @@ export function registerMutationTools(
           return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
         }
 
-        // 2. Read file with frontmatter
-        const { content: fileContent, frontmatter } = await readVaultFile(vaultPath, notePath);
+        // 2. Read file with frontmatter (preserve line ending style)
+        const { content: fileContent, frontmatter, lineEnding } = await readVaultFile(vaultPath, notePath);
 
         // 3. Find the section
         const sectionBoundary = findSection(fileContent, section);
@@ -436,8 +436,8 @@ export function registerMutationTools(
           return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
         }
 
-        // 5. Write file
-        await writeVaultFile(vaultPath, notePath, replaceResult.content, frontmatter);
+        // 5. Write file (preserving line endings)
+        await writeVaultFile(vaultPath, notePath, replaceResult.content, frontmatter, lineEnding);
 
         // 6. Commit if requested
         let gitCommit: string | undefined;

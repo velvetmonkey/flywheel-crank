@@ -129,6 +129,19 @@ const STOPWORDS = new Set([
   'because', 'since', 'while', 'until', 'unless',
   'except', 'besides', 'anyway', 'otherwise', 'instead',
   'meanwhile', 'furthermore', 'moreover', 'nevertheless',
+
+  // Domain-specific (vault/PKM terms - prevent false matches)
+  'note', 'notes', 'page', 'pages', 'vault', 'link', 'links',
+  'wikilink', 'wikilinks', 'markdown', 'frontmatter',
+  'file', 'files', 'folder', 'folders', 'path', 'paths',
+  'section', 'sections', 'heading', 'headings', 'template', 'templates',
+
+  // Task/productivity terms
+  'todo', 'todos', 'task', 'tasks', 'pending', 'inbox', 'archive', 'draft',
+
+  // Additional discourse markers
+  'nonetheless', 'accordingly', 'alternatively', 'specifically',
+  'essentially', 'particularly', 'primarily', 'additionally',
 ]);
 
 /**

@@ -458,24 +458,10 @@ export function insertInSection(
 
   if (position === 'prepend') {
     // Insert right after the heading
-    // If preserveListNesting is enabled, detect indentation from the first list item in the section
+    // If preserveListNesting is enabled, use section base indentation for consistency
     if (options?.preserveListNesting) {
-      // Look forward to find the first list item in the section
-      let indent = '';
-      for (let i = section.contentStartLine; i <= section.endLine; i++) {
-        const line = lines[i];
-        const trimmed = line.trim();
-        if (trimmed === '') continue;
-
-        // Check if this is a list item (bullet, numbered, or task)
-        const listMatch = line.match(/^(\s*)[-*+]\s|^(\s*)\d+\.\s|^(\s*)[-*+]\s*\[[ xX]\]/);
-        if (listMatch) {
-          indent = listMatch[1] || listMatch[2] || listMatch[3] || '';
-          break;
-        }
-        // If we hit non-list content, stop searching
-        break;
-      }
+      // Use the same detection as append to ensure consistent indentation
+      const indent = detectSectionBaseIndentation(lines, section.contentStartLine, section.endLine);
 
       if (indent) {
         const contentLines = formattedContent.split('\n');

@@ -238,4 +238,29 @@ See [Configuration Guide](./docs/configuration.md) for complete options.
 
 ---
 
+## Under the Hood
+
+<div align="center">
+
+**The self-building knowledge graph.** No AI. No cloud. Just graph intelligence.
+
+| | | | |
+|:---:|:---:|:---:|:---:|
+| **Porter Stemmer** | **Adamic-Adar Index** | **Co-occurrence Mining** | **Transitive Inference** |
+| Matches plurals, tenses | Rare connections matter more | Learns from YOUR vault | A→B→C suggests A→C |
+
+</div>
+
+**How it works:**
+- **Entity Index** — Scans your vault, derives aliases, categorizes by structure
+- **Graph Algorithms** — Common neighbors, path counting, co-occurrence patterns
+- **Zero-Shot Learning** — No training data needed, learns from your graph
+- **Offline-First** — Everything runs locally, your data never leaves your machine
+
+The more you use it, the smarter it gets. Not through AI training, but through the graph itself accumulating relationship intelligence.
+
+*Built on foundations from [Liben-Nowell & Kleinberg](https://www.cs.cornell.edu/home/kleinber/link-pred.pdf) (link prediction), [Stanford NLP](https://web.stanford.edu/class/cs520/2020/notes/How_To_Create_A_Knowledge_Graph_From_Text.html) (knowledge extraction), and [Wikipedia entity linking](https://en.wikipedia.org/wiki/Entity_linking) research.*
+
+---
+
 Apache-2.0 License · [GitHub](https://github.com/velvetmonkey/flywheel-crank) · [Issues](https://github.com/velvetmonkey/flywheel-crank/issues)
