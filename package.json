@@ -1,9 +1,11 @@
 {
   "name": "@velvetmonkey/flywheel-crank",
-  "version": "1.27.22",
+  "version": "1.27.23",
   "private": true,
   "description": "Deterministic vault mutations for Obsidian via MCP",
-  "workspaces": ["packages/*"],
+  "workspaces": [
+    "packages/*"
+  ],
   "scripts": {
     "build": "npm run build --workspace=packages/mcp-server",
     "test": "npm run test --workspace=packages/mcp-server",

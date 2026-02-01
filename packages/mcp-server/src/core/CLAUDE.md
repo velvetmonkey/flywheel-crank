@@ -37,5 +37,9 @@
 
 | ID | Time | T | Title | Read |
 |----|------|---|-------|------|
+| #4920 | 3:27 PM | 🔵 | MutationResult Interface Fields Documented in TypeScript | ~540 |
+| #4910 | 3:25 PM | 🔵 | Structural Markdown Protection Verified in vault-core | ~478 |
+| #4874 | 3:16 PM | 🔵 | Flywheel-Crank Strictness Modes - Configurable Suggestion Thresholds | ~422 |
+| #4872 | " | 🔵 | Flywheel-Crank Wikilink Scoring Algorithm - Multi-Layer Boost System | ~600 |
 | #4442 | 4:28 AM | 🔵 | Complete Storage Architecture: JSON-Based Caching, No SQLite/FTS5 Implementation | ~1037 |
 </claude-mem-context>
