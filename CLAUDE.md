@@ -55,6 +55,19 @@ Modern agentic AI faces a fundamental tension:
 
 ---
 
+## Strategic Documents
+
+**[RESEARCH/STRATEGIC_ANALYSIS_FLYWHEEL_CRANK.md](./RESEARCH/STRATEGIC_ANALYSIS_FLYWHEEL_CRANK.md)** - Comprehensive strategic analysis covering:
+- Current product state and gaps
+- Roadmap evaluation and priorities
+- Competitive landscape and market opportunities
+- 30/60/90 day execution plan
+- GTM strategy and blind spots
+
+Read this for deep context on product direction, market timing, and strategic priorities.
+
+---
+
 ## Current State
 
 **Shipped:**

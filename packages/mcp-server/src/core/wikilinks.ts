@@ -158,11 +158,12 @@ async function rebuildIndex(vaultPath: string, cacheFile: string): Promise<void>
 
   // Get entities for secondary indexes
   const entities = getAllEntities(entityIndex);
+  const entityNames = entities.map(e => typeof e === 'string' ? e : getEntityName(e));
 
   // Mine co-occurrences for conceptual suggestions
   try {
     const cooccurrenceStart = Date.now();
-    cooccurrenceIndex = await mineCooccurrences(vaultPath, entities);
+    cooccurrenceIndex = await mineCooccurrences(vaultPath, entityNames);
     const cooccurrenceDuration = Date.now() - cooccurrenceStart;
     console.error(`[Crank] Co-occurrence index built: ${cooccurrenceIndex._metadata.total_associations} associations in ${cooccurrenceDuration}ms`);
   } catch (e) {

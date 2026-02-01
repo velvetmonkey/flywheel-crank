@@ -6,7 +6,7 @@
 
 # Flywheel Crank
 
-### Safe, surgical mutations for Obsidian vaults.
+### Safe, surgical mutations for agentic markdown vaults.
 
 [![npm version](https://img.shields.io/npm/v/@velvetmonkey/flywheel-crank.svg)](https://www.npmjs.com/package/@velvetmonkey/flywheel-crank)
 [![License: Apache-2.0](https://img.shields.io/badge/License-Apache--2.0-blue.svg)](https://www.apache.org/licenses/LICENSE-2.0)
@@ -43,7 +43,7 @@ Flywheel and Flywheel-Crank form a complementary pair:
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
-│                    Your Obsidian Vault                      │
+│                  Your Markdown Vault                        │
 ├─────────────────────────────────────────────────────────────┤
 │                                                             │
 │   Flywheel (Eyes)              Flywheel-Crank (Hands)       │

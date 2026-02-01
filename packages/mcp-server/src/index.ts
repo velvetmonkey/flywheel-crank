@@ -6,6 +6,7 @@ import { registerTaskTools } from './tools/tasks.js';
 import { registerFrontmatterTools } from './tools/frontmatter.js';
 import { registerNoteTools } from './tools/notes.js';
 import { registerSystemTools } from './tools/system.js';
+import { registerPolicyTools } from './tools/policy.js';
 import { findVaultRoot } from './core/vaultRoot.js';
 import { initializeEntityIndex } from './core/wikilinks.js';
 
@@ -31,6 +32,7 @@ registerTaskTools(server, vaultPath);
 registerFrontmatterTools(server, vaultPath);
 registerNoteTools(server, vaultPath);
 registerSystemTools(server, vaultPath);
+registerPolicyTools(server, vaultPath);
 
 // Start server
 const transport = new StdioServerTransport();

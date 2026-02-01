@@ -1,0 +1,75 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: packages/mcp-server/package-lock.json
+      - name: Install dependencies
+        run: npm ci
+        working-directory: packages/mcp-server
+      - name: Type check
+        run: npm run lint
+        working-directory: packages/mcp-server
+
+  build:
+    name: Build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: packages/mcp-server/package-lock.json
+      - name: Install dependencies
+        run: npm ci
+        working-directory: packages/mcp-server
+      - name: Build
+        run: npm run build
+        working-directory: packages/mcp-server
+
+  test:
+    name: Test (Node ${{ matrix.node }} / ${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+        node: ['18', '20', '22']
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+          cache: 'npm'
+          cache-dependency-path: packages/mcp-server/package-lock.json
+      - name: Install dependencies
+        run: npm ci
+        working-directory: packages/mcp-server
+      - name: Configure git for tests
+        run: |
+          git config --global user.email "ci@test.com"
+          git config --global user.name "CI Test"
+      - name: Run tests
+        run: npm test
+        working-directory: packages/mcp-server
+      - name: Upload coverage
+        if: matrix.os == 'ubuntu-latest' && matrix.node == '20'
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-report
+          path: packages/mcp-server/coverage/
+          retention-days: 7
