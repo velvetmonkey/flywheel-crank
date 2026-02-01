@@ -579,13 +579,20 @@ const TYPE_BOOST: Record<EntityCategory, number> = {
 const CROSS_FOLDER_BOOST = 3;
 
 /**
- * Hub note boost - prioritize well-connected notes
+ * Hub note boost tiers - prioritize well-connected notes
  *
  * Notes with many backlinks (hub notes) are typically more central
  * to the knowledge graph and more useful to link to.
+ *
+ * Tiered scoring ensures major hubs (Stretch, Walk, ESGHub with 100+ backlinks)
+ * get significantly higher priority than entities with minimal connections.
  */
-const HUB_THRESHOLD = 5;  // Minimum backlinks to be considered a hub
-const HUB_BOOST = 3;      // Boost for hub notes
+const HUB_TIERS = [
+  { threshold: 100, boost: 8 },  // Major hubs (Stretch, Walk, ESGHub)
+  { threshold: 50,  boost: 5 },  // Significant hubs
+  { threshold: 20,  boost: 3 },  // Medium hubs
+  { threshold: 5,   boost: 1 },  // Small hubs
+] as const;
 
 /**
  * Get cross-folder boost for an entity
@@ -610,15 +617,22 @@ function getCrossFolderBoost(entityPath: string, notePath: string): number {
 }
 
 /**
- * Get hub score boost for an entity
+ * Get hub score boost for an entity using tiered scoring
  *
  * @param entity - Entity object with optional hubScore
- * @returns Boost value if hub note, 0 otherwise
+ * @returns Boost value based on backlink count tier (0-8)
  */
 function getHubBoost(entity: { hubScore?: number }): number {
-  if (entity.hubScore !== undefined && entity.hubScore >= HUB_THRESHOLD) {
-    return HUB_BOOST;
+  const hubScore = entity.hubScore ?? 0;
+  if (hubScore === 0) return 0;
+
+  // Find the highest tier that applies
+  for (const tier of HUB_TIERS) {
+    if (hubScore >= tier.threshold) {
+      return tier.boost;
+    }
   }
+
   return 0;
 }
 
@@ -1004,8 +1018,8 @@ export function suggestRelatedLinks(
       if (isLikelyArticleTitle(entityName)) continue;
       if (linkedEntities.has(entityName.toLowerCase())) continue;
 
-      // Get co-occurrence boost
-      const boost = getCooccurrenceBoost(entityName, directlyMatchedEntities, cooccurrenceIndex);
+      // Get co-occurrence boost (with recency weighting)
+      const boost = getCooccurrenceBoost(entityName, directlyMatchedEntities, cooccurrenceIndex, recencyIndex);
 
       if (boost > 0) {
         // Check if entity is already in scored list
@@ -1029,8 +1043,20 @@ export function suggestRelatedLinks(
     }
   }
 
-  // Sort by score (descending) and take top N
-  scoredEntities.sort((a, b) => b.score - a.score);
+  // Sort by score (descending) with recency as tiebreaker
+  scoredEntities.sort((a, b) => {
+    // Primary: score (descending)
+    if (b.score !== a.score) return b.score - a.score;
+
+    // Secondary: recency (more recent first)
+    if (recencyIndex) {
+      const aRecency = recencyIndex.lastMentioned.get(a.name.toLowerCase()) || 0;
+      const bRecency = recencyIndex.lastMentioned.get(b.name.toLowerCase()) || 0;
+      return bRecency - aRecency;
+    }
+
+    return 0;
+  });
   const topSuggestions = scoredEntities.slice(0, maxSuggestions).map(e => e.name);
 
   if (topSuggestions.length === 0) {

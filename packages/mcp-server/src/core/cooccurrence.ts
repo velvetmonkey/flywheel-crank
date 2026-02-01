@@ -12,6 +12,7 @@
 import { readdir, readFile } from 'fs/promises';
 import path from 'path';
 import { tokenize } from './stemmer.js';
+import { getRecencyBoost, type RecencyIndex } from './recency.js';
 
 /**
  * Entity associations - maps entity to related entities with co-occurrence counts
@@ -209,20 +210,36 @@ export async function mineCooccurrences(
 }
 
 /**
+ * Maximum co-occurrence boost to prevent high-connectivity entities
+ * from dominating suggestions through accumulated relationships.
+ * Cap at 6 = 2 relationships max effect (prevents AD/AG/AI problem)
+ */
+const MAX_COOCCURRENCE_BOOST = 6;
+
+/**
  * Get co-occurrence score boost for an entity based on matched entities
  *
  * If the content matches entityA, and entityB has a co-occurrence with entityA,
  * entityB gets a score boost based on the co-occurrence count.
  *
+ * Boost is capped to prevent high-connectivity entities (like Azure services)
+ * from dominating suggestions through accumulated co-occurrence relationships.
+ *
+ * When recencyIndex is provided, applies a multiplier based on entity recency:
+ * - Recent entities (recency boost > 0): 1.5x multiplier
+ * - Stale entities (no recency boost): 0.5x multiplier
+ *
  * @param entityName - Entity to get boost for
  * @param matchedEntities - Entities that directly matched the content
  * @param cooccurrenceIndex - The co-occurrence index
- * @returns Score boost (0 if no boost)
+ * @param recencyIndex - Optional recency index for time-weighted boosting
+ * @returns Score boost (0-MAX_COOCCURRENCE_BOOST)
  */
 export function getCooccurrenceBoost(
   entityName: string,
   matchedEntities: Set<string>,
-  cooccurrenceIndex: CooccurrenceIndex | null
+  cooccurrenceIndex: CooccurrenceIndex | null,
+  recencyIndex?: RecencyIndex | null
 ): number {
   if (!cooccurrenceIndex) return 0;
 
@@ -241,7 +258,16 @@ export function getCooccurrenceBoost(
     }
   }
 
-  return boost;
+  // Apply recency multiplier if recencyIndex is available
+  // Recent entities get 1.5x boost, stale entities get 0.5x
+  if (boost > 0 && recencyIndex) {
+    const recencyBoostVal = getRecencyBoost(entityName, recencyIndex);
+    const recencyMultiplier = recencyBoostVal > 0 ? 1.5 : 0.5;
+    boost = Math.round(boost * recencyMultiplier);
+  }
+
+  // Cap to prevent high-connectivity entities from dominating
+  return Math.min(boost, MAX_COOCCURRENCE_BOOST);
 }
 
 /**

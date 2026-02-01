@@ -150,13 +150,18 @@ export async function buildRecencyIndex(
  * Get recency boost for an entity
  *
  * Returns a boost score based on how recently the entity was mentioned:
- * - Mentioned in last 24 hours: +3
+ * - Mentioned in last hour: +8 (high priority for current work)
+ * - Mentioned in last 24 hours: +5
+ * - Mentioned in last 3 days (72h): +3
  * - Mentioned in last week (168h): +1
  * - Older or not found: 0
  *
+ * Higher boosts ensure recently-mentioned entities dominate suggestions
+ * over entities with high co-occurrence from historical mentions.
+ *
  * @param entityName - Name of entity to check
  * @param index - Recency index to check against
- * @returns Boost score (0-3)
+ * @returns Boost score (0-8)
  */
 export function getRecencyBoost(entityName: string, index: RecencyIndex): number {
   const lastMention = index.lastMentioned.get(entityName.toLowerCase());
@@ -165,7 +170,9 @@ export function getRecencyBoost(entityName: string, index: RecencyIndex): number
   const ageMs = Date.now() - lastMention;
   const ageHours = ageMs / (1000 * 60 * 60);
 
-  if (ageHours < 24) return 3;      // Mentioned in last 24h
+  if (ageHours < 1)   return 8;     // Mentioned in last hour (high priority)
+  if (ageHours < 24)  return 5;     // Mentioned in last 24h
+  if (ageHours < 72)  return 3;     // Mentioned in last 3 days
   if (ageHours < 168) return 1;     // Mentioned in last week (168h)
   return 0;
 }

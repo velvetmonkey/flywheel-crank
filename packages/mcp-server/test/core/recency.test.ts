@@ -158,10 +158,34 @@ describe('buildRecencyIndex', () => {
 // ========================================
 
 describe('getRecencyBoost', () => {
-  it('should return 3 for entity mentioned within 24 hours', () => {
+  it('should return 8 for entity mentioned within 1 hour', () => {
     const index: RecencyIndex = {
       lastMentioned: new Map([
-        ['typescript', Date.now() - 1000 * 60 * 60], // 1 hour ago
+        ['typescript', Date.now() - 1000 * 60 * 30], // 30 minutes ago
+      ]),
+      lastUpdated: Date.now(),
+      version: RECENCY_CACHE_VERSION,
+    };
+
+    expect(getRecencyBoost('TypeScript', index)).toBe(8);
+  });
+
+  it('should return 5 for entity mentioned within 24 hours', () => {
+    const index: RecencyIndex = {
+      lastMentioned: new Map([
+        ['typescript', Date.now() - 1000 * 60 * 60 * 2], // 2 hours ago
+      ]),
+      lastUpdated: Date.now(),
+      version: RECENCY_CACHE_VERSION,
+    };
+
+    expect(getRecencyBoost('TypeScript', index)).toBe(5);
+  });
+
+  it('should return 3 for entity mentioned within 3 days', () => {
+    const index: RecencyIndex = {
+      lastMentioned: new Map([
+        ['typescript', Date.now() - 1000 * 60 * 60 * 48], // 48 hours ago
       ]),
       lastUpdated: Date.now(),
       version: RECENCY_CACHE_VERSION,
@@ -173,7 +197,7 @@ describe('getRecencyBoost', () => {
   it('should return 1 for entity mentioned within last week', () => {
     const index: RecencyIndex = {
       lastMentioned: new Map([
-        ['typescript', Date.now() - 1000 * 60 * 60 * 48], // 48 hours ago
+        ['typescript', Date.now() - 1000 * 60 * 60 * 100], // 100 hours ago (>72h, <168h)
       ]),
       lastUpdated: Date.now(),
       version: RECENCY_CACHE_VERSION,
@@ -207,18 +231,18 @@ describe('getRecencyBoost', () => {
   it('should be case-insensitive', () => {
     const index: RecencyIndex = {
       lastMentioned: new Map([
-        ['typescript', Date.now() - 1000 * 60], // 1 minute ago
+        ['typescript', Date.now() - 1000 * 60 * 60 * 2], // 2 hours ago (within 24h tier)
       ]),
       lastUpdated: Date.now(),
       version: RECENCY_CACHE_VERSION,
     };
 
-    expect(getRecencyBoost('TYPESCRIPT', index)).toBe(3);
-    expect(getRecencyBoost('TypeScript', index)).toBe(3);
-    expect(getRecencyBoost('typescript', index)).toBe(3);
+    expect(getRecencyBoost('TYPESCRIPT', index)).toBe(5);
+    expect(getRecencyBoost('TypeScript', index)).toBe(5);
+    expect(getRecencyBoost('typescript', index)).toBe(5);
   });
 
-  it('should return 3 at exactly 24 hour boundary', () => {
+  it('should return 5 at 23 hours (within 24h tier)', () => {
     const index: RecencyIndex = {
       lastMentioned: new Map([
         ['typescript', Date.now() - 1000 * 60 * 60 * 23], // 23 hours ago
@@ -227,7 +251,7 @@ describe('getRecencyBoost', () => {
       version: RECENCY_CACHE_VERSION,
     };
 
-    expect(getRecencyBoost('TypeScript', index)).toBe(3);
+    expect(getRecencyBoost('TypeScript', index)).toBe(5);
   });
 
   it('should return 1 at exactly 168 hour (1 week) boundary', () => {
