@@ -74,39 +74,8 @@ jobs:
           path: packages/mcp-server/coverage/
           retention-days: 7
 
-  benchmark:
-    name: Benchmark (1k/10k)
-    runs-on: ubuntu-latest
-    needs: [build]
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: '20'
-          cache: 'npm'
-          cache-dependency-path: package-lock.json
-      - name: Install dependencies
-        run: npm ci
-      - name: Build flywheel-bench
-        run: npm run build --workspace=@velvetmonkey/flywheel-bench --if-present
-      - name: Generate 1k vault
-        run: |
-          cd packages/flywheel-bench
-          npx tsx src/cli/generate.ts --size 1k --output /tmp/bench-vault-1k --seed 12345
-      - name: Generate 10k vault
-        run: |
-          cd packages/flywheel-bench
-          npx tsx src/cli/generate.ts --size 10k --output /tmp/bench-vault-10k --seed 12345
-      - name: Run benchmarks
-        run: |
-          cd packages/flywheel-bench
-          npx tsx src/cli/bench.ts --sizes 1000,10000 --vault-dir /tmp --no-generate --output ./benchmark-results
-      - name: Upload benchmark results
-        uses: actions/upload-artifact@v4
-        with:
-          name: benchmark-results
-          path: packages/flywheel-bench/benchmark-results/
-          retention-days: 30
+  # Benchmarks now live in vault-core repository
+  # See: https://github.com/velvetmonkey/vault-core
 
   # Optional: WSL-specific testing (requires self-hosted runner with 'wsl' label)
   # Uncomment when self-hosted WSL runner is configured

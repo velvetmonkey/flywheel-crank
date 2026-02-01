@@ -13,8 +13,8 @@ import type { FormatType, Position, InsertionOptions } from './types.js';
  * These patterns protect credentials, secrets, and system configuration.
  */
 const SENSITIVE_PATH_PATTERNS: RegExp[] = [
-  // Environment files (including backups and variations)
-  /\.env($|\..*|~|\.swp|\.swo)/i, // .env, .env.local, .env~, .env.swp, etc.
+  // Environment files (including backups, variations, and Windows ADS)
+  /\.env($|\..*|~|\.swp|\.swo|:)/i, // .env, .env.local, .env~, .env.swp, .env:$DATA (ADS), etc.
 
   // Git credentials and config
   /\.git\/config$/i,             // Git config (may contain tokens)
