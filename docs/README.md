@@ -15,6 +15,7 @@ Flywheel Crank is the deterministic write companion to Flywheel MCP. While Flywh
 | Understand auto-wikilinks | [wikilinks.md](wikilinks.md) |
 | Deep dive into wikilink scoring | [WIKILINK_INFERENCE.md](WIKILINK_INFERENCE.md) |
 | Use Flywheel as agent memory | [AGENT-MEMORY.md](AGENT-MEMORY.md) |
+| Build autonomous agents with safe mutations | [AGENT_MUTATION_PATTERNS.md](AGENT_MUTATION_PATTERNS.md) |
 | Compare with alternatives | [COMPARISON.md](COMPARISON.md) |
 | See token efficiency benchmarks | [TOKEN_BENCHMARKS.md](TOKEN_BENCHMARKS.md) |
 | Know how my data is handled | [privacy.md](privacy.md) |
@@ -68,6 +69,11 @@ Quantified token efficiency data comparing Flywheel-Crank to traditional file op
 How to use Flywheel + Crank as a persistent memory layer for AI coding assistants like Claude Code. Covers session memory patterns, CLAUDE.md integration, and token efficiency.
 
 **Read when:** You want your AI assistant to remember context across sessions.
+
+### [AGENT_MUTATION_PATTERNS.md](AGENT_MUTATION_PATTERNS.md)
+Comprehensive guide for autonomous agents performing safe, deterministic vault mutations. Covers append-only logging, section-scoped updates, task management, frontmatter updates, error handling, git best practices, and template vault structures.
+
+**Read when:** Building autonomous agents that need to write to vaults safely without conflicts.
 
 ### [COMPARISON.md](COMPARISON.md)
 Detailed comparison of Flywheel-Crank vs alternatives (Dataview, Edit tool, other MCP servers). Includes token cost comparisons, decision matrices, and honest trade-offs.
@@ -131,9 +137,10 @@ Automated test suite overview (930 tests), manual MCP testing procedures, and gi
 
 **AI agent developers:**
 1. [AGENT-MEMORY.md](AGENT-MEMORY.md) - Use Flywheel as persistent memory
-2. [COMPARISON.md](COMPARISON.md) - Understand vs alternatives
-3. [tools-reference.md](tools-reference.md) - Learn tool capabilities
-4. [wikilinks.md](wikilinks.md) - Leverage auto-linking
+2. [AGENT_MUTATION_PATTERNS.md](AGENT_MUTATION_PATTERNS.md) - Safe mutation patterns for autonomous agents
+3. [COMPARISON.md](COMPARISON.md) - Understand vs alternatives
+4. [tools-reference.md](tools-reference.md) - Learn tool capabilities
+5. [wikilinks.md](wikilinks.md) - Leverage auto-linking
 
 **Contributors:**
 1. [testing.md](testing.md) - Understand the test suite (930 tests)

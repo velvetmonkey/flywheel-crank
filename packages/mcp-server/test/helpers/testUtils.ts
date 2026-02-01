@@ -136,6 +136,9 @@ export interface EntityCategories {
   projects?: string[];
   technologies?: string[];
   acronyms?: string[];
+  organizations?: string[];
+  locations?: string[];
+  concepts?: string[];
   other?: string[];
 }
 
@@ -229,6 +232,9 @@ export async function createEntityCache(
         (entities.projects?.length || 0) +
         (entities.technologies?.length || 0) +
         (entities.acronyms?.length || 0) +
+        (entities.organizations?.length || 0) +
+        (entities.locations?.length || 0) +
+        (entities.concepts?.length || 0) +
         (entities.other?.length || 0),
     },
     people: (entities.people || []).map((name) => ({
@@ -249,6 +255,21 @@ export async function createEntityCache(
     acronyms: (entities.acronyms || []).map((name) => ({
       name,
       path: `glossary/${name}.md`,
+      aliases: [],
+    })),
+    organizations: (entities.organizations || []).map((name) => ({
+      name,
+      path: `organizations/${name}.md`,
+      aliases: [],
+    })),
+    locations: (entities.locations || []).map((name) => ({
+      name,
+      path: `locations/${name}.md`,
+      aliases: [],
+    })),
+    concepts: (entities.concepts || []).map((name) => ({
+      name,
+      path: `concepts/${name}.md`,
       aliases: [],
     })),
     other: (entities.other || []).map((name) => ({

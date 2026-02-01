@@ -8,6 +8,7 @@ import { z } from 'zod';
 import { writeVaultFile, validatePath } from '../core/writer.js';
 import type { MutationResult } from '../core/types.js';
 import { commitChange } from '../core/git.js';
+import { maybeApplyWikilinks, suggestRelatedLinks } from '../core/wikilinks.js';
 import fs from 'fs/promises';
 import path from 'path';
 
@@ -30,8 +31,11 @@ export function registerNoteTools(
       frontmatter: z.record(z.any()).default({}).describe('Frontmatter fields (JSON object)'),
       overwrite: z.boolean().default(false).describe('If true, overwrite existing file'),
       commit: z.boolean().default(false).describe('If true, commit this change to git (creates undo point)'),
+      skipWikilinks: z.boolean().default(false).describe('If true, skip auto-wikilink application (wikilinks are applied by default)'),
+      suggestOutgoingLinks: z.boolean().default(true).describe('Append suggested outgoing wikilinks based on content (e.g., "→ [[AI]] [[Philosophy]]"). Set false to disable.'),
+      maxSuggestions: z.number().min(1).max(10).default(3).describe('Maximum number of suggested wikilinks to append (1-10, default: 3)'),
     },
-    async ({ path: notePath, content, frontmatter, overwrite, commit }) => {
+    async ({ path: notePath, content, frontmatter, overwrite, commit, skipWikilinks, suggestOutgoingLinks, maxSuggestions }) => {
       try {
         // 1. Validate path
         if (!validatePath(vaultPath, notePath)) {
@@ -64,8 +68,21 @@ export function registerNoteTools(
         const dir = path.dirname(fullPath);
         await fs.mkdir(dir, { recursive: true });
 
-        // 4. Write the note
-        await writeVaultFile(vaultPath, notePath, content, frontmatter);
+        // 4. Apply wikilinks to content (unless skipped)
+        let { content: processedContent, wikilinkInfo } = maybeApplyWikilinks(content, skipWikilinks, notePath);
+
+        // 5. Suggest outgoing links (enabled by default)
+        let suggestInfo: string | undefined;
+        if (suggestOutgoingLinks && !skipWikilinks) {
+          const result = suggestRelatedLinks(processedContent, { maxSuggestions, notePath });
+          if (result.suffix) {
+            processedContent = processedContent + ' ' + result.suffix;
+            suggestInfo = `Suggested: ${result.suggestions.join(', ')}`;
+          }
+        }
+
+        // 6. Write the note
+        await writeVaultFile(vaultPath, notePath, processedContent, frontmatter);
 
         // 5. Commit if requested
         let gitCommit: string | undefined;
@@ -84,11 +101,21 @@ export function registerNoteTools(
           }
         }
 
+        // Build preview with wikilink info
+        const infoLines = [wikilinkInfo, suggestInfo].filter(Boolean);
+        const previewLines = [
+          `Frontmatter fields: ${Object.keys(frontmatter).join(', ') || 'none'}`,
+          `Content length: ${processedContent.length} chars`,
+        ];
+        if (infoLines.length > 0) {
+          previewLines.push(`(${infoLines.join('; ')})`);
+        }
+
         const result: MutationResult = {
           success: true,
           message: `Created note: ${notePath}`,
           path: notePath,
-          preview: `Frontmatter fields: ${Object.keys(frontmatter).join(', ') || 'none'}\nContent length: ${content.length} chars`,
+          preview: previewLines.join('\n'),
           gitCommit,
           undoAvailable,
           staleLockDetected,

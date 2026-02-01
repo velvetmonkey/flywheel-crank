@@ -9,9 +9,25 @@ import {
   cleanupTempVault,
   readTestNote,
   createTestNote,
+  createEntityCache,
 } from '../helpers/testUtils.js';
+import {
+  initializeEntityIndex,
+  maybeApplyWikilinks,
+  suggestRelatedLinks,
+} from '../../src/core/wikilinks.js';
 import fs from 'fs/promises';
 import path from 'path';
+
+/**
+ * Options for createNote helper
+ */
+interface CreateNoteOptions {
+  overwrite?: boolean;
+  skipWikilinks?: boolean;
+  suggestOutgoingLinks?: boolean;
+  maxSuggestions?: number;
+}
 
 /**
  * Helper to simulate vault_create_note workflow
@@ -21,8 +37,15 @@ async function createNote(
   notePath: string,
   content: string,
   frontmatter: Record<string, unknown>,
-  overwrite: boolean = false
-): Promise<{ success: boolean; message: string; preview?: string }> {
+  options: CreateNoteOptions = {}
+): Promise<{ success: boolean; message: string; preview?: string; processedContent?: string }> {
+  const {
+    overwrite = false,
+    skipWikilinks = false,
+    suggestOutgoingLinks = true,
+    maxSuggestions = 3,
+  } = options;
+
   try {
     if (!validatePath(vaultPath, notePath)) {
       return {
@@ -50,13 +73,37 @@ async function createNote(
     const dir = path.dirname(fullPath);
     await fs.mkdir(dir, { recursive: true });
 
+    // Apply wikilinks to content (unless skipped)
+    let { content: processedContent, wikilinkInfo } = maybeApplyWikilinks(content, skipWikilinks, notePath);
+
+    // Suggest outgoing links (enabled by default)
+    let suggestInfo: string | undefined;
+    if (suggestOutgoingLinks && !skipWikilinks) {
+      const result = suggestRelatedLinks(processedContent, { maxSuggestions, notePath });
+      if (result.suffix) {
+        processedContent = processedContent + ' ' + result.suffix;
+        suggestInfo = `Suggested: ${result.suggestions.join(', ')}`;
+      }
+    }
+
     // Write the note
-    await writeVaultFile(vaultPath, notePath, content, frontmatter);
+    await writeVaultFile(vaultPath, notePath, processedContent, frontmatter);
+
+    // Build preview
+    const infoLines = [wikilinkInfo, suggestInfo].filter(Boolean);
+    const previewLines = [
+      `Frontmatter fields: ${Object.keys(frontmatter).join(', ') || 'none'}`,
+      `Content length: ${processedContent.length} chars`,
+    ];
+    if (infoLines.length > 0) {
+      previewLines.push(`(${infoLines.join('; ')})`);
+    }
 
     return {
       success: true,
       message: `Created note: ${notePath}`,
-      preview: `Frontmatter fields: ${Object.keys(frontmatter).join(', ') || 'none'}\nContent length: ${content.length} chars`,
+      preview: previewLines.join('\n'),
+      processedContent,
     };
   } catch (error) {
     return {
@@ -210,7 +257,7 @@ describe('vault_create_note workflow', () => {
       'test.md',
       '# Replaced',
       { type: 'replaced' },
-      true
+      { overwrite: true }
     );
 
     expect(result.success).toBe(true);
@@ -338,5 +385,106 @@ describe('vault_delete_note workflow', () => {
     const result = await deleteNote(tempVault, specialName, true);
 
     expect(result.success).toBe(true);
+  });
+});
+
+describe('vault_create_note wikilink integration', () => {
+  let tempVault: string;
+
+  beforeEach(async () => {
+    tempVault = await createTempVault();
+    // Create entity cache with test entities
+    await createEntityCache(tempVault, {
+      people: ['Jordan Smith'],
+      projects: ['MCP Server'],
+      technologies: ['TypeScript', 'JavaScript'],
+    });
+    // Initialize entity index from cache
+    await initializeEntityIndex(tempVault);
+  });
+
+  afterEach(async () => {
+    await cleanupTempVault(tempVault);
+  });
+
+  it('should apply wikilinks to content by default', async () => {
+    const result = await createNote(
+      tempVault,
+      'test.md',
+      'Working on the TypeScript project with the team.',
+      { type: 'test' }
+    );
+
+    expect(result.success).toBe(true);
+
+    // Verify wikilinks were applied in the file
+    const content = await readTestNote(tempVault, 'test.md');
+    expect(content).toContain('[[TypeScript]]');
+  });
+
+  it('should skip wikilinks when skipWikilinks=true', async () => {
+    const result = await createNote(
+      tempVault,
+      'test.md',
+      'Working on the TypeScript project.',
+      { type: 'test' },
+      { skipWikilinks: true }
+    );
+
+    expect(result.success).toBe(true);
+
+    // Verify wikilinks were NOT applied
+    const content = await readTestNote(tempVault, 'test.md');
+    expect(content).not.toContain('[[TypeScript]]');
+    expect(content).toContain('TypeScript'); // Plain text preserved
+  });
+
+  it('should include wikilink info in preview when links are applied', async () => {
+    const result = await createNote(
+      tempVault,
+      'test.md',
+      'Working on the TypeScript project.',
+      { type: 'test' }
+    );
+
+    expect(result.success).toBe(true);
+    // Preview should mention applied wikilinks if any were applied
+    const content = await readTestNote(tempVault, 'test.md');
+    if (content.includes('[[TypeScript]]')) {
+      expect(result.preview).toContain('Applied');
+    }
+  });
+
+  it('should not modify content without matching entities', async () => {
+    const originalContent = 'This content has no matching entities at all.';
+    const result = await createNote(
+      tempVault,
+      'test.md',
+      originalContent,
+      { type: 'test' },
+      { suggestOutgoingLinks: false } // Disable suggestions to test pure wikilink application
+    );
+
+    expect(result.success).toBe(true);
+
+    // Content should be unchanged (no entities to link)
+    const content = await readTestNote(tempVault, 'test.md');
+    expect(content).toContain(originalContent);
+  });
+
+  it('should disable suggestions when suggestOutgoingLinks=false', async () => {
+    const result = await createNote(
+      tempVault,
+      'test.md',
+      'Working on a JavaScript project.',
+      { type: 'test' },
+      { suggestOutgoingLinks: false }
+    );
+
+    expect(result.success).toBe(true);
+
+    // Content should not have the suggestion suffix (→ [[...]])
+    const content = await readTestNote(tempVault, 'test.md');
+    expect(content).not.toContain('→');
   });
 });
