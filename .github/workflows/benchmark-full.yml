@@ -1,0 +1,199 @@
+name: Full Benchmark Suite
+
+on:
+  schedule:
+    # Run at 3 AM UTC daily
+    - cron: '0 3 * * *'
+  workflow_dispatch:
+    inputs:
+      sizes:
+        description: 'Vault sizes to test (comma-separated)'
+        required: false
+        default: '1000,10000,50000,100000'
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  benchmark-full:
+    name: Full Scale Benchmarks
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build flywheel-bench
+        run: npm run build --workspace=@velvetmonkey/flywheel-bench --if-present
+
+      - name: Configure git for tests
+        run: |
+          git config --global user.email "ci@test.com"
+          git config --global user.name "CI Test"
+
+      - name: Determine sizes
+        id: sizes
+        run: |
+          if [ "${{ github.event_name }}" == "workflow_dispatch" ]; then
+            echo "sizes=${{ github.event.inputs.sizes }}" >> $GITHUB_OUTPUT
+          else
+            echo "sizes=1000,10000,50000,100000" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Generate 1k vault
+        run: |
+          cd packages/flywheel-bench
+          npx tsx src/cli/generate.ts --size 1k --output /tmp/bench-vault-1k --seed 12345
+
+      - name: Generate 10k vault
+        run: |
+          cd packages/flywheel-bench
+          npx tsx src/cli/generate.ts --size 10k --output /tmp/bench-vault-10k --seed 12345
+
+      - name: Generate 50k vault
+        if: contains(steps.sizes.outputs.sizes, '50000')
+        run: |
+          cd packages/flywheel-bench
+          npx tsx src/cli/generate.ts --size 50k --output /tmp/bench-vault-50k --seed 12345
+
+      - name: Generate 100k vault
+        if: contains(steps.sizes.outputs.sizes, '100000')
+        run: |
+          cd packages/flywheel-bench
+          npx tsx src/cli/generate.ts --size 100k --output /tmp/bench-vault-100k --seed 12345
+
+      - name: Run full benchmark suite
+        run: |
+          cd packages/flywheel-bench
+          npx tsx src/cli/bench.ts --sizes ${{ steps.sizes.outputs.sizes }} --vault-dir /tmp --no-generate --output ./benchmark-results
+
+      - name: Check memory usage
+        run: |
+          free -h
+          echo "---"
+          du -sh /tmp/bench-vault-* || true
+
+      - name: Upload benchmark results
+        uses: actions/upload-artifact@v4
+        with:
+          name: benchmark-results-full-${{ github.run_number }}
+          path: packages/flywheel-bench/benchmark-results/
+          retention-days: 90
+
+      - name: Upload benchmark results (latest)
+        uses: actions/upload-artifact@v4
+        with:
+          name: benchmark-results-latest
+          path: packages/flywheel-bench/benchmark-results/
+          retention-days: 90
+
+      - name: Comment on PR (if applicable)
+        if: github.event_name == 'pull_request'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const glob = require('glob');
+
+            const mdFiles = glob.sync('packages/flywheel-bench/benchmark-results/*.md');
+            if (mdFiles.length > 0) {
+              const content = fs.readFileSync(mdFiles[mdFiles.length - 1], 'utf8');
+              github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.issue.number,
+                body: content
+              });
+            }
+
+  stress-test:
+    name: Long-term Iteration Test (10k ops)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build packages
+        run: npm run build
+
+      - name: Configure git for tests
+        run: |
+          git config --global user.email "ci@test.com"
+          git config --global user.name "CI Test"
+
+      - name: Generate test vault
+        run: |
+          cd packages/flywheel-bench
+          npx tsx src/cli/generate.ts --size 1k --output /tmp/stress-vault --seed 12345
+
+      - name: Initialize git in test vault
+        run: |
+          cd /tmp/stress-vault
+          git init
+          git config user.email "test@test.com"
+          git config user.name "Test"
+          git add .
+          git commit -m "Initial commit"
+
+      - name: Run stress test (10k mutations)
+        run: |
+          cd packages/flywheel-bench
+          npx tsx -e "
+            import { runStressTest, createDefaultMutationFunctions, validateStressTestResults } from './src/index.js';
+
+            const result = await runStressTest(
+              {
+                vaultPath: '/tmp/stress-vault',
+                mutationCount: 10000,
+                distribution: {
+                  add_to_section: 0.4,
+                  toggle_task: 0.3,
+                  update_frontmatter: 0.15,
+                  create_note: 0.1,
+                  delete_note: 0.05
+                },
+                checkInterval: 1000,
+                verbose: false
+              },
+              createDefaultMutationFunctions()
+            );
+
+            const validation = validateStressTestResults(result);
+
+            console.log('\n=== Stress Test Results ===');
+            console.log('Total mutations:', result.totalMutations);
+            console.log('Successful:', result.successfulMutations);
+            console.log('Failed:', result.failedMutations);
+            console.log('Duration:', (result.duration_ms / 1000).toFixed(1), 's');
+            console.log('Git healthy:', result.gitHealth.isHealthy);
+            console.log('Validation passed:', validation.passed);
+
+            if (!validation.passed) {
+              console.error('Validation issues:', validation.issues);
+              process.exit(1);
+            }
+          "
+
+      - name: Check git repository health
+        run: |
+          cd /tmp/stress-vault
+          git status
+          git count-objects -v
+          git fsck --connectivity-only 2>&1 | head -20 || true

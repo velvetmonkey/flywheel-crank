@@ -31,7 +31,16 @@ import {
   validatePath,
   type MatchMode,
 } from '../writer.js';
-import { commitPolicyChanges } from '../git.js';
+import {
+  commitPolicyChanges,
+  checkGitLock,
+  isGitRepo,
+  createStagingFile,
+  commitStagedFiles,
+  rollbackStagedFiles,
+  cleanupStagingDir,
+  type StagedFile,
+} from '../git.js';
 import { maybeApplyWikilinks, suggestRelatedLinks } from '../wikilinks.js';
 import { runValidationPipeline, type GuardrailMode } from '../validator.js';
 import { estimateTokens } from '../constants.js';
@@ -574,7 +583,18 @@ async function executeAddFrontmatterField(
 }
 
 /**
- * Execute a complete policy
+ * Execute a complete policy with strict atomic mode
+ *
+ * Policies always use strict atomic mode for commits:
+ * 1. Pre-flight: Check git lock before any mutations
+ * 2. Execute: Perform all file mutations
+ * 3. Commit: Atomic git commit of all changes
+ * 4. On failure: Report retryable status for lock contention
+ *
+ * This ensures agents get clear success/failure semantics:
+ * - success=true means ALL changes committed atomically
+ * - success=false with retryable=true means try again
+ * - success=false with retryable=false means fix the issue
  */
 export async function executePolicy(
   policy: PolicyDefinition,
@@ -582,6 +602,32 @@ export async function executePolicy(
   variables: Record<string, unknown>,
   commit: boolean = false
 ): Promise<PolicyExecutionResult> {
+  // Pre-flight: Check for git lock contention if commit is requested
+  if (commit) {
+    const isRepo = await isGitRepo(vaultPath);
+    if (isRepo) {
+      const lockStatus = await checkGitLock(vaultPath);
+      if (lockStatus.locked) {
+        // Fail fast with retryable error
+        const retryAfterMs = lockStatus.stale ? 100 : 500;
+        const executionResult: PolicyExecutionResult = {
+          success: false,
+          policyName: policy.name,
+          message: lockStatus.stale
+            ? `Git lock contention: stale lock detected (${Math.round((lockStatus.ageMs || 0) / 1000)}s old). Retry recommended.`
+            : `Git lock contention: another process is committing. Retry in ${retryAfterMs}ms.`,
+          stepResults: [],
+          filesModified: [],
+          retryable: true,
+          retryAfterMs,
+          lockContention: true,
+        };
+        executionResult.tokensEstimate = estimateTokens(executionResult);
+        return executionResult;
+      }
+    }
+  }
+
   // Resolve variables with defaults
   const resolvedVars = resolveVariables(policy, variables);
 
@@ -593,9 +639,28 @@ export async function executePolicy(
     context.conditions = await evaluateAllConditions(policy.conditions, vaultPath, context);
   }
 
+  // Track files for rollback on failure
+  const filesModified = new Set<string>();
+  const originalContents = new Map<string, string | null>();
+
+  // Capture original contents before any mutations
+  for (const step of policy.steps) {
+    if (step.params.path) {
+      const notePath = interpolate(String(step.params.path), context);
+      if (!originalContents.has(notePath)) {
+        try {
+          const { content } = await readVaultFile(vaultPath, notePath);
+          originalContents.set(notePath, content);
+        } catch {
+          // File doesn't exist yet
+          originalContents.set(notePath, null);
+        }
+      }
+    }
+  }
+
   // Execute steps
   const stepResults: StepExecutionResult[] = [];
-  const filesModified = new Set<string>();
 
   for (const step of policy.steps) {
     const result = await executeStep(step, vaultPath, context, context.conditions);
@@ -608,12 +673,18 @@ export async function executePolicy(
 
     // Fail-fast: stop on first error
     if (!result.success && !result.skipped) {
+      // Rollback any changes made so far (if commit was requested)
+      if (commit && filesModified.size > 0) {
+        await rollbackChanges(vaultPath, originalContents, filesModified);
+      }
+
       const executionResult: PolicyExecutionResult = {
         success: false,
         policyName: policy.name,
         message: `Policy failed at step '${step.id}': ${result.message}`,
         stepResults,
-        filesModified: Array.from(filesModified),
+        filesModified: [], // Nothing committed due to failure
+        retryable: false,  // Step failure is not retryable
       };
       executionResult.tokensEstimate = estimateTokens(executionResult);
       return executionResult;
@@ -623,6 +694,9 @@ export async function executePolicy(
   // Create atomic commit if requested
   let gitCommit: string | undefined;
   let undoAvailable: boolean | undefined;
+  let commitError: string | undefined;
+  let isRetryable = false;
+  let isLockContention = false;
 
   if (commit && filesModified.size > 0) {
     // Commit all modified files together as a single policy commit
@@ -641,7 +715,35 @@ export async function executePolicy(
     if (gitResult.success && gitResult.hash) {
       gitCommit = gitResult.hash;
       undoAvailable = gitResult.undoAvailable;
+    } else if (!gitResult.success) {
+      // Git commit failed - rollback file changes for atomic semantics
+      await rollbackChanges(vaultPath, originalContents, filesModified);
+
+      // Check if this is a retryable error (lock contention)
+      const errorLower = (gitResult.error || '').toLowerCase();
+      isLockContention = errorLower.includes('lock') ||
+                         errorLower.includes('index.lock') ||
+                         errorLower.includes('could not obtain');
+      isRetryable = isLockContention;
+
+      commitError = gitResult.error;
     }
+  }
+
+  // If commit failed, return failure with proper retry hints
+  if (commit && filesModified.size > 0 && commitError) {
+    const executionResult: PolicyExecutionResult = {
+      success: false,
+      policyName: policy.name,
+      message: `Policy steps succeeded but git commit failed: ${commitError}. All changes rolled back.`,
+      stepResults,
+      filesModified: [], // Nothing committed due to rollback
+      retryable: isRetryable,
+      retryAfterMs: isRetryable ? 500 : undefined,
+      lockContention: isLockContention,
+    };
+    executionResult.tokensEstimate = estimateTokens(executionResult);
+    return executionResult;
   }
 
   // Generate summary from output template
@@ -663,6 +765,36 @@ export async function executePolicy(
   executionResult.tokensEstimate = estimateTokens(executionResult);
 
   return executionResult;
+}
+
+/**
+ * Rollback file changes to original state
+ */
+async function rollbackChanges(
+  vaultPath: string,
+  originalContents: Map<string, string | null>,
+  filesModified: Set<string>
+): Promise<void> {
+  for (const filePath of filesModified) {
+    const original = originalContents.get(filePath);
+    const fullPath = path.join(vaultPath, filePath);
+
+    if (original === null) {
+      // File was newly created - delete it
+      try {
+        await fs.unlink(fullPath);
+      } catch {
+        // File might not exist anymore
+      }
+    } else if (original !== undefined) {
+      // Restore original content
+      try {
+        await fs.writeFile(fullPath, original);
+      } catch {
+        // Best effort rollback
+      }
+    }
+  }
 }
 
 /**

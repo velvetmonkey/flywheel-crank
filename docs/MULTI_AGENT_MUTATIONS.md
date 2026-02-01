@@ -7,11 +7,12 @@ Safe concurrent mutation patterns for multi-agent AI workflows using Flywheel-Cr
 ## Table of Contents
 
 1. [Introduction](#introduction)
-2. [Safe Concurrent Mutation Patterns](#safe-concurrent-mutation-patterns)
-3. [Git Conflict Resolution](#git-conflict-resolution)
-4. [Section-Level Locking Patterns](#section-level-locking-patterns)
-5. [Demo Scenario: 3-Agent Workflow](#demo-scenario-3-agent-workflow)
-6. [Best Practices](#best-practices)
+2. [Strict Atomic Policies (Recommended for Agents)](#strict-atomic-policies-recommended-for-agents)
+3. [Safe Concurrent Mutation Patterns](#safe-concurrent-mutation-patterns)
+4. [Git Conflict Resolution](#git-conflict-resolution)
+5. [Section-Level Locking Patterns](#section-level-locking-patterns)
+6. [Demo Scenario: 3-Agent Workflow](#demo-scenario-3-agent-workflow)
+7. [Best Practices](#best-practices)
 
 ---
 
@@ -48,6 +49,119 @@ Modern AI workflows increasingly involve multiple agents working concurrently:
 | Semantic conflicts | Logical collisions | Coordination notes |
 | Read-modify-write races | Stale data overwrites | Append-only patterns |
 | Distributed locking | None built-in | Section ownership conventions |
+
+---
+
+## Strict Atomic Policies (Recommended for Agents)
+
+### The Agent Reliability Problem
+
+Simple mutations (`vault_add_to_section`, etc.) use **best-effort** git semantics:
+- File mutation **always succeeds**
+- Git commit **may fail** (lock contention, etc.)
+- Result: `{ success: true, gitError: "lock error..." }`
+
+This works for interactive human use but creates problems for automated agents that need clear success/failure semantics.
+
+### Solution: Use Policies for Atomic Workflows
+
+Policies (`policy_execute`) use **strict atomic mode**:
+
+1. **Pre-flight check:** If `.git/index.lock` exists, fail immediately (no mutations)
+2. **Execute steps:** All file mutations
+3. **Atomic commit:** All files committed together
+4. **On failure:** Automatic rollback of all changes
+
+```javascript
+// Agent-safe atomic workflow
+const result = await policy_execute({
+  name: "research-log",
+  variables: {
+    project: "Turbopump Analysis",
+    finding: "Discovered cavitation at high RPM"
+  },
+  commit: true  // Required for atomic semantics
+});
+
+if (!result.success && result.retryable) {
+  // Lock contention - retry with backoff
+  await sleep(result.retryAfterMs || 500);
+  // Retry...
+}
+```
+
+### New Response Fields for Agents
+
+```typescript
+interface PolicyExecutionResult {
+  success: boolean;        // True = ALL changes committed
+  policyName: string;
+  message: string;
+  filesModified: string[]; // Empty if rollback occurred
+
+  // New fields for agent reliability:
+  retryable?: boolean;     // True = safe to retry
+  retryAfterMs?: number;   // Suggested wait time (ms)
+  lockContention?: boolean; // Git lock detected
+}
+```
+
+### Retry Strategy
+
+```javascript
+async function executeWithRetry(policyName, params, maxRetries = 3) {
+  for (let attempt = 0; attempt < maxRetries; attempt++) {
+    const result = await policy_execute({
+      name: policyName,
+      variables: params,
+      commit: true
+    });
+
+    if (result.success) return result;
+    if (!result.retryable) throw new Error(result.message);
+
+    // Exponential backoff with jitter
+    const delay = result.retryAfterMs || (500 * Math.pow(2, attempt));
+    const jitter = delay * 0.2 * Math.random();
+    await sleep(delay + jitter);
+  }
+  throw new Error('Max retries exceeded');
+}
+```
+
+### When Simple Mutations Are OK
+
+| Scenario | Use Simple Mutation | Use Policy |
+|----------|--------------------| -----------|
+| Single file, human in loop | Yes | |
+| Multi-file workflow | | Yes |
+| Automated agent | | Yes |
+| Needs guaranteed atomicity | | Yes |
+| Retry safety matters | | Yes |
+
+### Failure Scenarios
+
+**Lock Contention (retryable):**
+```json
+{
+  "success": false,
+  "message": "Git lock contention: another process is committing. Retry in 500ms.",
+  "retryable": true,
+  "retryAfterMs": 500,
+  "lockContention": true,
+  "filesModified": []
+}
+```
+
+**Step Failure (not retryable):**
+```json
+{
+  "success": false,
+  "message": "Policy failed at step 'log-to-project': Section '## Findings' not found",
+  "retryable": false,
+  "filesModified": []
+}
+```
 
 ---
 

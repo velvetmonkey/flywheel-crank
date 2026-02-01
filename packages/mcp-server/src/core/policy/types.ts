@@ -151,6 +151,15 @@ export interface PolicyExecutionResult {
   summary?: string;
   /** Estimated tokens for response */
   tokensEstimate?: number;
+  /**
+   * Whether the failure is retryable (e.g., git lock contention)
+   * Agents should retry with exponential backoff when this is true
+   */
+  retryable?: boolean;
+  /** Suggested retry delay in milliseconds */
+  retryAfterMs?: number;
+  /** Whether git lock contention was detected */
+  lockContention?: boolean;
 }
 
 /**
