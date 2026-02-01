@@ -28,6 +28,8 @@ credentials.json
 
 # Private planning docs
 ROADMAP.md
+roadmap.md
+RESEARCH/
 
 # Obsidian app settings (user-specific)
 .obsidian/
