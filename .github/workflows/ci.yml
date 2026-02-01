@@ -60,6 +60,12 @@ jobs:
           git config --global user.name "CI Test"
       - name: Run tests
         run: npm test
+      - name: Run battle-hardening tests
+        run: npm run test:battle-hardening --workspace=@velvetmonkey/flywheel-crank
+      - name: Run golden tests
+        run: npm run test:golden --workspace=@velvetmonkey/flywheel-crank
+      - name: Run fuzzing tests
+        run: npm run test:fuzzing --workspace=@velvetmonkey/flywheel-crank
       - name: Upload coverage
         if: matrix.os == 'ubuntu-latest' && matrix.node == '20'
         uses: actions/upload-artifact@v4
@@ -67,3 +73,29 @@ jobs:
           name: coverage-report
           path: packages/mcp-server/coverage/
           retention-days: 7
+
+  # Optional: WSL-specific testing (requires self-hosted runner with 'wsl' label)
+  # Uncomment when self-hosted WSL runner is configured
+  # test-wsl:
+  #   name: Test WSL Paths
+  #   runs-on: [self-hosted, wsl]
+  #   steps:
+  #     - uses: actions/checkout@v4
+  #     - uses: actions/setup-node@v4
+  #       with:
+  #         node-version: '20'
+  #     - name: Install dependencies
+  #       run: npm ci
+  #     - name: Configure git for tests
+  #       run: |
+  #         git config --global user.email "ci@test.com"
+  #         git config --global user.name "CI Test"
+  #     - name: Run WSL-specific path tests
+  #       run: npm run test:wsl-paths --workspace=@velvetmonkey/flywheel-crank --if-present
+  #     - name: Run tests with /mnt/c paths
+  #       run: |
+  #         # Create test vault on Windows mount if accessible
+  #         if [ -d /mnt/c ]; then
+  #           echo "WSL mount detected, running path tests"
+  #           npm test --workspace=@velvetmonkey/flywheel-crank
+  #         fi

@@ -711,3 +711,130 @@ describe('Battle-hardening edge cases', () => {
     expect(result).toContain('\t\t-\tDouble nested');
   });
 });
+
+describe('Inconsistent Indentation Handling', () => {
+  let tempVault: string;
+
+  beforeEach(async () => {
+    tempVault = await createTempVault();
+  });
+
+  afterEach(async () => {
+    await cleanupTempVault(tempVault);
+  });
+
+  it('should add to mixed indentation section without corruption', async () => {
+    const input = await readGoldenFile(INPUT_DIR, 'inconsistent-indent.md');
+    const expected = await readGoldenFile(EXPECTED_DIR, 'inconsistent-indent.add-to-mixed.md');
+
+    await fs.writeFile(path.join(tempVault, 'test.md'), input);
+
+    const { content, frontmatter, lineEnding } = await readVaultFile(tempVault, 'test.md');
+    const section = findSection(content, 'Mixed Section')!;
+    const modified = insertInSection(content, section, '- New item added to mixed', 'append');
+    await writeVaultFile(tempVault, 'test.md', modified, frontmatter, lineEnding);
+
+    const result = await fs.readFile(path.join(tempVault, 'test.md'), 'utf-8');
+    expect(normalizeLineEndings(result)).toBe(normalizeLineEndings(expected));
+  });
+
+  it('should preserve 2-space indentation in 2-space section', async () => {
+    const input = await readGoldenFile(INPUT_DIR, 'inconsistent-indent.md');
+
+    await fs.writeFile(path.join(tempVault, 'test.md'), input);
+
+    const { content } = await readVaultFile(tempVault, 'test.md');
+
+    // Verify 2-space section maintains its style
+    expect(content).toContain('  - Nested with 2-space');
+  });
+
+  it('should preserve 4-space indentation in 4-space section', async () => {
+    const input = await readGoldenFile(INPUT_DIR, 'inconsistent-indent.md');
+
+    await fs.writeFile(path.join(tempVault, 'test.md'), input);
+
+    const { content } = await readVaultFile(tempVault, 'test.md');
+
+    // Verify 4-space section maintains its style
+    expect(content).toContain('    - Nested with 4-space');
+  });
+
+  it('should preserve tab indentation', async () => {
+    const input = await readGoldenFile(INPUT_DIR, 'inconsistent-indent.md');
+
+    await fs.writeFile(path.join(tempVault, 'test.md'), input);
+
+    const { content } = await readVaultFile(tempVault, 'test.md');
+
+    // Verify tab section maintains tabs
+    expect(content).toContain('\t- Tab-indented nested');
+  });
+});
+
+describe('Duplicate Headings Handling', () => {
+  let tempVault: string;
+
+  beforeEach(async () => {
+    tempVault = await createTempVault();
+  });
+
+  afterEach(async () => {
+    await cleanupTempVault(tempVault);
+  });
+
+  it('should add to first occurrence of duplicate heading', async () => {
+    const input = await readGoldenFile(INPUT_DIR, 'duplicate-headings.md');
+    const expected = await readGoldenFile(EXPECTED_DIR, 'duplicate-headings.add-to-first.md');
+
+    await fs.writeFile(path.join(tempVault, 'test.md'), input);
+
+    const { content, frontmatter, lineEnding } = await readVaultFile(tempVault, 'test.md');
+    const section = findSection(content, 'Log')!;
+    const modified = insertInSection(content, section, '- New entry in first Log', 'append');
+    await writeVaultFile(tempVault, 'test.md', modified, frontmatter, lineEnding);
+
+    const result = await fs.readFile(path.join(tempVault, 'test.md'), 'utf-8');
+    expect(normalizeLineEndings(result)).toBe(normalizeLineEndings(expected));
+  });
+
+  it('should preserve all duplicate sections after mutation', async () => {
+    const input = await readGoldenFile(INPUT_DIR, 'duplicate-headings.md');
+
+    await fs.writeFile(path.join(tempVault, 'test.md'), input);
+
+    const { content, frontmatter, lineEnding } = await readVaultFile(tempVault, 'test.md');
+    const section = findSection(content, 'Tasks')!;
+    const modified = insertInSection(content, section, '- [ ] New task', 'append');
+    await writeVaultFile(tempVault, 'test.md', modified, frontmatter, lineEnding);
+
+    const result = await fs.readFile(path.join(tempVault, 'test.md'), 'utf-8');
+
+    // All three Log sections should still exist
+    const logMatches = result.match(/## Log/g);
+    expect(logMatches).toHaveLength(3);
+
+    // Content from each section should be preserved
+    expect(result).toContain('Entry 1 in first Log');
+    expect(result).toContain('Entry 1 in second Log');
+    expect(result).toContain('Entry in third Log');
+  });
+
+  it('should find first Log section and verify correct content range', async () => {
+    const input = await readGoldenFile(INPUT_DIR, 'duplicate-headings.md');
+
+    await fs.writeFile(path.join(tempVault, 'test.md'), input);
+
+    const { content } = await readVaultFile(tempVault, 'test.md');
+    const section = findSection(content, 'Log')!;
+
+    // Get the section content
+    const lines = content.split('\n');
+    const sectionContent = lines.slice(section.contentStartLine, section.endLine).join('\n');
+
+    // First Log section should contain "first Log" entries
+    expect(sectionContent).toContain('first Log');
+    expect(sectionContent).not.toContain('second Log');
+    expect(sectionContent).not.toContain('third Log');
+  });
+});

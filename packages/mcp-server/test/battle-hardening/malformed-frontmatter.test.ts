@@ -676,4 +676,167 @@ title: Test
       expect(result.frontmatter.title).toBe('Test');
     });
   });
+
+  describe('empty and minimal frontmatter', () => {
+    it('should handle empty frontmatter (only delimiters)', async () => {
+      const content = `---
+---
+# Content
+This file has empty frontmatter.
+`;
+      await createTestNote(tempVault, 'empty-fm.md', content);
+
+      const result = await readVaultFile(tempVault, 'empty-fm.md');
+      expect(Object.keys(result.frontmatter).length).toBe(0);
+      expect(result.content).toContain('# Content');
+    });
+
+    it('should handle frontmatter with only whitespace', async () => {
+      const content = `---
+
+
+---
+# Content
+`;
+      await createTestNote(tempVault, 'whitespace-fm.md', content);
+
+      const result = await readVaultFile(tempVault, 'whitespace-fm.md');
+      expect(Object.keys(result.frontmatter).length).toBe(0);
+      expect(result.content).toContain('# Content');
+    });
+
+    it('should handle frontmatter with only comments', async () => {
+      const content = `---
+# This is a YAML comment
+# Another comment
+---
+# Content
+`;
+      await createTestNote(tempVault, 'comments-fm.md', content);
+
+      const result = await readVaultFile(tempVault, 'comments-fm.md');
+      expect(Object.keys(result.frontmatter).length).toBe(0);
+      expect(result.content).toContain('# Content');
+    });
+  });
+
+  describe('non-YAML frontmatter detection', () => {
+    it('should handle JSON-like frontmatter (treated as invalid YAML)', async () => {
+      // JSON is valid YAML, but brace-style may confuse gray-matter
+      const content = `---
+{
+  "title": "Test",
+  "type": "note"
+}
+---
+# Content
+`;
+      await createTestNote(tempVault, 'json-fm.md', content);
+
+      try {
+        const result = await readVaultFile(tempVault, 'json-fm.md');
+        // If parsed, the JSON object becomes the frontmatter
+        expect(result.content).toContain('# Content');
+      } catch (error) {
+        // Throwing is acceptable for edge-case YAML
+        expect(error instanceof Error).toBe(true);
+      }
+    });
+
+    it('should handle TOML-style frontmatter (invalid in gray-matter)', async () => {
+      // TOML uses +++ delimiters, not --- - gray-matter won't recognize it
+      const content = `+++
+title = "Test"
+type = "note"
++++
+# Content
+`;
+      await createTestNote(tempVault, 'toml-fm.md', content);
+
+      const result = await readVaultFile(tempVault, 'toml-fm.md');
+      // Should not parse as frontmatter (wrong delimiters)
+      expect(Object.keys(result.frontmatter).length).toBe(0);
+      // Content should include the TOML-style block
+      expect(result.content).toContain('+++');
+    });
+
+    it('should handle mixed YAML/JSON inline syntax', async () => {
+      const content = `---
+tags: ["tag1", "tag2"]
+metadata: {nested: "value", count: 42}
+---
+# Content
+`;
+      await createTestNote(tempVault, 'mixed-syntax.md', content);
+
+      const result = await readVaultFile(tempVault, 'mixed-syntax.md');
+      expect(result.frontmatter.tags).toEqual(['tag1', 'tag2']);
+      expect(result.frontmatter.metadata).toEqual({ nested: 'value', count: 42 });
+    });
+  });
+
+  describe('unclosed and malformed delimiters', () => {
+    it('should handle file starting with --- but never closing', async () => {
+      const content = `---
+title: Test
+type: note
+
+# This looks like content but frontmatter never closed
+Some text here.
+`;
+      await createTestNote(tempVault, 'never-closed.md', content);
+
+      try {
+        const result = await readVaultFile(tempVault, 'never-closed.md');
+        // gray-matter may treat entire file as frontmatter or fail
+        expect(result).toBeDefined();
+      } catch (error) {
+        expect(error instanceof Error).toBe(true);
+      }
+    });
+
+    it('should handle --- appearing mid-file (not frontmatter)', async () => {
+      const content = `# Document Title
+
+Some introductory text.
+
+---
+
+This is a horizontal rule, not frontmatter.
+
+---
+
+Another horizontal rule.
+`;
+      await createTestNote(tempVault, 'hr-not-fm.md', content);
+
+      const result = await readVaultFile(tempVault, 'hr-not-fm.md');
+      // Should not have frontmatter (doesn't start with ---)
+      expect(Object.keys(result.frontmatter).length).toBe(0);
+      expect(result.content).toContain('# Document Title');
+    });
+
+    it('should handle multiple --- delimiters in file', async () => {
+      const content = `---
+title: Test
+---
+# Content
+
+---
+
+Horizontal rule above.
+
+---
+
+Another one.
+`;
+      await createTestNote(tempVault, 'multiple-hr.md', content);
+
+      const result = await readVaultFile(tempVault, 'multiple-hr.md');
+      expect(result.frontmatter.title).toBe('Test');
+      // Content should include the horizontal rules
+      expect(result.content).toContain('# Content');
+      expect(result.content).toContain('Horizontal rule above');
+    });
+  });
 });
