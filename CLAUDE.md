@@ -647,9 +647,32 @@ Match Obsidian conventions:
 
 ## Roadmap
 
+### ✅ v1.27.28: Launch Readiness (COMPLETED)
+
+**Security Testing Suite:**
+- ✅ Injection attack tests (YAML, markdown, shell, template)
+- ✅ Permission bypass tests (symlinks, TOCTOU, nested sensitive files)
+- ✅ Boundary enforcement tests (Unicode, case sensitivity, deep nesting)
+- ✅ Platform-specific tests (Windows long paths, WSL, UNC)
+- ✅ Expanded SENSITIVE_PATH_PATTERNS (cloud credentials, package manager auth)
+
+**Cross-Product Unified Logging:**
+- ✅ Integrated vault-core OperationLogger into flywheel-crank
+- ✅ Integrated vault-core OperationLogger into flywheel
+- ✅ Session correlation across packages
+
+**Benchmark Results Publication:**
+- ✅ CI workflow generates markdown reports
+- ✅ BENCHMARK_RESULTS.md auto-updated
+- ✅ Benchmark badge in README
+
+**Homepage Restructure:**
+- ✅ PLATFORM.md (Eyes + Hands architecture)
+- ✅ README updated with platform link and benchmark badge
+- ✅ Cross-references between flywheel and flywheel-crank docs
+
 ### Current: Production Readiness
 - Edge case tests (empty content, special chars)
-- Performance benchmarks
 - `.flywheelrc` config file support (if needed)
 - Architecture decision records
 
