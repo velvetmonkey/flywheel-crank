@@ -1274,6 +1274,70 @@ This supports the strategic analysis recommendation: "Ship token efficiency benc
 **Goal:** Prove Flywheel's capabilities at scale with transparent, reproducible benchmarks.
 
 **What:**
+
+---
+
+## Enhanced Logging Support for Performance & Debugging
+
+**Priority:** MEDIUM-HIGH - Critical for testing, debugging, and performance analysis
+
+### Current State
+
+Performance capture [[library]] ([[flywheel-bench]]) captures timing metrics, but logging infrastructure needs enhancement for:
+- [[Testing]] workflows
+- [[Debugging]] operations
+- [[Performance]] analysis
+- [[Development]] iteration
+
+### Requirements
+
+**1. Structured Logging:**
+- Consistent [[log]] format across all [[Flywheel]] components
+- [[JSON]] output mode for machine parsing
+- Human-readable mode for [[development]]
+- Log levels: DEBUG, INFO, WARN, ERROR
+
+**2. Performance Logging:**
+- [[Timing]] capture for all [[MCP]] operations
+- [[Benchmark]] data integration
+- [[P50]]/[[P95]]/[[P99]] metrics logging
+- Operation traces for [[debugging]]
+
+**3. Testing Support:**
+- [[Test]] run logging
+- Detailed failure diagnostics
+- Performance regression detection logs
+- [[CI]]/[[CD]] friendly output
+
+**4. Debug Modes:**
+- Verbose [[operation]] logging
+- [[Graph]] building step-by-step traces
+- [[Wikilink]] suggestion decision logs
+- [[File watcher]] event logging
+
+**5. Configuration:**
+- Environment variable control (`FLYWHEEL_LOG_LEVEL`)
+- Runtime [[config]] toggles
+- Per-component log filtering
+- Output destination control (stdout/file)
+
+### Implementation Notes
+
+- Build on existing [[OperationLogger]] in [[vault-core]]
+- Integrate with [[flywheel-bench]] [[metrics]]
+- Consider [[pino]] or [[winston]] for structured [[logging]]
+- Support [[log aggregation]] for [[CI]] pipelines
+
+### Success Criteria
+
+- [ ] Consistent [[logging]] across all [[packages]]
+- [ ] [[Performance]] [[metrics]] automatically logged
+- [ ] [[Debug]] mode provides actionable diagnostics
+- [ ] [[Test]] failures include full [[operation]] trace
+- [ ] [[CI]] logs parseable for regression detection
+- [ ] [[Documentation]] for [[logging]] configuration
+
+---
 Extend the unboxing demo to very large vault sizes and measure performance across all critical operations:
 - Script-generated markdown files with realistic vault structure
 - Test sizes: 1k, 10k, 50k, 100k notes
