@@ -49,7 +49,7 @@ describe('Hints operations', () => {
   describe('getHintsPath', () => {
     it('should return path in .claude directory', () => {
       const hintsPath = getHintsPath('/vault');
-      expect(hintsPath).toBe('/vault/.claude/crank-mutation-hints.json');
+      expect(hintsPath).toBe(path.join('/vault', '.claude', 'crank-mutation-hints.json'));
     });
   });
 

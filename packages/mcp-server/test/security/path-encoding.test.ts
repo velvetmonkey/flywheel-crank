@@ -167,14 +167,24 @@ describe('Path Encoding Attack Prevention', () => {
       // On Unix, this is treated as a relative path starting with "C:"
       // On Windows, path.resolve would treat this as absolute
       const result = validatePath(tempVault, 'C:\\Windows\\System32\\config\\SAM');
-      // The path should stay within vault boundaries
-      expect(result).toBe(true); // Treated as relative on Unix
+      if (process.platform === 'win32') {
+        // On Windows, this is an absolute path and should be blocked
+        expect(result).toBe(false);
+      } else {
+        // On Unix, treated as relative path with literal "C:" prefix (safe)
+        expect(result).toBe(true);
+      }
     });
 
     it('should reject UNC paths (\\\\server\\share)', () => {
       const unc = '\\\\server\\share\\file.md';
-      // Treated as relative path on Unix
-      expect(validatePath(tempVault, unc)).toBe(true);
+      if (process.platform === 'win32') {
+        // On Windows, UNC paths are absolute and should be blocked
+        expect(validatePath(tempVault, unc)).toBe(false);
+      } else {
+        // On Unix, treated as relative path with literal backslashes (safe)
+        expect(validatePath(tempVault, unc)).toBe(true);
+      }
     });
   });
 

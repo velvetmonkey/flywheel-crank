@@ -10,6 +10,7 @@ import {
   createTestNote,
 } from '../helpers/testUtils.js';
 import { execSync } from 'child_process';
+import { mkdirSync } from 'node:fs';
 import path from 'path';
 
 describe('isGitRepo', () => {
@@ -38,7 +39,7 @@ describe('isGitRepo', () => {
 
   it('should return false for subdirectory of non-repo', async () => {
     const subDir = path.join(tempVault, 'subdir');
-    execSync(`mkdir -p "${subDir}"`, { stdio: 'ignore' });
+    mkdirSync(subDir, { recursive: true });
 
     const result = await isGitRepo(subDir);
     expect(result).toBe(false);
@@ -50,7 +51,7 @@ describe('isGitRepo', () => {
 
     // Check subdirectory
     const subDir = path.join(tempVault, 'subdir');
-    execSync(`mkdir -p "${subDir}"`, { stdio: 'ignore' });
+    mkdirSync(subDir, { recursive: true });
 
     const result = await isGitRepo(subDir);
     // Note: isGitRepo checks IS_REPO_ROOT, so subdirs return false

@@ -1185,7 +1185,9 @@ describe('validatePathSecure', () => {
     expect(result.reason).toContain('sensitive');
   });
 
-  it('should detect symlink escape attempts', async () => {
+  // Symlink tests are skipped on Windows because creating symlinks requires
+  // admin privileges or Developer Mode to be enabled
+  it.skipIf(process.platform === 'win32')('should detect symlink escape attempts', async () => {
     // Create a symlink inside the vault pointing outside
     const symlinkPath = path.join(tempVault, 'escape-link.md');
 
@@ -1215,7 +1217,7 @@ describe('validatePathSecure', () => {
     }
   });
 
-  it('should detect symlink to sensitive file', async () => {
+  it.skipIf(process.platform === 'win32')('should detect symlink to sensitive file', async () => {
     // Create a symlink to a sensitive file within vault
     const sensitiveFile = path.join(tempVault, '.env.secret');
     await fs.writeFile(sensitiveFile, 'SECRET=value');
@@ -1237,7 +1239,7 @@ describe('validatePathSecure', () => {
     }
   });
 
-  it('should allow valid symlinks within vault', async () => {
+  it.skipIf(process.platform === 'win32')('should allow valid symlinks within vault', async () => {
     // Create a valid symlink within the vault
     const targetFile = path.join(tempVault, 'real-note.md');
     await fs.writeFile(targetFile, '# Real Note');
@@ -1258,7 +1260,7 @@ describe('validatePathSecure', () => {
     }
   });
 
-  it('should detect parent directory symlink escape', async () => {
+  it.skipIf(process.platform === 'win32')('should detect parent directory symlink escape', async () => {
     // Create a subdirectory that's actually a symlink to outside
     const outsideDir = path.join(tempVault, '..', 'escape-target');
     await fs.mkdir(outsideDir, { recursive: true });
