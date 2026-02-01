@@ -5,8 +5,9 @@
 **Current State (Feb 2026):**
 - **Flywheel MCP:** 51 read-only tools (verified Jan 30, 2026)
 - **Flywheel-Crank MCP:** Deterministic write operations (mutations)
-- **vault-core:** Shared package with monorepo structure (v1.27.27)
-- **flywheel-bench:** Reliability testing & benchmarking infrastructure (v1.27.27)
+- **vault-core:** Shared package with monorepo structure (v1.27.28)
+- **flywheel-bench:** Reliability testing & benchmarking infrastructure (v1.27.28)
+- **CI Status:** ✅ All tests passing on vault-core and flywheel-crank
 
 Flywheel + Crank form a **self-maintaining knowledge graph**:
 
@@ -30,7 +31,7 @@ The more you write, the smarter the graph gets. No manual linking required.
 
 ---
 
-## Progress Update: Feb 1, 2026
+## Progress Update: Feb 1, 2026 (Late Evening)
 
 ### Infrastructure Milestone: "Proof at Scale" Complete
 
@@ -51,17 +52,30 @@ Major infrastructure work completed to validate Flywheel's capabilities with mea
 | **CI workflows** | ✅ Complete | ci.yml + benchmark-full.yml for nightly runs |
 | **TESTING.md** | ✅ Complete | 930+ tests documented |
 | **SCALE_BENCHMARKS.md** | ✅ Complete | Published benchmark methodology |
+| **Security testing suite** | ✅ Complete | Injection, permission-bypass, boundaries, platform tests |
+| **Cross-product unified logging** | ✅ Complete | OperationLogger integrated in flywheel-crank and flywheel |
+| **Proper noun detection fix** | ✅ Complete | Added SENTENCE_STARTER_WORDS filtering |
+| **Path validation hardening** | ✅ Complete | Unix/Windows/UNC absolute path rejection |
+| **Windows ADS detection** | ✅ Complete | Alternate Data Stream attacks on .env blocked |
+| **Sensitive file patterns** | ✅ Complete | Backup extensions, hidden credential files |
 
-#### Released Packages (v1.27.27)
+#### Released Packages (v1.27.28)
 
 All packages released at same version for ecosystem consistency:
 
 ```
-@velvetmonkey/vault-core      1.27.27  ✅
-@velvetmonkey/flywheel-bench  1.27.27  ✅
-@velvetmonkey/flywheel-crank  1.27.27  ✅
-@velvetmonkey/flywheel-mcp    1.27.27  ✅
+@velvetmonkey/vault-core      1.27.28  ✅
+@velvetmonkey/flywheel-bench  1.27.28  ✅  (in vault-core monorepo)
+@velvetmonkey/flywheel-crank  1.27.28  ✅
+@velvetmonkey/flywheel-mcp    1.27.28  ✅
 ```
+
+#### CI Status (Feb 1, 2026 11:40 PM)
+
+| Repository | Status | Tests |
+|------------|--------|-------|
+| vault-core | ✅ All passing | 94 tests (core: 74, bench: 20) |
+| flywheel-crank | ✅ All passing | 1295 tests across all platforms |
 
 #### Key Architectural Decisions
 
@@ -81,15 +95,27 @@ All packages released at same version for ecosystem consistency:
 4. **CI strategy:** All scale testing in GitHub Actions
    - WSL filesystem too slow even for 1k scale
    - 1k/10k on push; 50k/100k nightly
+   - flywheel-crank CI tests across Node 18/20/22 on Ubuntu, Windows, macOS
+
+#### Test Fixes Applied (Feb 1 Late Evening)
+
+| Fix | Repository | Details |
+|-----|------------|---------|
+| Proper noun detection | vault-core | SENTENCE_STARTER_WORDS filters "Visit", "Also", "See" etc. from entity start |
+| Empty content formatting | flywheel-crank | `formatContent()` returns proper markers for empty input |
+| Injection test expectations | flywheel-crank | Tests now accept YAML exceptions as valid security behavior |
+| Path validation | flywheel-crank | Rejects `/path`, `\\server`, `C:\path` as absolute paths |
+| Sensitive patterns | flywheel-crank | Added `.bak`, `.backup`, `.old`, `~`, `.swp` extensions |
+| Windows ADS | flywheel-crank | `.env:$DATA` now detected as sensitive |
+| CI benchmark workflow | vault-core | Uses preset names (1k, 10k) and bench CLI's built-in generation |
 
 #### Remaining Work
 
 | Item | Priority | Status |
 |------|----------|--------|
-| Security testing suite | CRITICAL | Pending |
-| Cross-product unified logging | HIGH | In Progress |
-| Reliability test results published | HIGH | Pending |
 | Homepage restructure (policy-first) | HIGH | Pending |
+| README with benchmark badges | HIGH | Pending |
+| Documentation completion | MEDIUM | Pending |
 
 ---
 
