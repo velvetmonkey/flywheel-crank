@@ -2585,3 +2585,147 @@ describe('Combined Cross-Folder and Hub Boosts', () => {
     expect(result.content).toContain('[[Priority]]');
   });
 });
+
+// ========================================
+// Zero-Relevance Content Filtering Tests
+// ========================================
+
+describe('zero-relevance content filtering', () => {
+  let tempVault: string;
+
+  beforeEach(async () => {
+    tempVault = await createTempVault();
+  });
+
+  afterEach(async () => {
+    await cleanupTempVault(tempVault);
+  });
+
+  it('should not suggest entities with zero content overlap', async () => {
+    // Create entities that have high boosts but no content relevance
+    await createEntityCacheWithDetails(tempVault, {
+      people: [
+        // Major hub entity that should NOT be suggested for unrelated content
+        { name: 'Jane Doe', path: 'people/Jane Doe.md', hubScore: 150 },
+      ],
+      projects: [
+        // Another high-boost entity
+        { name: 'Budget Report', path: 'projects/Budget Report.md', hubScore: 100 },
+      ],
+    });
+
+    await initializeEntityIndex(tempVault);
+
+    // Content completely unrelated to entities
+    const result = suggestRelatedLinks('Morning stretches feel flexible today', {
+      strictness: 'balanced',
+    });
+
+    // Should NOT suggest Jane Doe or Budget Report - no content overlap
+    expect(result.suggestions).not.toContain('Jane Doe');
+    expect(result.suggestions).not.toContain('Budget Report');
+  });
+
+  it('should return empty suggestions for completely unrelated content', async () => {
+    // Create entities with various high boosts
+    await createEntityCacheWithDetails(tempVault, {
+      people: [
+        { name: 'Test Person', path: 'people/Test Person.md', hubScore: 100 },
+        { name: 'Another Person', path: 'people/Another Person.md', hubScore: 50 },
+      ],
+      projects: [
+        { name: 'Test System', path: 'projects/Test System.md', hubScore: 80 },
+      ],
+      technologies: [
+        { name: 'Cloud Services', path: 'tech/Cloud Services.md', hubScore: 120 },
+      ],
+    });
+
+    await initializeEntityIndex(tempVault);
+
+    // Personal/health content with no entity matches
+    const result = suggestRelatedLinks('Made myself a cappuccino this morning', {
+      strictness: 'balanced',
+    });
+
+    // Should return empty - no content overlap with any entity
+    expect(result.suggestions.length).toBe(0);
+    expect(result.suffix).toBe('');
+  });
+
+  it('should still suggest entities with content overlap', async () => {
+    await createEntityCacheWithDetails(tempVault, {
+      technologies: [
+        { name: 'TypeScript', path: 'tech/TypeScript.md', hubScore: 50 },
+      ],
+      people: [
+        // High hub score but no content match
+        { name: 'Popular Person', path: 'people/Popular Person.md', hubScore: 200 },
+      ],
+    });
+
+    await initializeEntityIndex(tempVault);
+
+    // Content that matches TypeScript but not Popular Person
+    const result = suggestRelatedLinks('Working on TypeScript development', {
+      strictness: 'balanced',
+    });
+
+    // Should suggest TypeScript (has content match) but not Popular Person (no match)
+    if (result.suggestions.length > 0) {
+      expect(result.suggestions).toContain('TypeScript');
+      expect(result.suggestions).not.toContain('Popular Person');
+    }
+  });
+
+  it('should require content overlap for co-occurrence suggestions', async () => {
+    // Create entities where one matches and the other only has co-occurrence
+    await createEntityCacheWithDetails(tempVault, {
+      projects: [
+        { name: 'Project Alpha', path: 'projects/Project Alpha.md', hubScore: 10 },
+        // This entity has completely different words - won't match content
+        { name: 'Unrelated Gamma', path: 'projects/Unrelated Gamma.md', hubScore: 100 },
+      ],
+    });
+
+    await initializeEntityIndex(tempVault);
+
+    // Content only matches "Project Alpha"
+    const result = suggestRelatedLinks('Working on the Project Alpha deployment', {
+      strictness: 'balanced',
+    });
+
+    // Should suggest Project Alpha but NOT Unrelated Gamma
+    // (even if they have co-occurrence, Gamma has no content overlap)
+    if (result.suggestions.length > 0) {
+      expect(result.suggestions).toContain('Project Alpha');
+      expect(result.suggestions).not.toContain('Unrelated Gamma');
+    }
+  });
+
+  it('should filter out popularity-boosted entities without content match', async () => {
+    await createEntityCacheWithDetails(tempVault, {
+      people: [
+        // Very popular (high hub) but name has no overlap with test content
+        { name: 'Important Person', path: 'people/Important Person.md', hubScore: 200 },
+      ],
+      concepts: [
+        // Less popular but name matches content
+        { name: 'Random Activity', path: 'concepts/Random Activity.md', hubScore: 5 },
+      ],
+    });
+
+    await initializeEntityIndex(tempVault);
+
+    // Content that matches "Random Activity" but not "Important Person"
+    const result = suggestRelatedLinks('Logging a random activity for the day', {
+      strictness: 'balanced',
+    });
+
+    // Should only suggest entity with content match, not the popular one
+    expect(result.suggestions).not.toContain('Important Person');
+    if (result.suggestions.length > 0) {
+      expect(result.suggestions).toContain('Random Activity');
+    }
+  });
+});

@@ -952,6 +952,8 @@ export function suggestRelatedLinks(
   // First pass: Score entities and track which ones matched directly
   const scoredEntities: Array<{ name: string; score: number; category: EntityCategory }> = [];
   const directlyMatchedEntities = new Set<string>();
+  // Track entities that have actual content matches (not just boosts)
+  const entitiesWithContentMatch = new Set<string>();
 
   for (const { entity, category } of entitiesWithTypes) {
     // Get entity name
@@ -974,7 +976,13 @@ export function suggestRelatedLinks(
     }
 
     // Layers 2+3: Exact match, stem match, and alias matching (bonuses depend on strictness)
-    let score = scoreEntity(entity, contentTokens, contentStems, config);
+    const contentScore = scoreEntity(entity, contentTokens, contentStems, config);
+    let score = contentScore;
+
+    // Track entities with actual content matches
+    if (contentScore > 0) {
+      entitiesWithContentMatch.add(entityName);
+    }
 
     // Layer 5: Type boost - prioritize people, projects over common technologies
     score += TYPE_BOOST[category] || 0;
@@ -1022,11 +1030,26 @@ export function suggestRelatedLinks(
       const boost = getCooccurrenceBoost(entityName, directlyMatchedEntities, cooccurrenceIndex, recencyIndex);
 
       if (boost > 0) {
-        // Check if entity is already in scored list
+        // Check if entity is already in scored list (already has content match)
         const existing = scoredEntities.find(e => e.name === entityName);
         if (existing) {
           existing.score += boost;
         } else {
+          // NEW: Require minimal content overlap for co-occurrence suggestions
+          // Prevents suggesting completely unrelated entities just because they're
+          // popular (high hub score) or recent. At least one word must overlap.
+          const entityTokens = tokenize(entityName);
+          const hasContentOverlap = entityTokens.some(token =>
+            contentTokens.has(token) || contentStems.has(stem(token))
+          );
+
+          if (!hasContentOverlap) {
+            continue;  // Skip entities with zero content relevance
+          }
+
+          // Entity passed content overlap check - mark as having content match
+          entitiesWithContentMatch.add(entityName);
+
           // For purely co-occurrence-based suggestions, also add type, context, recency, cross-folder, and hub boosts
           const typeBoost = TYPE_BOOST[category] || 0;
           const contextBoost = contextBoosts[category] || 0;
@@ -1043,8 +1066,19 @@ export function suggestRelatedLinks(
     }
   }
 
+  // Filter to only entities with actual content matches
+  // This prevents popularity-based suggestions (high hub score, recency) for unrelated content
+  const relevantEntities = scoredEntities.filter(e =>
+    entitiesWithContentMatch.has(e.name)
+  );
+
+  // If no content matches at all, return empty rather than popularity-based suggestions
+  if (relevantEntities.length === 0) {
+    return emptyResult;
+  }
+
   // Sort by score (descending) with recency as tiebreaker
-  scoredEntities.sort((a, b) => {
+  relevantEntities.sort((a, b) => {
     // Primary: score (descending)
     if (b.score !== a.score) return b.score - a.score;
 
@@ -1057,7 +1091,7 @@ export function suggestRelatedLinks(
 
     return 0;
   });
-  const topSuggestions = scoredEntities.slice(0, maxSuggestions).map(e => e.name);
+  const topSuggestions = relevantEntities.slice(0, maxSuggestions).map(e => e.name);
 
   if (topSuggestions.length === 0) {
     return emptyResult;
