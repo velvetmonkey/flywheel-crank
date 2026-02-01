@@ -14,19 +14,19 @@ import type { FormatType, Position, InsertionOptions } from './types.js';
  */
 const SENSITIVE_PATH_PATTERNS: RegExp[] = [
   // Environment files (including backups and variations)
-  /\.env($|\..*)/i,              // .env, .env.local, .env.production, .env.backup, etc.
+  /\.env($|\..*|~|\.swp|\.swo)/i, // .env, .env.local, .env~, .env.swp, etc.
 
   // Git credentials and config
   /\.git\/config$/i,             // Git config (may contain tokens)
   /\.git\/credentials$/i,        // Git credentials
 
-  // SSL/TLS certificates and private keys
-  /\.pem$/i,                     // SSL/TLS certificates
-  /\.key$/i,                     // Private keys
-  /\.p12$/i,                     // PKCS#12 certificates
-  /\.pfx$/i,                     // Windows certificate format
-  /\.jks$/i,                     // Java keystore
-  /\.crt$/i,                     // Certificate files
+  // SSL/TLS certificates and private keys (including backups)
+  /\.pem($|\.bak|\.backup|\.old|\.orig|~)$/i,   // SSL/TLS certificates + backups
+  /\.key($|\.bak|\.backup|\.old|\.orig|~)$/i,   // Private keys + backups
+  /\.p12($|\.bak|\.backup|\.old|\.orig|~)$/i,   // PKCS#12 certificates + backups
+  /\.pfx($|\.bak|\.backup|\.old|\.orig|~)$/i,   // Windows certificate format + backups
+  /\.jks($|\.bak|\.backup|\.old|\.orig|~)$/i,   // Java keystore + backups
+  /\.crt($|\.bak|\.backup|\.old|\.orig|~)$/i,   // Certificate files + backups
 
   // SSH keys
   /id_rsa/i,                     // SSH private key
@@ -37,10 +37,10 @@ const SENSITIVE_PATH_PATTERNS: RegExp[] = [
   /authorized_keys$/i,           // SSH authorized keys
   /known_hosts$/i,               // SSH known hosts
 
-  // Generic credentials/secrets files
-  /credentials\.json$/i,         // Cloud credentials files
-  /secrets\.json$/i,             // Secrets files
-  /secrets\.ya?ml$/i,            // Secrets YAML files
+  // Generic credentials/secrets files (including backups)
+  /credentials\.json($|\.bak|\.backup|\.old|\.orig|~)$/i,  // Cloud credentials + backups
+  /secrets\.json($|\.bak|\.backup|\.old|\.orig|~)$/i,      // Secrets files + backups
+  /secrets\.ya?ml($|\.bak|\.backup|\.old|\.orig|~)$/i,     // Secrets YAML + backups
 
   // Package manager auth
   /\.npmrc$/i,                   // npm config (may contain tokens)
@@ -59,6 +59,9 @@ const SENSITIVE_PATH_PATTERNS: RegExp[] = [
   /\.htpasswd$/i,                // Apache password file
   /shadow$/,                     // Unix shadow password file
   /passwd$/,                     // Unix password file
+
+  // Hidden credential files (starting with dot)
+  /^\.(credentials|secrets|tokens)$/i, // .credentials, .secrets, .tokens
 ];
 
 /**
@@ -296,6 +299,24 @@ export function isPreformattedList(content: string): boolean {
  */
 export function formatContent(content: string, format: FormatType): string {
   const trimmed = content.trim();
+
+  // Handle empty/whitespace-only content
+  if (trimmed === '') {
+    switch (format) {
+      case 'plain':
+        return '';
+      case 'bullet':
+        return '-';
+      case 'task':
+        return '- [ ]';
+      case 'numbered':
+        return '1.';
+      case 'timestamp-bullet':
+        return `- ${new Date().toTimeString().slice(0, 5)}`;
+      default:
+        return '';
+    }
+  }
 
   switch (format) {
     case 'plain':
@@ -591,6 +612,22 @@ export function insertInSection(
  * Validate path to prevent traversal attacks (sync version for reads)
  */
 export function validatePath(vaultPath: string, notePath: string): boolean {
+  // Reject absolute paths
+  // Unix absolute paths start with /
+  if (notePath.startsWith('/')) {
+    return false;
+  }
+  // Windows drive letters (C:, D:, etc.) - only reject on Windows
+  // On Unix, "C:\path" is a valid literal filename
+  if (process.platform === 'win32' && /^[a-zA-Z]:/.test(notePath)) {
+    return false;
+  }
+  // UNC paths and Windows-style absolute paths (\\server\share, \path)
+  // Reject on all platforms - these are not valid relative paths
+  if (notePath.startsWith('\\')) {
+    return false;
+  }
+
   const resolvedVault = path.resolve(vaultPath);
   const resolvedNote = path.resolve(vaultPath, notePath);
 
@@ -615,6 +652,39 @@ export async function validatePathSecure(
   vaultPath: string,
   notePath: string
 ): Promise<PathValidationResult> {
+  // Reject absolute paths
+  // Unix absolute paths start with /
+  if (notePath.startsWith('/')) {
+    return {
+      valid: false,
+      reason: 'Absolute paths not allowed',
+    };
+  }
+  // Windows drive letters (C:, D:, etc.) - only reject on Windows
+  // On Unix, "C:\path" is a valid literal filename
+  if (process.platform === 'win32' && /^[a-zA-Z]:/.test(notePath)) {
+    return {
+      valid: false,
+      reason: 'Absolute paths not allowed',
+    };
+  }
+  // UNC paths and Windows-style absolute paths (\\server\share, \path)
+  // Reject on all platforms - these are not valid relative paths
+  if (notePath.startsWith('\\')) {
+    return {
+      valid: false,
+      reason: 'Absolute paths not allowed',
+    };
+  }
+
+  // Reject paths starting with .. (potential traversal or suspicious naming)
+  if (notePath.startsWith('..')) {
+    return {
+      valid: false,
+      reason: 'Path traversal not allowed',
+    };
+  }
+
   // First, do the basic path traversal check
   const resolvedVault = path.resolve(vaultPath);
   const resolvedNote = path.resolve(vaultPath, notePath);

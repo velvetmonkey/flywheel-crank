@@ -94,15 +94,10 @@ describe('Platform-Specific Security', () => {
       // \\?\C:\... prefix enables long path support on Windows
       const uncLongPath = '\\\\?\\C:\\Users\\test\\vault\\note.md';
 
-      if (isWindows) {
-        // On Windows, this is a special prefix
-        const result = validatePath(tempVault, uncLongPath);
-        expect(typeof result).toBe('boolean');
-      } else {
-        // On Unix, backslashes are literal filename characters
-        const result = validatePath(tempVault, uncLongPath);
-        expect(result).toBe(true);
-      }
+      // Paths starting with backslash are blocked on all platforms
+      // for security consistency (not valid vault-relative paths)
+      const result = validatePath(tempVault, uncLongPath);
+      expect(result).toBe(false);
     });
   });
 

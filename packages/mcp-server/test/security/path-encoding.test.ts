@@ -178,13 +178,10 @@ describe('Path Encoding Attack Prevention', () => {
 
     it('should reject UNC paths (\\\\server\\share)', () => {
       const unc = '\\\\server\\share\\file.md';
-      if (process.platform === 'win32') {
-        // On Windows, UNC paths are absolute and should be blocked
-        expect(validatePath(tempVault, unc)).toBe(false);
-      } else {
-        // On Unix, treated as relative path with literal backslashes (safe)
-        expect(validatePath(tempVault, unc)).toBe(true);
-      }
+      // UNC-style paths should be blocked on all platforms
+      // Even on Unix where backslashes are literal, these are clearly not
+      // intended to be valid vault-relative paths
+      expect(validatePath(tempVault, unc)).toBe(false);
     });
   });
 
