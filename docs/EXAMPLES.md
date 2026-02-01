@@ -76,6 +76,108 @@ vault_list_sections({
 
 ---
 
+## Demo Scenarios
+
+### Scenario: Artemis Rocket (Agent Builder Workflow)
+
+**Use case**: Overnight agent prepares morning briefing from vault context.
+
+```javascript
+// Agent queries context cloud for propulsion status, then logs briefing
+vault_add_to_section({
+  path: "daily-notes/2026-01-03.md",
+  section: "Morning Briefing",
+  content: "Overnight analysis identified propulsion Test 4 at risk due to Turbopump delivery delay. Marcus Johnson tracking with Acme Aerospace.",
+  format: "timestamp-bullet"
+})
+```
+
+**Result**:
+```markdown
+## Morning Briefing
+- **02:30** Overnight analysis identified propulsion [[Test 4]] at risk due to [[Turbopump]]
+  delivery delay. [[Marcus Johnson]] tracking with [[Acme Aerospace]].
+  → [[Propulsion System]] [[Elena Rodriguez]] [[ADR-002 Engine Selection]]
+```
+
+**Two linking behaviors in action:**
+- **Auto-wikilinks:** [[Test 4]], [[Turbopump]], [[Marcus Johnson]], [[Acme Aerospace]] — exact text matches
+- **Contextual cloud:** → [[Propulsion System]] [[Elena Rodriguez]] [[ADR-002 Engine Selection]] — related context
+  (Elena suggested because avionics depends on propulsion timeline)
+
+---
+
+### Scenario: Carter Strategy (Voice/PKM Workflow)
+
+**Use case**: Voice memo transcription becomes context-rich daily log entry.
+
+```javascript
+// Voice transcription: "Just wrapped up call with Sarah at Acme about
+// the data migration. Validation showing 85% complete. Mentioned they
+// might have another project for Q2."
+
+vault_add_to_section({
+  path: "daily-notes/2026-01-03.md",
+  section: "Log",
+  content: "Call with Sarah Thompson at Acme Corp about Acme Data Migration. Validation 85% complete. Potential Q2 project mentioned.",
+  format: "timestamp-bullet"
+})
+```
+
+**Result**:
+```markdown
+## Log
+- **14:30** Call with [[Sarah Thompson]] at [[Acme Corp]] about [[Acme Data Migration]].
+  Validation 85% complete. Potential Q2 project mentioned.
+  → [[TechStart Inc]] [[GlobalBank]] [[INV-2025-047]]
+```
+
+**Why these suggestions?**
+- **"TechStart Inc"** — Co-occurrence pattern: consultant often works TechStart after Acme calls
+- **"INV-2025-047"** — Acme work = billable hours, invoice context captured automatically
+
+---
+
+### Scenario: Note Creation (Two-Step Pattern)
+
+**Why two steps?** `vault_create_note` handles structure (frontmatter), while `vault_add_to_section` handles content with wikilink intelligence.
+
+```javascript
+// Step 1: Create structure with vault_create_note
+vault_create_note({
+  path: "decisions/ADR-006 Turbopump Schedule Mitigation.md",
+  frontmatter: {
+    type: "decision",
+    status: "proposed",
+    date: "2026-01-03",
+    owner: "[[Sarah Chen]]"
+  },
+  content: "# ADR-006: Turbopump Schedule Mitigation\n\n## Context\n\n## Decision\n\n## Consequences"
+})
+
+// Step 2: Add content with vault_add_to_section (gets wikilink suggestions)
+vault_add_to_section({
+  path: "decisions/ADR-006 Turbopump Schedule Mitigation.md",
+  section: "Context",
+  content: "Turbopump delivery delayed from Jan 5 to Jan 20 due to vendor supply chain issues. This impacts the Test 4 campaign scheduled for Jan 15.",
+  format: "plain"
+})
+```
+
+**Result after Step 2**:
+```markdown
+## Context
+Turbopump delivery delayed from Jan 5 to Jan 20 due to vendor supply chain issues.
+This impacts the [[Test 4]] campaign scheduled for Jan 15.
+→ [[Marcus Johnson]] [[Propulsion System]] [[Acme Aerospace]]
+```
+
+**Pattern benefits:**
+- `vault_create_note` = structure (frontmatter not processed through wikilink algorithm)
+- `vault_add_to_section` = content with full wikilink intelligence
+
+---
+
 ## All 11 Tools
 
 ### Mutation Tools
@@ -528,14 +630,16 @@ vault_undo_last_mutation();
 
 ---
 
-## Wikilink Suggestions
+## Wikilink Suggestions (Contextual Cloud)
 
-Flywheel Crank automatically suggests relevant wikilinks based on content context.
+Flywheel Crank provides two linking behaviors:
+1. **Auto-wikilinks** — Exact text matches wrapped inline as `[[Entity]]`
+2. **Contextual cloud** — Semantically related suggestions appended as `→ [[...]]`
 
-**How it works**:
+**How the contextual cloud works**:
 1. Tokenizes your content into significant words
-2. Scores vault entities by word overlap
-3. Suggests top 3 matching entities (excluding already-linked ones)
+2. Scores vault entities using graph algorithms (co-occurrence, common neighbors, hub connections)
+3. Suggests top 3 related entities (excluding those already linked)
 
 **Example**:
 
@@ -549,9 +653,13 @@ vault_add_to_section({
 
 **Result**:
 ```markdown
-- 14:30 Elena confirmed the landing algorithm is ready for HIL testing
-  → [[Elena Rodriguez]] [[Landing Algorithm]] [[Avionics System]]
+- 14:30 [[Elena Rodriguez|Elena]] confirmed the [[Landing Algorithm|landing algorithm]] is ready for HIL testing
+  → [[GNC System]] [[Avionics System]] [[Flight Computer]]
 ```
+
+Notice:
+- **Auto-wikilinks** applied inline: "Elena" → `[[Elena Rodriguez|Elena]]`, "landing algorithm" → `[[Landing Algorithm]]`
+- **Contextual cloud** appended: → `[[GNC System]]` etc. (related systems not mentioned in text)
 
 **Disable suggestions** when not needed:
 

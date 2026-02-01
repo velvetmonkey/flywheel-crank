@@ -48,7 +48,7 @@ Flywheel and Flywheel-Crank form a complementary pair:
 │                                                             │
 │   Flywheel (Eyes)              Flywheel-Crank (Hands)       │
 │   ════════════════             ══════════════════════       │
-│   44 read-only tools           11 write tools               │
+│   51 read-only tools           11 write tools               │
 │                                                             │
 │   • search_notes()             • vault_add_to_section()     │
 │   • get_backlinks()            • vault_toggle_task()        │
@@ -57,9 +57,6 @@ Flywheel and Flywheel-Crank form a complementary pair:
 │                                                             │
 │   "See where to go"            "Touch what needs changing"  │
 │                                                             │
-├─────────────────────────────────────────────────────────────┤
-│   Claude Code Filesystem (Last Resort)                      │
-│   Read/Edit/Write - direct file access when MCP can't help  │
 └─────────────────────────────────────────────────────────────┘
 ```
 
@@ -69,18 +66,21 @@ Flywheel and Flywheel-Crank form a complementary pair:
 
 ## See It In Action
 
-### Auto-Wikilinks Building Your Graph
+### Auto-Wikilinks + Contextual Cloud
 
 ```
-You: Log that I met with Sam Chen about Project Alpha
+You: Log that I discussed turbopump testing with Marcus
 
 Claude: [uses vault_add_to_section]
 
 Added to daily-notes/2026-01-29.md under ## Log:
-  - 14:32 Met with [[Sam Chen]] about [[Project Alpha]]
+  - 14:32 Discussed [[Turbopump]] testing with [[Marcus Johnson]]
+    → [[Propulsion System]] [[Test 4]] [[Engine Design]]
 
-Notice: Sam Chen and Project Alpha were auto-linked because they exist
-as notes in your vault.
+Two linking behaviors:
+- **Auto-wikilinks:** [[Turbopump]], [[Marcus Johnson]] — exact text matches
+- **Contextual cloud:** → [[...]] — semantically related entities you might
+  want to connect (suggested based on graph patterns, not mentioned in text)
 ```
 
 ### Git Integration and Undo
@@ -117,7 +117,7 @@ Crank only touched the ## Timeline section. The rest of the file was untouched.
 
 | Feature | What it means |
 |---------|---------------|
-| **Deterministic** | Same input → same output, always |
+| **Deterministic** | Same input + same vault state → same output |
 | **Auto-wikilinks** | Entities auto-linked on write |
 | **Format consistency** | Obsidian conventions enforced |
 | **Section-scoped** | Changes confined to target section |
@@ -217,14 +217,16 @@ Add to your `.mcp.json`:
 
 See [Configuration Guide](./docs/configuration.md) for complete options.
 
-### Auto-Wikilink Suggestions
+### Contextual Cloud (Suggested Links)
 
-Mutations automatically suggest related entities from your vault:
+Beyond auto-wikilinks, mutations suggest semantically related entities — the **contextual cloud**:
 
 | Parameter | Default | Description |
 |-----------|---------|-------------|
-| `suggestOutgoingLinks` | `true` | Append wikilink suggestions (e.g., `→ [[Entity1]] [[Entity2]]`) |
+| `suggestOutgoingLinks` | `true` | Append contextual cloud (e.g., `→ [[Entity1]] [[Entity2]]`) |
 | `maxSuggestions` | `3` | Number of suggestions (1-10) |
+
+**Why "contextual cloud"?** These suggestions aren't mentioned in your text — they're related concepts surfaced by graph patterns (co-occurrence, shared neighbors, hub connections). They capture implicit context you might forget to link.
 
 Disable for a single call: `suggestOutgoingLinks: false`
 
@@ -244,7 +246,7 @@ Disable for a single call: `suggestOutgoingLinks: false`
 
 ## Related Projects
 
-- [Flywheel](https://github.com/velvetmonkey/flywheel) — The companion read-only MCP server with 44 graph intelligence tools
+- [Flywheel](https://github.com/velvetmonkey/flywheel) — The companion read-only MCP server with 51 graph intelligence tools
 - [vault-core](https://github.com/velvetmonkey/vault-core) — Shared vault utilities (entity scanning, protected zones, wikilinks)
 
 ---
