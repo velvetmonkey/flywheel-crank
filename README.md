@@ -11,6 +11,9 @@
 [![npm version](https://img.shields.io/npm/v/@velvetmonkey/flywheel-crank.svg)](https://www.npmjs.com/package/@velvetmonkey/flywheel-crank)
 [![License: Apache-2.0](https://img.shields.io/badge/License-Apache--2.0-blue.svg)](https://www.apache.org/licenses/LICENSE-2.0)
 [![Platform](https://img.shields.io/badge/platform-macOS%20%7C%20Linux%20%7C%20Windows-blue.svg)](https://github.com/velvetmonkey/flywheel-crank)
+[![Benchmark](https://img.shields.io/badge/benchmark-100k%20notes-brightgreen.svg)](./docs/BENCHMARK_RESULTS.md)
+
+> **Platform Architecture:** See [PLATFORM.md](./docs/PLATFORM.md) for the Eyes + Hands architecture and why deterministic agents matter.
 
 ---
 

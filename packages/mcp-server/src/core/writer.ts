@@ -13,20 +13,49 @@ import type { FormatType, Position, InsertionOptions } from './types.js';
  * These patterns protect credentials, secrets, and system configuration.
  */
 const SENSITIVE_PATH_PATTERNS: RegExp[] = [
-  /\.env($|\..*)/i,              // .env, .env.local, .env.production, etc.
+  // Environment files (including backups and variations)
+  /\.env($|\..*)/i,              // .env, .env.local, .env.production, .env.backup, etc.
+
+  // Git credentials and config
   /\.git\/config$/i,             // Git config (may contain tokens)
   /\.git\/credentials$/i,        // Git credentials
+
+  // SSL/TLS certificates and private keys
   /\.pem$/i,                     // SSL/TLS certificates
   /\.key$/i,                     // Private keys
   /\.p12$/i,                     // PKCS#12 certificates
   /\.pfx$/i,                     // Windows certificate format
   /\.jks$/i,                     // Java keystore
+  /\.crt$/i,                     // Certificate files
+
+  // SSH keys
   /id_rsa/i,                     // SSH private key
   /id_ed25519/i,                 // SSH private key (ed25519)
   /id_ecdsa/i,                   // SSH private key (ecdsa)
+  /id_dsa/i,                     // SSH private key (dsa)
+  /\.ssh\/config$/i,             // SSH config
+  /authorized_keys$/i,           // SSH authorized keys
+  /known_hosts$/i,               // SSH known hosts
+
+  // Generic credentials/secrets files
   /credentials\.json$/i,         // Cloud credentials files
   /secrets\.json$/i,             // Secrets files
   /secrets\.ya?ml$/i,            // Secrets YAML files
+
+  // Package manager auth
+  /\.npmrc$/i,                   // npm config (may contain tokens)
+  /\.netrc$/i,                   // Netrc (HTTP auth credentials)
+  /\.yarnrc$/i,                  // Yarn config
+
+  // Cloud provider credentials
+  /\.aws\/credentials$/i,        // AWS credentials
+  /\.aws\/config$/i,             // AWS config
+  /gcloud\/credentials\.json/i,  // Google Cloud credentials
+  /\.azure\/credentials$/i,      // Azure credentials
+  /\.docker\/config\.json$/i,    // Docker registry auth
+  /\.kube\/config$/i,            // Kubernetes config
+
+  // System password files
   /\.htpasswd$/i,                // Apache password file
   /shadow$/,                     // Unix shadow password file
   /passwd$/,                     // Unix password file

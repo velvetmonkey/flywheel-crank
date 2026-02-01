@@ -83,5 +83,7 @@ npx tsx src/cli/bench.ts --sizes 1000,10000 --vault-dir /tmp --no-generate
 
 ## See Also
 
+- [BENCHMARK_RESULTS.md](./BENCHMARK_RESULTS.md) - Latest automated benchmark results
 - [PERFORMANCE.md](./PERFORMANCE.md) - General performance guidance
 - [TESTING.md](./TESTING.md) - Test suite documentation
+- [GitHub Actions Benchmark Workflow](https://github.com/velvetmonkey/flywheel-crank/actions/workflows/benchmark-full.yml) - Live CI status

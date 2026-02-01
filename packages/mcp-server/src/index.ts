@@ -10,6 +10,7 @@ import { registerSystemTools } from './tools/system.js';
 import { registerPolicyTools } from './tools/policy.js';
 import { findVaultRoot } from './core/vaultRoot.js';
 import { initializeEntityIndex } from './core/wikilinks.js';
+import { initializeLogger, flushLogs } from './core/logging.js';
 
 const server = new McpServer({
   name: 'flywheel-crank',
@@ -27,6 +28,11 @@ initializeEntityIndex(vaultPath).catch(err => {
   console.error(`[Crank] Entity index initialization failed: ${err}`);
 });
 
+// Initialize logging (for operation metrics)
+initializeLogger(vaultPath).catch(err => {
+  console.error(`[Crank] Logger initialization failed: ${err}`);
+});
+
 // Register all tool modules
 registerMutationTools(server, vaultPath);
 registerTaskTools(server, vaultPath);
@@ -40,3 +46,8 @@ registerPolicyTools(server, vaultPath);
 const transport = new StdioServerTransport();
 await server.connect(transport);
 console.error(`[Crank] Flywheel Crank MCP server started successfully`);
+
+// Flush logs on exit
+process.on('beforeExit', async () => {
+  await flushLogs();
+});
