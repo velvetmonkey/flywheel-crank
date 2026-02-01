@@ -5,6 +5,7 @@ import { registerMutationTools } from './tools/mutations.js';
 import { registerTaskTools } from './tools/tasks.js';
 import { registerFrontmatterTools } from './tools/frontmatter.js';
 import { registerNoteTools } from './tools/notes.js';
+import { registerMoveNoteTools } from './tools/move-notes.js';
 import { registerSystemTools } from './tools/system.js';
 import { registerPolicyTools } from './tools/policy.js';
 import { findVaultRoot } from './core/vaultRoot.js';
@@ -31,6 +32,7 @@ registerMutationTools(server, vaultPath);
 registerTaskTools(server, vaultPath);
 registerFrontmatterTools(server, vaultPath);
 registerNoteTools(server, vaultPath);
+registerMoveNoteTools(server, vaultPath);
 registerSystemTools(server, vaultPath);
 registerPolicyTools(server, vaultPath);
 
