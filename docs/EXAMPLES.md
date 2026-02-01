@@ -78,72 +78,20 @@ vault_list_sections({
 
 ## Demo Scenarios
 
-### Scenario: Artemis Rocket (Agent Builder Workflow)
-
-**Use case**: Overnight agent prepares morning briefing from vault context.
-
-```javascript
-// Agent queries context cloud for propulsion status, then logs briefing
-vault_add_to_section({
-  path: "daily-notes/2026-01-03.md",
-  section: "Morning Briefing",
-  content: "Overnight analysis identified propulsion Test 4 at risk due to Turbopump delivery delay. Marcus Johnson tracking with Acme Aerospace.",
-  format: "timestamp-bullet"
-})
-```
-
-**Result**:
-```markdown
-## Morning Briefing
-- **02:30** Overnight analysis identified propulsion [[Test 4]] at risk due to [[Turbopump]]
-  delivery delay. [[Marcus Johnson]] tracking with [[Acme Aerospace]].
-  → [[Propulsion System]] [[Elena Rodriguez]] [[ADR-002 Engine Selection]]
-```
-
-**Two linking behaviors in action:**
-- **Auto-wikilinks:** [[Test 4]], [[Turbopump]], [[Marcus Johnson]], [[Acme Aerospace]] — exact text matches
-- **Contextual cloud:** → [[Propulsion System]] [[Elena Rodriguez]] [[ADR-002 Engine Selection]] — related context
-  (Elena suggested because avionics depends on propulsion timeline)
+> **Core Principle: Artifact-First**
+>
+> The daily log is a **transaction record**, not the work itself.
+> Create structured artifacts (decisions, meetings, interactions) first.
+> Then log the transaction to your daily note as an audit trail.
 
 ---
 
-### Scenario: Carter Strategy (Voice/PKM Workflow)
+### Scenario: Artemis Rocket (Agent Creates Decision Record)
 
-**Use case**: Voice memo transcription becomes context-rich daily log entry.
-
-```javascript
-// Voice transcription: "Just wrapped up call with Sarah at Acme about
-// the data migration. Validation showing 85% complete. Mentioned they
-// might have another project for Q2."
-
-vault_add_to_section({
-  path: "daily-notes/2026-01-03.md",
-  section: "Log",
-  content: "Call with Sarah Thompson at Acme Corp about Acme Data Migration. Validation 85% complete. Potential Q2 project mentioned.",
-  format: "timestamp-bullet"
-})
-```
-
-**Result**:
-```markdown
-## Log
-- **14:30** Call with [[Sarah Thompson]] at [[Acme Corp]] about [[Acme Data Migration]].
-  Validation 85% complete. Potential Q2 project mentioned.
-  → [[TechStart Inc]] [[GlobalBank]] [[INV-2025-047]]
-```
-
-**Why these suggestions?**
-- **"TechStart Inc"** — Co-occurrence pattern: consultant often works TechStart after Acme calls
-- **"INV-2025-047"** — Acme work = billable hours, invoice context captured automatically
-
----
-
-### Scenario: Note Creation (Two-Step Pattern)
-
-**Why two steps?** `vault_create_note` handles structure (frontmatter), while `vault_add_to_section` handles content with wikilink intelligence.
+**Use case**: Agent creates a decision record artifact, logs transaction to daily note.
 
 ```javascript
-// Step 1: Create structure with vault_create_note
+// Step 1: CREATE ARTIFACT — the decision record with full context
 vault_create_note({
   path: "decisions/ADR-006 Turbopump Schedule Mitigation.md",
   frontmatter: {
@@ -155,26 +103,188 @@ vault_create_note({
   content: "# ADR-006: Turbopump Schedule Mitigation\n\n## Context\n\n## Decision\n\n## Consequences"
 })
 
-// Step 2: Add content with vault_add_to_section (gets wikilink suggestions)
+// Step 2: ADD CONTENT — with full wikilink intelligence
 vault_add_to_section({
   path: "decisions/ADR-006 Turbopump Schedule Mitigation.md",
   section: "Context",
-  content: "Turbopump delivery delayed from Jan 5 to Jan 20 due to vendor supply chain issues. This impacts the Test 4 campaign scheduled for Jan 15.",
+  content: "Turbopump delivery delayed from Jan 5 to Jan 20 due to vendor supply chain issues. This impacts the Test 4 campaign scheduled for Jan 15. Marcus Johnson tracking with Acme Aerospace.",
   format: "plain"
+})
+
+// Step 3: LOG TRANSACTION — one-line audit entry in daily note
+vault_add_to_section({
+  path: "daily-notes/2026-01-03.md",
+  section: "Activity Log",
+  content: "Created ADR-006 Turbopump Schedule Mitigation",
+  format: "timestamp-bullet"
 })
 ```
 
-**Result after Step 2**:
+**Results**:
+
+**The artifact** (`decisions/ADR-006 Turbopump Schedule Mitigation.md`):
 ```markdown
 ## Context
 Turbopump delivery delayed from Jan 5 to Jan 20 due to vendor supply chain issues.
-This impacts the [[Test 4]] campaign scheduled for Jan 15.
-→ [[Marcus Johnson]] [[Propulsion System]] [[Acme Aerospace]]
+This impacts the [[Test 4]] campaign scheduled for Jan 15. [[Marcus Johnson]]
+tracking with [[Acme Aerospace]].
+→ [[Propulsion System]] [[Elena Rodriguez]] [[ADR-002 Engine Selection]]
+```
+
+**The transaction log** (`daily-notes/2026-01-03.md`):
+```markdown
+## Activity Log
+- **14:30** Created [[ADR-006 Turbopump Schedule Mitigation]]
+  → [[Sarah Chen]] [[Turbopump]] [[Test 4]]
+```
+
+**Why artifact-first?**
+- The **artifact** (ADR-006) captures full context, rationale, consequences
+- The **daily log** is a lightweight audit trail of activity
+- Backlinks build graph: daily → decision → person → project
+
+---
+
+### Scenario: Carter Strategy (Voice Creates Interaction Record)
+
+**Use case**: Voice memo creates an interaction record, logs transaction.
+
+```javascript
+// Voice transcription: "Just wrapped up call with Sarah at Acme about
+// the data migration. Validation showing 85% complete. Mentioned they
+// might have another project for Q2."
+
+// Step 1: CREATE ARTIFACT — interaction record with full context
+vault_create_note({
+  path: "interactions/2026-01-03 Acme Data Migration Call.md",
+  frontmatter: {
+    type: "call",
+    date: "2026-01-03",
+    contact: "[[Sarah Thompson]]",
+    client: "[[Acme Corp]]",
+    project: "[[Acme Data Migration]]"
+  },
+  content: "# Acme Data Migration Call\n\n## Summary\n\n## Action Items\n\n## Notes"
+})
+
+// Step 2: ADD CONTENT — capture the conversation details
+vault_add_to_section({
+  path: "interactions/2026-01-03 Acme Data Migration Call.md",
+  section: "Summary",
+  content: "Discussed data migration validation status - 85% complete. Sarah mentioned potential Q2 project. Invoice INV-2025-047 due Feb 15.",
+  format: "plain"
+})
+
+// Step 3: LOG TRANSACTION — one-line audit entry
+vault_add_to_section({
+  path: "daily-notes/2026-01-03.md",
+  section: "Log",
+  content: "Acme Data Migration Call - validation 85% complete",
+  format: "timestamp-bullet"
+})
+```
+
+**Results**:
+
+**The artifact** (`interactions/2026-01-03 Acme Data Migration Call.md`):
+```markdown
+## Summary
+Discussed data migration validation status - 85% complete. [[Sarah Thompson|Sarah]]
+mentioned potential Q2 project. Invoice [[INV-2025-047]] due Feb 15.
+→ [[TechStart Inc]] [[GlobalBank]] [[Acme Corp]]
+```
+
+**The transaction log** (`daily-notes/2026-01-03.md`):
+```markdown
+## Log
+- **14:30** [[2026-01-03 Acme Data Migration Call|Acme Data Migration Call]] - validation 85% complete
+  → [[Sarah Thompson]] [[Acme Corp]] [[Acme Data Migration]]
+```
+
+**Why these suggestions?**
+- **"TechStart Inc", "GlobalBank"** — Co-occurrence: consultant often works these clients together
+- **"INV-2025-047"** — Acme work = billable hours, invoice context captured automatically
+- Graph structure: daily → interaction → client + contact + project
+
+---
+
+### Scenario: Simple Logging (When Artifacts Aren't Needed)
+
+**Use case**: Quick notes that don't warrant a separate artifact.
+
+```javascript
+// Sometimes a log entry IS the right choice (quick notes, observations)
+vault_add_to_section({
+  path: "daily-notes/2026-01-03.md",
+  section: "Notes",
+  content: "Reviewed Test 3 thermal data with Marcus - margins look excellent",
+  format: "timestamp-bullet"
+})
+```
+
+**Result**:
+```markdown
+## Notes
+- **14:30** Reviewed [[Test 3]] thermal data with [[Marcus Johnson|Marcus]] - margins look excellent
+  → [[Propulsion System]] [[Engine Design]] [[David Kim]]
+```
+
+**When to use simple logging:**
+- Quick observations that don't need their own note
+- Timestamped activity tracking
+- Personal reflections
+
+**When to create artifacts:**
+- Decisions that need context and rationale (ADRs)
+- Meetings with action items
+- Interactions worth referencing later
+- Anything you'll want to link TO, not just FROM
+
+---
+
+### Scenario: Note Creation (Two-Step Pattern)
+
+**Why two steps?** `vault_create_note` handles structure (frontmatter), while `vault_add_to_section` handles content with wikilink intelligence.
+
+```javascript
+// Step 1: Create structure with vault_create_note
+vault_create_note({
+  path: "meetings/2026-01-08 Test 4 Planning.md",
+  frontmatter: {
+    type: "meeting",
+    date: "2026-01-08",
+    attendees: ["[[Sarah Chen]]", "[[Marcus Johnson]]", "[[David Kim]]"],
+    tags: ["meeting", "propulsion", "testing"]
+  },
+  content: "# Test 4 Planning\n\n## Agenda\n\n## Discussion\n\n## Action Items"
+})
+
+// Step 2: Add content with vault_add_to_section (gets wikilink suggestions)
+vault_add_to_section({
+  path: "meetings/2026-01-08 Test 4 Planning.md",
+  section: "Discussion",
+  content: "Confirmed Test 4 configuration: 2.4:1 mixture ratio adjustment per ADR-006. Turbopump delivery now confirmed for Jan 20.",
+  format: "plain"
+})
+
+// Step 3: Log the transaction
+vault_add_to_section({
+  path: "daily-notes/2026-01-08.md",
+  section: "Activity Log",
+  content: "Test 4 Planning meeting - confirmed 2.4:1 mixture ratio",
+  format: "timestamp-bullet"
+})
 ```
 
 **Pattern benefits:**
 - `vault_create_note` = structure (frontmatter not processed through wikilink algorithm)
 - `vault_add_to_section` = content with full wikilink intelligence
+- Transaction log = lightweight audit trail
+
+**Graph structure built:**
+- `daily-notes/2026-01-08.md` → `meetings/2026-01-08 Test 4 Planning.md`
+- Meeting → `[[Sarah Chen]]`, `[[Marcus Johnson]]`, `[[David Kim]]`
+- Meeting → `[[Test 4]]`, `[[ADR-006]]`, `[[Turbopump]]`
 
 ---
 

@@ -6,7 +6,7 @@
 
 # Flywheel Crank
 
-### Safe, surgical mutations for agentic markdown vaults.
+### Bounded autonomy for agentic markdown vaults.
 
 [![npm version](https://img.shields.io/npm/v/@velvetmonkey/flywheel-crank.svg)](https://www.npmjs.com/package/@velvetmonkey/flywheel-crank)
 [![License: Apache-2.0](https://img.shields.io/badge/License-Apache--2.0-blue.svg)](https://www.apache.org/licenses/LICENSE-2.0)
@@ -34,6 +34,22 @@ Add to your Claude Code MCP config (`.mcp.json`):
 > **Windows:** Use `"command": "cmd", "args": ["/c", "npx", "-y", "@velvetmonkey/flywheel-crank"]`
 
 See [Configuration](./docs/configuration.md) for full options.
+
+---
+
+## Bounded Autonomy
+
+AI agents need guardrails. Flywheel-Crank provides them:
+
+| Principle | How Crank Implements It |
+|-----------|-------------------------|
+| **Checkpoints** | Every mutation returns success/failure with preview |
+| **Audit trail** | Git commit on every operation (optional) |
+| **Reversibility** | Single undo reverts entire policy |
+| **Scope limits** | Section-scoped edits, path validation |
+| **Human oversight** | Policies define allowed actions, humans approve |
+
+**The philosophy:** AI operates within defined boundaries. Workflows are deterministic. Git tracks everything. Humans stay in control.
 
 ---
 
@@ -66,6 +82,30 @@ Flywheel and Flywheel-Crank form a complementary pair:
 
 ## See It In Action
 
+### Artifact-First: Create the Work, Log the Transaction
+
+```
+You: Create a decision record for the turbopump schedule mitigation
+
+Claude: [uses vault_create_note + vault_add_to_section]
+
+Step 1 - ARTIFACT:
+  Created decisions/ADR-006 Turbopump Schedule Mitigation.md
+  with frontmatter: type: decision, status: proposed, owner: [[Sarah Chen]]
+
+Step 2 - CONTENT (with wikilink intelligence):
+  Added to ## Context:
+    "Turbopump delivery delayed from Jan 5 to Jan 20 due to vendor issues.
+    This impacts [[Test 4]] scheduled for Jan 15."
+    → [[Marcus Johnson]] [[Propulsion System]] [[Acme Aerospace]]
+
+Step 3 - TRANSACTION LOG:
+  Added to daily-notes/2026-01-03.md under ## Activity Log:
+    - 14:30 Created [[ADR-006 Turbopump Schedule Mitigation]]
+
+The artifact is the work. The daily log is the audit trail.
+```
+
 ### Auto-Wikilinks + Contextual Cloud
 
 ```
@@ -83,8 +123,9 @@ Two linking behaviors:
   want to connect (suggested based on graph patterns, not mentioned in text)
 ```
 
-### Git Integration and Undo
+### Git Integration and Atomic Undo
 
+**Single mutation:**
 ```
 You: Log this decision but I want to be able to undo it
 
@@ -93,10 +134,24 @@ Claude: [uses vault_add_to_section with commit: true]
 Added to decisions/2026-01-architecture.md under ## Decisions:
   - 14:45 Chose PostgreSQL over MongoDB for structured data needs
 
-Committed: "crank: add to decisions/2026-01-architecture.md"
-
-If you change your mind, use vault_undo_last_mutation to roll back.
+Committed: [Crank:Add] Update 2026-01-architecture.md
 ```
+
+**Policy (multiple files):**
+```
+You: Undo that daily-log policy
+
+Claude: [uses vault_undo_last_mutation with confirm: true]
+
+Undone: [Policy:daily-log] Update 3 file(s)
+  - daily-notes/2026-02-01.md (reverted)
+  - projects/Acme.md (reverted)
+  - contacts/Sarah.md (reverted)
+
+All 3 files restored to previous state.
+```
+
+**Note:** If git is unavailable during commit, mutations still succeed — you just lose the undo point for that operation.
 
 ### Section-Scoped Safety
 
@@ -111,15 +166,61 @@ Removed from Projects/Turbopump.md under ## Timeline:
 Crank only touched the ## Timeline section. The rest of the file was untouched.
 ```
 
+### Policies: Workflow Orchestration
+
+```
+You: Run my capture-interaction policy for the Acme call
+
+Claude: [uses policy_execute with policy: "capture-interaction", commit: true]
+
+Executed policy 'capture-interaction':
+  ✓ step-1: Created interactions/2026-02-01 Acme Call.md
+  ✓ step-2: Added content to section "Summary" in interactions/2026-02-01 Acme Call.md
+  ✓ step-3: Added transaction to section "Log" in daily-notes/2026-02-01.md
+
+Committed: [Policy:capture-interaction] Update 2 file(s)
+
+Artifact created, transaction logged. One undo reverts everything.
+```
+
+**Policy = YAML workflow definition:**
+```yaml
+name: capture-interaction
+description: Create interaction record, log transaction
+steps:
+  - id: create-artifact
+    tool: vault_create_note
+    params:
+      path: "interactions/{{date}} {{client}} {{type}}.md"
+      frontmatter:
+        type: "{{type}}"
+        contact: "[[{{contact}}]]"
+        client: "[[{{client}}]]"
+  - id: add-content
+    tool: vault_add_to_section
+    params:
+      path: "interactions/{{date}} {{client}} {{type}}.md"
+      section: "## Summary"
+      content: "{{summary}}"
+  - id: log-transaction
+    tool: vault_add_to_section
+    params:
+      path: "daily-notes/{{date}}.md"
+      section: "## Log"
+      content: "[[{{date}} {{client}} {{type}}|{{client}} {{type}}]]"
+      format: "timestamp-bullet"
+```
+
 ---
 
 ## Why Flywheel-Crank?
 
 | Feature | What it means |
 |---------|---------------|
+| **Bounded autonomy** | AI operates within defined guardrails |
+| **Atomic policies** | Multi-file workflows commit together, single undo |
 | **Deterministic** | Same input + same vault state → same output |
 | **Auto-wikilinks** | Entities auto-linked on write |
-| **Format consistency** | Obsidian conventions enforced |
 | **Section-scoped** | Changes confined to target section |
 | **Git-integrated** | Optional commit per mutation, easy undo |
 | **Block-aware** | Code blocks, tables, blockquotes preserved |
@@ -164,10 +265,19 @@ See [Flywheel's audience section](https://github.com/velvetmonkey/flywheel#who-u
 ### Note Operations
 - `vault_create_note` - Create new note with template
 - `vault_delete_note` - Delete note with confirmation
+- `vault_move_note` - Move note with backlink updates
+- `vault_rename_note` - Rename note with backlink updates
+
+### Policies
+- `policy_execute` - Run a policy with atomic commit
+- `policy_preview` - Dry-run showing what would happen
+- `policy_validate` - Validate policy YAML
+- `policy_list` - List available policies
+- `policy_author` - Generate policy from description
 
 ### System
 - `vault_list_sections` - List all sections in a note
-- `vault_undo_last_mutation` - Undo last Crank operation
+- `vault_undo_last_mutation` - Undo last operation (or entire policy)
 
 ---
 
