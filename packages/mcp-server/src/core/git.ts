@@ -355,3 +355,127 @@ export async function hasUncommittedChanges(vaultPath: string): Promise<boolean>
     return false;
   }
 }
+
+/**
+ * Result of a policy commit
+ */
+export interface PolicyCommitResult {
+  success: boolean;
+  hash?: string;
+  error?: string;
+  undoAvailable: boolean;
+  filesCommitted: number;
+  staleLockDetected?: boolean;
+  lockAgeMs?: number;
+}
+
+/**
+ * Commit multiple files as a single atomic policy commit.
+ * Used by policy_execute for batch commits.
+ */
+export async function commitPolicyChanges(
+  vaultPath: string,
+  files: string[],
+  policyName: string,
+  stepsSummary?: string[],
+  retryConfig: RetryConfig = DEFAULT_RETRY
+): Promise<PolicyCommitResult> {
+  if (files.length === 0) {
+    return {
+      success: false,
+      error: 'No files to commit',
+      undoAvailable: false,
+      filesCommitted: 0,
+    };
+  }
+
+  const isRepo = await isGitRepo(vaultPath);
+  if (!isRepo) {
+    return {
+      success: false,
+      error: 'Not a git repository',
+      undoAvailable: false,
+      filesCommitted: 0,
+    };
+  }
+
+  const git: SimpleGit = simpleGit(vaultPath);
+  let lastError: Error | undefined;
+  let staleLockDetected = false;
+  let lockAgeMs: number | undefined;
+
+  for (let attempt = 0; attempt < retryConfig.maxAttempts; attempt++) {
+    try {
+      // Check lock status before each attempt
+      const lockInfo = await checkLockFile(vaultPath);
+      if (lockInfo) {
+        lockAgeMs = lockInfo.ageMs;
+        if (lockInfo.stale) {
+          staleLockDetected = true;
+        }
+      }
+
+      // Stage ALL modified files
+      for (const file of files) {
+        await git.add(file);
+      }
+
+      // Build commit message
+      let commitMessage = `[Policy:${policyName}] Update ${files.length} file(s)`;
+      if (stepsSummary && stepsSummary.length > 0) {
+        commitMessage += '\n\nSteps:\n' + stepsSummary.map(s => `- ${s}`).join('\n');
+      }
+      commitMessage += `\n\nFiles:\n${files.map(f => `- ${f}`).join('\n')}`;
+
+      // Commit
+      const result = await git.commit(commitMessage);
+
+      // Track this commit for safe undo verification
+      if (result.commit) {
+        await saveLastCrankCommit(vaultPath, result.commit, commitMessage);
+      }
+
+      return {
+        success: true,
+        hash: result.commit,
+        undoAvailable: !!result.commit,
+        filesCommitted: files.length,
+        ...(staleLockDetected && { staleLockDetected: true }),
+        ...(lockAgeMs !== undefined && staleLockDetected && { lockAgeMs }),
+      };
+    } catch (error) {
+      lastError = error instanceof Error ? error : new Error(String(error));
+
+      if (!isLockContentionError(error)) {
+        return {
+          success: false,
+          error: lastError.message,
+          undoAvailable: false,
+          filesCommitted: 0,
+        };
+      }
+
+      const lockInfo = await checkLockFile(vaultPath);
+      if (lockInfo) {
+        lockAgeMs = lockInfo.ageMs;
+        if (lockInfo.stale) {
+          staleLockDetected = true;
+        }
+      }
+
+      if (attempt < retryConfig.maxAttempts - 1) {
+        const delay = calculateDelay(attempt, retryConfig);
+        await sleep(delay);
+      }
+    }
+  }
+
+  return {
+    success: false,
+    error: lastError?.message ?? 'Lock contention - all retries exhausted',
+    undoAvailable: false,
+    filesCommitted: 0,
+    ...(staleLockDetected && { staleLockDetected: true }),
+    ...(lockAgeMs !== undefined && { lockAgeMs }),
+  };
+}

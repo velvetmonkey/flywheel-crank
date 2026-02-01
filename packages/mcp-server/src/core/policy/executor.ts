@@ -31,7 +31,7 @@ import {
   validatePath,
   type MatchMode,
 } from '../writer.js';
-import { commitChange } from '../git.js';
+import { commitPolicyChanges } from '../git.js';
 import { maybeApplyWikilinks, suggestRelatedLinks } from '../wikilinks.js';
 import { runValidationPipeline, type GuardrailMode } from '../validator.js';
 import { estimateTokens } from '../constants.js';
@@ -625,12 +625,17 @@ export async function executePolicy(
   let undoAvailable: boolean | undefined;
 
   if (commit && filesModified.size > 0) {
-    // Commit all modified files together
+    // Commit all modified files together as a single policy commit
     const files = Array.from(filesModified);
-    const gitResult = await commitChange(
+    const stepsSummary = stepResults
+      .filter(r => r.success && !r.skipped)
+      .map(r => `${r.stepId}: ${r.message}`);
+
+    const gitResult = await commitPolicyChanges(
       vaultPath,
-      files[0], // Primary file (others are included via git add)
-      `[Policy:${policy.name}]`
+      files,
+      policy.name,
+      stepsSummary
     );
 
     if (gitResult.success && gitResult.hash) {
