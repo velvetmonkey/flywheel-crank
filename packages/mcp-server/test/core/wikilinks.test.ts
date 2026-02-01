@@ -1656,6 +1656,34 @@ describe('expanded stopwords', () => {
     expect(result.suggestions).not.toContain('Better');
     expect(result.suggestions).not.toContain('Different');
   });
+
+  it('should not suggest entities for generic test messages', async () => {
+    // Bug regression test: "a test message" was suggesting unrelated entities like
+    // [[Active Directory]] [[App Gateway]] [[Application Insights]]
+    // because "message" matched entities that co-occurred with Azure services
+    await createEntityCache(tempVault, {
+      technologies: ['Active Directory', 'App Gateway', 'Application Insights'],
+      concepts: ['Error Message', 'Message Queue', 'File Manager'],
+    });
+
+    await initializeEntityIndex(tempVault);
+
+    // Generic words like "message", "file" should be filtered out
+    // and not trigger any entity matches
+    const result1 = suggestRelatedLinks('a test message');
+    expect(result1.suggestions).toHaveLength(0);
+
+    const result2 = suggestRelatedLinks('this is a simple message');
+    expect(result2.suggestions).toHaveLength(0);
+
+    const result3 = suggestRelatedLinks('processing the file');
+    expect(result3.suggestions).toHaveLength(0);
+
+    // But specific technical terms should still work
+    const result4 = suggestRelatedLinks('Configuring Active Directory integration');
+    expect(result4.suggestions.length).toBeGreaterThan(0);
+    expect(result4.suggestions).toContain('Active Directory');
+  });
 });
 
 // ========================================

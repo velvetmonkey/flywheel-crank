@@ -376,6 +376,45 @@ const STOPWORDS = new Set([
 ]);
 
 /**
+ * Generic words that are too common to trigger entity suggestions
+ *
+ * These words pass tokenization filters (4+ chars, not stopwords) but are
+ * semantically too generic to meaningfully connect to specific entities.
+ * They cause false positives through co-occurrence boosting.
+ *
+ * Example: "a test message" would match entities containing "message",
+ * which then co-occur with unrelated entities like Azure services.
+ *
+ * NOTE: Intentionally conservative list. Words like "service", "system", "process"
+ * are excluded because they're meaningful in tech contexts (e.g., "Azure App Service").
+ */
+const GENERIC_WORDS = new Set([
+  // Common nouns that appear everywhere and rarely mean anything specific
+  'message', 'messages',
+  'file', 'files',
+  'info', 'information',
+  'item', 'items',
+  'list', 'lists',
+  'name', 'names',
+  'type', 'types',
+  'value', 'values',
+  'result', 'results',
+  'issue', 'issues',
+  'problem', 'problems',
+  'point', 'points',
+  'example', 'examples',
+  'case', 'cases',
+  'object', 'objects',
+  'option', 'options',
+  'line', 'lines',
+  'text', 'string', 'strings',
+  'number', 'numbers',
+  'size', 'length',
+  'level', 'levels',
+  'mode', 'modes',
+]);
+
+/**
  * Extract entities that are already linked in content
  * @param content - Content to scan for existing wikilinks
  * @returns Set of linked entity names (lowercase for comparison)
@@ -871,7 +910,24 @@ export function suggestRelatedLinks(
   }
 
   // Tokenize content and compute stems for matching
-  const { tokens: contentTokens, stems: contentStems } = tokenizeForMatching(content);
+  const { tokens: rawTokens, stems: rawStems } = tokenizeForMatching(content);
+  if (rawTokens.size === 0) {
+    return emptyResult;
+  }
+
+  // Filter content tokens:
+  // 1. Enforce minWordLength from strictness config (conservative=5, balanced/aggressive=4)
+  // 2. Filter out generic words that cause false positives via co-occurrence
+  const contentTokens = new Set<string>();
+  const contentStems = new Set<string>();
+  for (const token of rawTokens) {
+    if (token.length >= config.minWordLength && !GENERIC_WORDS.has(token)) {
+      contentTokens.add(token);
+      contentStems.add(stem(token));
+    }
+  }
+
+  // After filtering, check if any meaningful tokens remain
   if (contentTokens.size === 0) {
     return emptyResult;
   }
