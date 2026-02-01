@@ -21,6 +21,15 @@ Why this pattern?
 • Re-read confirms mutation succeeded
 ```
 
+> **Operational Determinism**
+>
+> Flywheel-Crank is deterministic relative to vault state:
+> - Same content + same entity index → same wikilinks
+> - Same policy + same target → same mutations
+> - Vault changes (new notes, renamed entities) affect suggestions
+>
+> This is predictability given context, not mathematical determinism ignoring state.
+
 ---
 
 ## Tool Categories
@@ -850,6 +859,106 @@ Section-based tools require markdown headings. For files without structure:
 
 ---
 
+## MutationResult Response Schema
+
+All mutation tools return a `MutationResult` object. Understanding this schema is essential for building agents that consume Flywheel-Crank.
+
+### Core Fields
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `success` | boolean | Whether the file mutation succeeded |
+| `message` | string | Human-readable status message |
+| `path` | string | Vault-relative path that was mutated |
+| `preview` | string? | Content preview (often includes wikilinkInfo) |
+
+### Git Integration Fields
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `gitCommit` | string? | Git commit hash if `commit: true` was used |
+| `undoAvailable` | boolean? | True only if commit succeeded and undo is available |
+| `staleLockDetected` | boolean? | True if a stale git lock (>30s) was detected |
+| `lockAgeMs` | number? | Age of the detected lock file in milliseconds |
+
+### Validation & Guardrails
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `warnings` | ValidationWarning[]? | Input validation warnings (when `validate: true`) |
+| `outputIssues` | OutputIssue[]? | Output guardrail issues (when `guardrails: 'warn'`) |
+| `normalizationChanges` | string[]? | Normalization changes applied (when `normalize: true`) |
+
+### Wikilink Information
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `wikilinkInfo` | string? | Summary like "Applied 2 wikilinks: Sarah Chen, Acme Corp" |
+| `suggestInfo` | string? | Summary like "Suggested: Propulsion System, Test 4" |
+
+### Example Response
+
+```json
+{
+  "success": true,
+  "message": "Added content to ## Log in daily-notes/2026-01-28.md",
+  "path": "daily-notes/2026-01-28.md",
+  "preview": "- **14:32** Call with [[Sarah Thompson]] about [[Acme Data Migration]]\n  → [[TechStart Inc]] [[INV-2025-047]]",
+  "gitCommit": "abc1234",
+  "undoAvailable": true,
+  "wikilinkInfo": "Applied 2 wikilinks: Sarah Thompson, Acme Data Migration",
+  "suggestInfo": "Suggested: TechStart Inc, INV-2025-047"
+}
+```
+
+### Handling Git Lock Errors
+
+When multiple processes compete for `.git/index.lock`:
+
+```json
+{
+  "success": true,
+  "message": "Added content to ## Log",
+  "path": "daily-notes/2026-01-28.md",
+  "gitError": "fatal: Unable to create '.git/index.lock': File exists",
+  "staleLockDetected": true,
+  "lockAgeMs": 125000
+}
+```
+
+**Key principle:** `success: true` means the **file was mutated**. Git commit status is separate.
+
+### Agent Best Practices
+
+1. **Check `success` first** - If false, the mutation failed entirely
+2. **Check `gitCommit`** - If present, changes were committed (undo available)
+3. **Check `staleLockDetected`** - Indicates git contention, not mutation failure
+4. **Use `wikilinkInfo`** - Provides feedback on auto-wikilinks applied
+5. **Use `warnings`** - Surface input validation issues to users
+
+### ValidationWarning Schema
+
+```typescript
+interface ValidationWarning {
+  type: string;      // e.g., "double_timestamp", "mixed_bullets"
+  message: string;   // Human-readable description
+  suggestion: string; // How to fix
+}
+```
+
+### OutputIssue Schema
+
+```typescript
+interface OutputIssue {
+  type: string;           // e.g., "broken_list", "orphan_checkbox"
+  severity: 'error' | 'warning';
+  message: string;        // What went wrong
+  line?: number;          // Line number if applicable
+}
+```
+
+---
+
 ## Glossary
 
 | Term | Definition |
@@ -858,7 +967,10 @@ Section-based tools require markdown headings. For files without structure:
 | **Section** | A markdown heading and its content until the next heading |
 | **Frontmatter** | YAML metadata at the start of a note |
 | **Wikilink** | `[[Note Name]]` format link in Obsidian |
+| **Auto-wikilinks** | Porter-stemmed + alias-aware matching wrapped inline as `[[Entity]]` (exact +10, stem +5, alias +8) |
+| **Contextual cloud** | 9-layer scored suggestions appended as `→ [[...]]` suffix (co-occurrence, hub score, recency, cross-folder) |
 | **Entity** | A recognized person, project, technology, or acronym |
 | **MCP** | Model Context Protocol - the server interface |
 | **Crank** | This tool - the deterministic write layer |
 | **Flywheel** | The read-only graph intelligence layer |
+| **Operational determinism** | Same input + same vault state → same output |

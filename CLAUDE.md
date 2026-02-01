@@ -55,6 +55,19 @@ Modern agentic AI faces a fundamental tension:
 
 ---
 
+## Terminology Glossary
+
+| Term | Definition |
+|------|------------|
+| **Auto-wikilinks** | Exact text matches wrapped as `[[Entity]]` inline on write |
+| **Contextual cloud** | Semantic suggestions appended as `→ [[...]]` suffix |
+| **Policy** | YAML workflow definition stored in `.policies/` folder |
+| **Mutation tool** | Low-level primitive (vault_add_to_section, etc.) |
+| **Operational determinism** | Same input + same vault state → same output |
+| **Flywheel loop** | Write → auto-wikilinks → reindex → smarter suggestions → repeat |
+
+---
+
 ## Strategic Documents
 
 **[RESEARCH/STRATEGIC_ANALYSIS_FLYWHEEL_CRANK.md](./RESEARCH/STRATEGIC_ANALYSIS_FLYWHEEL_CRANK.md)** - Comprehensive strategic analysis covering:
@@ -167,7 +180,7 @@ Flywheel-Crank implements a **permission-per-tool** security model in Claude Cod
 
 **Read vs Write Separation:**
 ```
-Flywheel (read):     Pre-approved broadly (57 tools)
+Flywheel (read):     Pre-approved broadly (51 tools)
                      ↓
                      Safe - cannot modify vault
 
@@ -550,10 +563,12 @@ Section 'Log' not found. This file has no headings. Use vault_append_to_note for
 
 ## Design Principles
 
-### 1. Determinism First
+### 1. Operational Determinism
+- Same input + same vault state → same output
 - Predictable execution paths, reproducible outcomes
 - Surgical, atomic operations with clear success/failure
 - NO: AI-driven edits, heuristic content generation, unpredictable reformatting
+- **Note:** Vault changes (new notes, renamed entities) affect wikilink suggestions
 
 ### 2. Auditability Always
 - Full trace of all state transitions

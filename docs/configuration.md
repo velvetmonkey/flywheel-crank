@@ -117,6 +117,59 @@ When `FLYWHEEL_WATCH=true`:
 
 **When to use:** Enable file watching if you're editing notes while an agent is actively working in your vault. Without watching, the agent sees a snapshot from when the MCP server started.
 
+### Debounce Tuning: WSL vs Native Linux
+
+The 60000ms default debounce is **WSL-optimized** due to polling overhead. Native Linux with inotify can use much faster debounce:
+
+| Environment | Recommended Debounce | Why |
+|-------------|---------------------|-----|
+| **WSL/WSL2** | `60000` (default) | Polling-based watching has high overhead |
+| **Native Linux** | `300` - `1000` | inotify is event-driven, low overhead |
+| **macOS** | `1000` - `5000` | FSEvents is efficient but not instant |
+| **Windows native** | `5000` - `10000` | NTFS watching has moderate overhead |
+
+**Configuration example for native Linux:**
+```json
+{
+  "mcpServers": {
+    "flywheel": {
+      "command": "npx",
+      "args": ["-y", "@velvetmonkey/flywheel-mcp"],
+      "env": {
+        "FLYWHEEL_WATCH": "true",
+        "FLYWHEEL_DEBOUNCE_MS": "300"
+      }
+    }
+  }
+}
+```
+
+**Configuration for WSL (keep default high debounce):**
+```json
+{
+  "mcpServers": {
+    "flywheel": {
+      "command": "npx",
+      "args": ["-y", "@velvetmonkey/flywheel-mcp"],
+      "env": {
+        "FLYWHEEL_WATCH": "true",
+        "FLYWHEEL_DEBOUNCE_MS": "60000"
+      }
+    }
+  }
+}
+```
+
+**Signs you need higher debounce:**
+- Index rebuilds too frequently during editing
+- CPU spikes when Obsidian auto-saves
+- Multiple rebuild messages in quick succession
+
+**Signs you can lower debounce:**
+- Index feels stale after creating notes
+- Waiting too long for new entities to become linkable
+- Running on fast SSD with native filesystem events
+
 ### Flywheel-Crank
 
 | Variable | Type | Default | Description |
@@ -194,7 +247,7 @@ Flywheel and Flywheel-Crank implement a **read-broad, write-narrow** permission 
 ├─────────────────────────────────────────────────────────────────┤
 │                                                                 │
 │  Flywheel (read):    Pre-approved broadly                       │
-│                      → 44 read-only tools                       │
+│                      → 51 read-only tools                       │
 │                      → Cannot modify vault                      │
 │                                                                 │
 │  Flywheel-Crank (write):  Approved per-tool                     │

@@ -1,6 +1,11 @@
-# Flywheel Crank - Auto-Wikilinks
+# Flywheel Crank - Intelligent Linking
 
-Crank automatically links known entities as you write, creating a self-reinforcing knowledge graph without manual linking effort.
+Crank provides two complementary linking behaviors:
+
+1. **Auto-wikilinks** — Porter-stemmed + alias-aware matching wrapped inline as `[[Entity]]`
+2. **Contextual cloud** — 9-layer scored suggestions appended as `→ [[...]]` suffix
+
+Together, they create a self-reinforcing knowledge graph without manual linking effort.
 
 ---
 
@@ -60,7 +65,7 @@ You'll see connections you never explicitly made — meeting notes, daily logs, 
 - [Excluded Folders](#excluded-folders)
 - [Template Placeholder Handling](#template-placeholder-handling)
 - [Controlling Wikilinks](#controlling-wikilinks)
-- [Suggested Outgoing Links](#suggested-outgoing-links)
+- [Contextual Cloud](#contextual-cloud-suggested-outgoing-links)
 
 ---
 
@@ -476,42 +481,177 @@ mcp__flywheel-crank__vault_add_to_section({
 
 ---
 
-## Suggested Outgoing Links
+## Contextual Cloud (Suggested Outgoing Links)
 
-Mutation tools can automatically suggest contextual wikilinks based on the content you're adding. This helps capture implicit connections between your notes.
+The **contextual cloud** captures implicit connections — entities semantically related to your content but not mentioned by name. This is the `→ [[...]]` suffix appended to mutations.
 
 ### How It Works
 
-When you add content via `vault_add_to_section`, `vault_replace_in_section`, or `vault_add_task`, Crank analyzes the text and appends relevant entity suggestions in a suffix format:
+When you add content via `vault_add_to_section`, `vault_replace_in_section`, or `vault_add_task`, Crank analyzes the text and appends a contextual cloud:
 
 ```
 Your content here → [[Related Entity]] [[Another Entity]]
 ```
 
+**Why "contextual cloud"?** If auto-wikilinks are "connecting dots you drew," the contextual cloud shows "nearby dots you might want to connect to."
+
 ### The Suggestion Algorithm
 
-1. **Tokenization**: Content is split into significant words (4+ characters, excluding stopwords like "the", "and", "with")
-2. **Entity Scoring**: Each entity in your vault is scored by word overlap with the content
-3. **Exclusion**: Entities already linked in the content are excluded
-4. **Selection**: Top 3 scoring entities are suggested (configurable)
+The 9-layer scoring algorithm:
 
-### Example
+1. **Length filter** — Skip entities with >25 character names (article titles)
+2. **Article pattern filter** — Skip "Guide to", "How to", etc. and >3 word names
+3. **Exact/stem word matching** — +10 for exact matches, +5 for stem matches
+4. **Alias matching** — +8 bonus for full alias match (e.g., "production" alias matching "production")
+5. **Co-occurrence boost** — +3 per related entity appearing together in vault
+6. **Type boost** — People +5, Projects +3, Organizations +2, Locations +1, Tech +0
+7. **Context boost** — Daily notes boost people, project notes boost projects
+8. **Recency boost** — Recently-mentioned entities score higher
+9. **Cross-folder boost** — +3 for entities in different top-level folders
+10. **Hub score boost** — +8 for major hubs (100+ backlinks), +5 for significant (50+), +3 for medium (20+)
+
+### Algorithm Layers in Detail
+
+Each layer serves a specific purpose. Understanding them helps you structure your vault for better suggestions.
+
+#### Layer 1: Length Filter (Noise Reduction)
+**Purpose:** Skip overly long entity names that are likely article titles, not linkable concepts.
+
+```
+Filtered out (>25 chars):
+- "How to Configure Authentication in Express"
+- "Meeting Notes from Q4 Planning Session"
+
+Kept (≤25 chars):
+- "Sarah Chen"
+- "Propulsion System"
+- "ADR-002 Engine Selection"
+```
+
+**Tip:** Name your entity notes concisely. Use the full title in the H1 heading, short name for filename.
+
+#### Layer 2: Exact/Stem Word Matching (+10/+5)
+**Purpose:** Connect content to entities sharing keywords.
+
+```
+Content: "Discussed the turbopump testing"
+
+Scoring:
+- [[Turbopump]] +10 (exact match "turbopump")
+- [[Test 4]] +5 (stem match "test" → "testing")
+- [[Engine Design]] +0 (no matching words)
+```
+
+**Tip:** Use consistent terminology in entity names. "Turbopump" will match "turbopump", "Turbopumps".
+
+#### Layer 3: Co-occurrence Boost (+3 per related entity)
+**Purpose:** Entities that frequently appear together suggest related context.
+
+```
+Vault patterns discovered:
+- [[Marcus Johnson]] appears with [[Turbopump]] in 8 notes
+- [[Marcus Johnson]] appears with [[Propulsion System]] in 12 notes
+
+Content mentioning "Marcus":
+- [[Turbopump]] +3 (co-occurs with Marcus)
+- [[Propulsion System]] +3 (co-occurs with Marcus)
+```
+
+**Tip:** Mention related entities together naturally. Over time, the graph learns your association patterns.
+
+#### Layer 4: Type Boost (People +5, Projects +3, Tech +0)
+**Purpose:** People and projects are more likely to be relevant context than generic tech terms.
+
+```
+Entity types detected from folder structure:
+- /team/Marcus Johnson.md → People (+5)
+- /projects/Propulsion System.md → Projects (+3)
+- /tech/TypeScript.md → Technology (+0)
+```
+
+**Tip:** Organize your vault with semantic folder structure: `team/`, `projects/`, `systems/`, `tech/`.
+
+#### Layer 5: Context Boost (Content-Type Awareness)
+**Purpose:** Daily notes favor people; project docs favor systems.
+
+```
+Adding to daily-notes/2026-01-02.md:
+- People entities +3 (daily notes = work with people)
+- Project entities +0
+
+Adding to projects/Propulsion System.md:
+- People entities +0
+- Related system entities +3
+```
+
+**Tip:** Use folder conventions: `daily-notes/`, `projects/`, `systems/` enable context-aware boosting.
+
+#### Layer 6: Recency Boost
+**Purpose:** Recently-mentioned entities are more likely to be currently relevant.
+
+```
+Entities mentioned in last 7 days:
+- [[Test 4]] +2 (mentioned yesterday)
+- [[Test 3]] +0 (mentioned 3 weeks ago)
+```
+
+**Tip:** Active projects naturally get boosted. No special structure needed.
+
+#### Layer 7: Cross-Folder Boost (+3)
+**Purpose:** Suggestions from different areas of your vault create unexpected discoveries.
+
+```
+Content in /projects/Propulsion System.md:
+- [[Avionics System]] +3 (different folder: /systems/)
+- [[Engine Design]] +0 (same folder: /projects/)
+```
+
+**Tip:** Don't silo everything in one folder. Spread related concepts across semantic folders.
+
+#### Layer 8: Hub Score Boost (+8)
+**Purpose:** Well-connected entities (hubs) are often relevant context.
+
+```
+Hub detection (backlink counts):
+- [[Project Roadmap]] → 150 backlinks → +8 (hub)
+- [[Marcus Johnson]] → 45 backlinks → +4 (moderate)
+- [[Test 4]] → 8 backlinks → +0 (leaf)
+```
+
+**Tip:** Let hub entities emerge naturally. Don't force backlinks.
+
+---
+
+### Example Walkthrough
 
 **Input:**
 ```javascript
 mcp__flywheel-crank__vault_add_to_section({
-  path: "daily-notes/2026-01-28.md",
+  path: "daily-notes/2026-01-02.md",
   section: "Log",
-  content: "Discussed TypeScript migration with the team",
+  content: "Discussed turbopump testing schedule with Marcus",
   format: "timestamp-bullet"
 })
 ```
 
+**Scoring breakdown for suggestions:**
+
+| Entity | L2 | L3 | L4 | L5 | L7 | L8 | Total |
+|--------|----|----|----|----|----|----|-------|
+| [[Propulsion System]] | +5 | +3 | +3 | +0 | +3 | +0 | **14** |
+| [[Test 4]] | +5 | +3 | +3 | +0 | +3 | +0 | **14** |
+| [[Engine Design]] | +0 | +3 | +3 | +0 | +3 | +0 | **9** |
+| [[Elena Rodriguez]] | +0 | +0 | +5 | +3 | +0 | +0 | **8** |
+
 **Output:**
 ```markdown
 ## Log
-- **14:32** Discussed TypeScript migration with the team → [[TypeScript]] [[Migration Plan]]
+- **14:32** Discussed [[Turbopump|turbopump]] testing schedule with [[Marcus Johnson|Marcus]]
+  → [[Propulsion System]] [[Test 4]] [[Engine Design]]
 ```
+
+- **Auto-wikilinks** (inline): "turbopump" → `[[Turbopump]]`, "Marcus" → `[[Marcus Johnson]]`
+- **Contextual cloud** (suffix): → `[[Propulsion System]]` etc. — related systems from graph patterns
 
 ### Controlling Suggestions
 
@@ -527,7 +667,7 @@ mcp__flywheel-crank__vault_add_to_section({
 
 ### Idempotency
 
-Crank detects if content already has a suggestion suffix and won't duplicate:
+Crank detects if content already has a contextual cloud and won't duplicate:
 
 ```markdown
 // First add:
@@ -668,6 +808,172 @@ These algorithms have logarithmic complexity — they get BETTER as your vault g
 | 10,000 notes | Very slow | Still fast, even smarter suggestions |
 
 **The graph IS the intelligence.** Every link you make (or Flywheel makes for you) adds to the collective knowledge. After months of use, your vault has accumulated relationship intelligence that no generic AI could replicate.
+
+---
+
+## Vault Structure Patterns
+
+### Recommended Folder Structure
+
+Structure your vault to maximize algorithm effectiveness:
+
+```
+vault/
+├── daily-notes/          # Periodic notes (excluded from entities)
+├── team/                 # People (+5 type boost)
+│   ├── Marcus Johnson.md
+│   ├── Elena Rodriguez.md
+│   └── Sarah Chen.md
+├── projects/             # Projects (+3 type boost)
+│   ├── Propulsion System.md
+│   ├── Avionics System.md
+│   └── GNC System.md
+├── systems/              # Systems (+3 type boost)
+│   ├── Turbopump.md
+│   ├── Flight Computer.md
+│   └── Landing Algorithm.md
+├── decisions/            # ADRs
+│   ├── ADR-001 Propellant Selection.md
+│   └── ADR-002 Engine Selection.md
+├── meetings/             # Meeting notes
+├── tests/                # Test campaigns
+│   ├── Test 3.md
+│   └── Test 4.md
+└── .policies/            # Workflow policies (future)
+```
+
+**Why this structure?**
+- `team/` folder → automatic People type detection (+5 boost)
+- `projects/`, `systems/` → automatic Project type detection (+3 boost)
+- Cross-folder links get +3 boost (encourages vault-wide discovery)
+- `daily-notes/` excluded from entities (dates aren't linkable concepts)
+
+### Entity Naming Patterns
+
+**✅ Good naming:**
+```
+Marcus Johnson.md        → Matches: "Marcus", "Marcus Johnson", "marcus"
+Propulsion System.md     → Matches: "propulsion", "Propulsion System"
+ADR-002 Engine Selection.md → Matches: "ADR-002", "engine selection"
+```
+
+**❌ Avoid:**
+```
+MJohnson.md              → Won't match "Marcus Johnson"
+propulsion_system.md     → Underscores don't match natural text
+2026-01-15 Meeting.md    → Date prefixes obscure entity name
+```
+
+### Using Aliases Strategically
+
+Add frontmatter aliases to capture variations:
+
+```yaml
+---
+# In team/Marcus Johnson.md
+aliases: [MJ, Marcus, Dr. Johnson]
+---
+```
+
+Now content mentioning "MJ", "Marcus", or "Dr. Johnson" all suggest `[[Marcus Johnson]]`.
+
+**Alias patterns by entity type:**
+
+| Entity Type | Alias Examples |
+|-------------|----------------|
+| People | Nicknames, initials, titles |
+| Projects | Acronyms, codenames |
+| Systems | Abbreviations, common shorthand |
+| Technologies | Version variants, related terms |
+
+### Building Co-occurrence Patterns
+
+The algorithm learns entity relationships from your writing:
+
+```markdown
+# In daily-notes/2026-01-02.md
+
+## Log
+- Met with [[Marcus Johnson]] about [[Turbopump]] testing
+- [[Elena Rodriguez]] reviewing [[Avionics System]] integration
+
+# After many notes, the graph learns:
+# Marcus ↔ Turbopump (appear together often)
+# Marcus ↔ Propulsion System (folder proximity)
+# Elena ↔ Avionics (appear together often)
+```
+
+**Tip:** Write naturally. Mention people with their projects. Over time, the graph learns your organizational patterns.
+
+### Hub Emergence
+
+Let hub entities emerge naturally from genuine relevance:
+
+```
+After 3 months of use:
+
+[[Project Roadmap]] → 150 backlinks (hub, +8 boost)
+[[Marcus Johnson]] → 45 backlinks (moderate hub)
+[[Test 4]] → 8 backlinks (leaf node)
+```
+
+**Don't artificially inflate backlinks.** The algorithm detects genuine hubs — entities that naturally connect many concepts.
+
+### Vault Evolution Timeline
+
+```
+Week 1:   Basic linking, few suggestions
+          → Create core entities (people, projects, systems)
+
+Week 4:   Patterns emerge, suggestions improve
+          → Co-occurrence learned from daily notes
+
+Month 3:  Graph intelligence kicks in
+          → Hub entities identified
+          → Cross-folder discovery active
+
+Month 6+: Self-sustaining flywheel
+          → New content auto-links richly
+          → Suggestions capture implicit context
+```
+
+### Pattern Recognition Examples
+
+**Example 1: Project Context**
+```
+Content: "Discussed the delay with the vendor"
+
+Graph knows:
+- Recent work involves [[Turbopump]]
+- Turbopump vendor is [[Acme Aerospace]]
+- Turbopump relates to [[Marcus Johnson]]
+
+Suggestions: → [[Turbopump]] [[Acme Aerospace]] [[Marcus Johnson]]
+```
+
+**Example 2: Meeting Preparation**
+```
+Content: "Preparing for tomorrow's review with the propulsion team"
+
+Graph knows:
+- Propulsion team includes [[Marcus Johnson]], [[David Kim]]
+- Recent propulsion work involves [[Test 4]], [[Engine Design]]
+- Pending decision: [[ADR-006 Schedule Mitigation]]
+
+Suggestions: → [[Marcus Johnson]] [[Test 4]] [[ADR-006 Schedule Mitigation]]
+```
+
+**Example 3: Cross-Domain Discovery**
+```
+Content: "The avionics timeline depends on propulsion completion"
+
+Graph knows:
+- Avionics lead is [[Elena Rodriguez]]
+- Propulsion lead is [[Marcus Johnson]]
+- Cross-dependency exists (different folders = +3 boost)
+
+Suggestions: → [[Elena Rodriguez]] [[Marcus Johnson]] [[Propulsion System]]
+```
 
 ---
 
