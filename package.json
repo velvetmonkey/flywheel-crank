@@ -1,6 +1,6 @@
 {
   "name": "@velvetmonkey/flywheel-crank",
-  "version": "1.27.24",
+  "version": "1.27.25",
   "private": true,
   "description": "Deterministic vault mutations for Obsidian via MCP",
   "workspaces": [
