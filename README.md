@@ -6,14 +6,17 @@
 
 # Flywheel Crank
 
-### Deterministic vault automation. Policies as code.
+### MCP server for deterministic vault mutations
 
+[![MCP](https://img.shields.io/badge/MCP-Model%20Context%20Protocol-blueviolet.svg)](https://modelcontextprotocol.io/)
 [![CI](https://github.com/velvetmonkey/flywheel-crank/actions/workflows/ci.yml/badge.svg)](https://github.com/velvetmonkey/flywheel-crank/actions/workflows/ci.yml)
 [![npm version](https://img.shields.io/npm/v/@velvetmonkey/flywheel-crank.svg)](https://www.npmjs.com/package/@velvetmonkey/flywheel-crank)
 [![License: Apache-2.0](https://img.shields.io/badge/License-Apache--2.0-blue.svg)](https://www.apache.org/licenses/LICENSE-2.0)
 [![Platform](https://img.shields.io/badge/platform-macOS%20%7C%20Linux%20%7C%20Windows-blue.svg)](https://github.com/velvetmonkey/flywheel-crank)
 [![Scale](https://img.shields.io/badge/scale-100k%20notes-brightgreen.svg)](./docs/BENCHMARK_RESULTS.md)
 [![Mutations](https://img.shields.io/badge/mutations-10k%2B%20stable-brightgreen.svg)](./docs/SCALE_BENCHMARKS.md)
+
+**Policies as code.** Give Claude surgical write access to your Obsidian vault with auto-wikilinks, atomic commits, and full undo.
 
 > **Platform Architecture:** See [PLATFORM.md](./docs/PLATFORM.md) for the Eyes + Hands architecture and why deterministic agents matter.
 
