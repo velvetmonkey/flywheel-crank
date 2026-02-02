@@ -1,4 +1,4 @@
-> **Part of the Flywheel Suite:** This is the mutation server for safe vault writes. See [Flywheel](https://github.com/velvetmonkey/flywheel) for read-only graph intelligence and queries.
+> **Both Packages Required:** Flywheel-Crank (11 mutation tools) requires [Flywheel](https://github.com/velvetmonkey/flywheel) (51 read-only tools) for the complete experience. See the [Platform Installation Guide](docs/INSTALL.md) for your OS.
 
 <div align="center">
   <img src="header.png" alt="Flywheel Crank" width="256"/>
@@ -8,12 +8,22 @@
 
 ### Deterministic vault automation. Policies as code.
 
+[![CI](https://github.com/velvetmonkey/flywheel-crank/actions/workflows/ci.yml/badge.svg)](https://github.com/velvetmonkey/flywheel-crank/actions/workflows/ci.yml)
 [![npm version](https://img.shields.io/npm/v/@velvetmonkey/flywheel-crank.svg)](https://www.npmjs.com/package/@velvetmonkey/flywheel-crank)
 [![License: Apache-2.0](https://img.shields.io/badge/License-Apache--2.0-blue.svg)](https://www.apache.org/licenses/LICENSE-2.0)
 [![Platform](https://img.shields.io/badge/platform-macOS%20%7C%20Linux%20%7C%20Windows-blue.svg)](https://github.com/velvetmonkey/flywheel-crank)
-[![Benchmark](https://img.shields.io/badge/benchmark-100k%20notes-brightgreen.svg)](./docs/BENCHMARK_RESULTS.md)
+[![Scale](https://img.shields.io/badge/scale-100k%20notes-brightgreen.svg)](./docs/BENCHMARK_RESULTS.md)
+[![Mutations](https://img.shields.io/badge/mutations-10k%2B%20stable-brightgreen.svg)](./docs/SCALE_BENCHMARKS.md)
 
 > **Platform Architecture:** See [PLATFORM.md](./docs/PLATFORM.md) for the Eyes + Hands architecture and why deterministic agents matter.
+
+## Verified Capabilities
+
+✅ **100k Note Scale** - Vault operations tested at 100,000 notes
+✅ **10k Mutation Stability** - 10,000 sequential mutations without corruption
+✅ **Cross-Platform** - Tested on Ubuntu, Windows, macOS (Intel + ARM)
+✅ **Security Hardened** - Path traversal, injection, permission bypass tested
+✅ **Format Preservation** - CRLF, indentation, trailing newlines preserved
 
 ---
 
@@ -329,6 +339,7 @@ Beyond auto-wikilinks, mutations suggest semantically related entities — the *
 
 ## Documentation
 
+- **[Installation Guide](./docs/INSTALL.md)** — Platform-specific setup (Windows, macOS, Linux, WSL)
 - **[Examples](./docs/EXAMPLES.md)** — Quick start, all tools with copy-paste examples
 - **[Configuration Guide](./docs/configuration.md)** — Environment variables, permissions, tool parameters
 - **[Policy Authoring](./docs/POLICIES.md)** — Deep dive on writing policies

@@ -3824,7 +3824,7 @@ Human can always override/edit manually
 
 ---
 
-## Priority 1: Wikilink Ecosystem 🔗
+## Priority 5: Wikilink Ecosystem 🔗
 
 **Status:** Core implemented, needs documentation and loop validation
 
@@ -3865,7 +3865,7 @@ Human can always override/edit manually
 
 ---
 
-## Priority 1.5: Configuration & Documentation Quality 🔧📚
+## Priority 6: Configuration & Documentation Quality 🔧📚
 
 **Status:** Code works but lacks user control and doc accuracy
 
@@ -3955,9 +3955,256 @@ vault_add_to_section({
 
 ---
 
-## Priority 2: Comprehensive Testing 🧪
+## Priority 1: SQLite State Consolidation 🗄️
+
+**Status:** HIGH PRIORITY - Foundation for persistent graph intelligence
+
+**Context (Feb 2, 2026):**
+State is currently scattered across multiple JSON files, requiring costly rebuilds on every startup. Consolidating all state into a single SQLite database enables persistent graph intelligence, historical queries, and atomic multi-table updates.
+
+### Problem Statement
+
+State is currently scattered across multiple files:
+- `.claude/wikilink-entities.json` - Entity index
+- `.claude/entity-recency.json` - Recency data
+- `.claude/last-crank-commit.json` - Undo tracking
+- `.claude/crank-mutation-hints.json` - Mutation hints
+- `.flywheel/operation-log.jsonl` - Operation log
+- **In-memory only:** VaultIndex, Graph, Backlinks (rebuilt on startup)
+
+**Pain points:**
+- Startup delay rebuilding in-memory structures
+- No historical queries ("when was X last mentioned?")
+- Multiple files to backup/restore
+- No atomic cross-file updates
+- Entity search requires linear scan
+
+### Target Architecture
+
+Single `.flywheel/state.db` SQLite database with tables:
+
+| Table | Purpose |
+|-------|---------|
+| `entities` | Entity index with FTS5 full-text search |
+| `entity_recency` | Last-seen timestamps per entity |
+| `notes` | Note metadata (path, title, modified) |
+| `links` | Wikilink graph edges (source → target) |
+| `backlinks` | Precomputed backlink index |
+| `operations` | Operation audit log (replaces JSONL) |
+| `crank_state` | Last commit SHA, staging info |
+| `mutations` | Mutation hints for Flywheel |
+
+### Schema Design
+
+```sql
+-- Core tables
+CREATE TABLE notes (
+  id INTEGER PRIMARY KEY,
+  path TEXT UNIQUE NOT NULL,
+  title TEXT,
+  modified_at TEXT,
+  frontmatter_json TEXT,
+  content_hash TEXT
+);
+
+CREATE TABLE entities (
+  id INTEGER PRIMARY KEY,
+  name TEXT NOT NULL,
+  type TEXT,  -- person, project, tech, acronym
+  note_id INTEGER REFERENCES notes(id),
+  created_at TEXT,
+  last_seen_at TEXT
+);
+
+-- FTS5 for fast entity search
+CREATE VIRTUAL TABLE entities_fts USING fts5(name, type, content=entities);
+
+CREATE TABLE links (
+  id INTEGER PRIMARY KEY,
+  source_note_id INTEGER REFERENCES notes(id),
+  target_note_id INTEGER REFERENCES notes(id),
+  link_text TEXT,
+  line_number INTEGER
+);
+
+CREATE TABLE operations (
+  id INTEGER PRIMARY KEY,
+  timestamp TEXT,
+  tool_name TEXT,
+  params_json TEXT,
+  result_json TEXT,
+  commit_sha TEXT
+);
+
+CREATE TABLE crank_state (
+  key TEXT PRIMARY KEY,
+  value TEXT
+);
+```
+
+### Benefits
+
+| Benefit | Current | With SQLite |
+|---------|---------|-------------|
+| **Startup time** | Rebuild index (~2-5s for 1k notes) | Instant (read from DB) |
+| **Historical queries** | Not possible | "When was entity X last seen?" |
+| **Backup/restore** | Multiple files | Single file copy |
+| **Entity search** | Linear scan | FTS5 instant search |
+| **Atomic updates** | File-by-file | Transaction-wrapped |
+| **Graph persistence** | Rebuilt every session | Persisted across sessions |
+
+### Migration Strategy
+
+**Phase 1: Add SQLite alongside JSON**
+- Create SQLite schema in vault-core
+- Write to both JSON and SQLite during transition
+- Read from SQLite, fall back to JSON if missing
+
+**Phase 2: Migrate existing state**
+- Migration script reads all JSON files
+- Populates SQLite tables
+- Validates data integrity
+
+**Phase 3: Remove JSON dependency**
+- Switch to SQLite-only reads
+- Keep JSON write for backwards compatibility (optional)
+- Remove JSON files after successful migration
+
+### Implementation Scope
+
+| Package | Changes |
+|---------|---------|
+| **vault-core** | SQLite schema, migration helpers, query builders |
+| **flywheel** | Use SQLite for index persistence, remove in-memory rebuild |
+| **flywheel-crank** | Use SQLite for all state (entities, operations, undo) |
+
+### Dependencies
+
+- `better-sqlite3` - Synchronous SQLite for Node.js (already evaluating)
+- No new runtime dependencies (SQLite is built-in to better-sqlite3)
+
+### Acceptance Criteria
+
+- [ ] All state reads from SQLite (no JSON fallback in steady state)
+- [ ] Startup time <100ms for 10k note vault
+- [ ] FTS5 entity search <10ms
+- [ ] Migration script handles all existing vaults
+- [ ] Single `.flywheel/state.db` file for backup
+- [ ] Historical queries work ("show entity mentions from last 7 days")
+
+### Timeline
+
+**Week 1:** Schema design + vault-core SQLite helpers
+**Week 2:** Flywheel index persistence migration
+**Week 3:** Flywheel-crank state migration + testing
+**Week 4:** Migration script + documentation
+
+---
+
+## Priority 2: Comprehensive Testing with Proof 🧪
 
 **Status:** Battle-hardening implemented, needs validation on WSL
+
+### Testing Goals
+
+This priority establishes **proof of scale and reliability** through:
+1. Full test suites running on large datasets
+2. GitHub badges showing proof at top of READMEs
+3. Clear explanations of what each test suite proves
+
+### GitHub Badges
+
+Each project README should display badges proving capabilities:
+
+| Badge | What It Proves |
+|-------|---------------|
+| ![CI](https://img.shields.io/github/actions/workflow/status/velvetmonkey/flywheel-crank/ci.yml?label=tests) | All tests pass on every push |
+| ![Coverage](https://img.shields.io/codecov/c/github/velvetmonkey/flywheel-crank) | Code coverage percentage |
+| ![Scale](https://img.shields.io/badge/scale-100k%20notes-brightgreen) | Tested at 100k notes |
+| ![Mutations](https://img.shields.io/badge/mutations-10k%2B%20stable-brightgreen) | 10k+ mutations stable |
+| ![Platforms](https://img.shields.io/badge/platforms-Win%20%7C%20macOS%20%7C%20Linux-blue) | Cross-platform tested |
+
+### Verified Capabilities Section
+
+Each README gets a "Verified Capabilities" section:
+
+```markdown
+## Verified Capabilities
+
+✅ **100k Note Scale** - Vault operations tested at 100,000 notes
+✅ **10k Mutation Stability** - 10,000 sequential mutations without corruption
+✅ **Cross-Platform** - Tested on Ubuntu, Windows, macOS (Intel + ARM)
+✅ **Security Hardened** - Path traversal, injection, permission bypass tested
+✅ **Format Preservation** - CRLF, indentation, trailing newlines preserved
+```
+
+### Test Suites Per Project
+
+**vault-core:**
+- Unit tests (wikilinks, entities, logging)
+- Scale benchmarks (1k → 100k notes)
+- Iteration stress (10k mutations)
+
+**flywheel:**
+- Tool tests (51 read-only tools)
+- Index building at scale
+- Graph query performance
+- Cross-platform file watcher
+
+**flywheel-crank:**
+- Mutation tests (all mutation types)
+- Security tests (injection, path traversal)
+- Policy execution tests
+- Battle-hardening (edge cases)
+- Complex policy tests (approval chains, state machines)
+
+### Proof Documentation Requirements
+
+- [ ] Each test suite has clear documentation of what it proves
+- [ ] Benchmark results published in `docs/BENCHMARK_RESULTS.md`
+- [ ] CI workflow generates coverage reports
+- [ ] Nightly runs validate scale (50k, 100k vaults)
+
+---
+
+### Demo Workflow Tests
+
+**Daily Note Workflow:**
+- Create daily note → add timestamped logs → toggle habits
+- Verify wikilink suggestions → verify Flywheel indexes them
+
+**Project Progress Workflow:**
+- Add bullets → replace status → remove completed items
+- Git commit chain → undo → verify rollback
+
+**Meeting Notes Workflow:**
+- Create note with frontmatter → add action items
+- Wikilink suggestions → cross-note graph updates
+
+**Messy Vault Stress Test:**
+- Inconsistent headings, duplicate sections
+- Mixed checkbox formats, CRLF/LF mixing
+- Heavy frontmatter (10+ fields)
+
+### Security Validation ✅ COMPLETED Jan 31, 2026
+- [x] Symlink escape attempts blocked (WSL edge cases) - implemented in `validatePathSecure`
+- [x] Sensitive file writes blocked (.env, .pem, credentials) - test suite: `test/security/sensitive-files.test.ts`
+- [x] Path traversal attacks rejected - test suite: `test/security/path-encoding.test.ts`
+
+**New test coverage added:**
+- `test/security/sensitive-files.test.ts` - 40+ tests for credential/key/env file protection
+- `test/security/path-encoding.test.ts` - 30+ tests for URL encoding, null bytes, traversal attacks
+
+### Format Preservation
+- [ ] Golden file tests pass
+- [ ] CRLF files stay CRLF after mutation
+- [ ] Trailing newlines preserved
+- [ ] List indentation respected
+
+### Git Integration
+- [ ] Commit message prefixes correct
+- [ ] Undo works across all mutation types
+- [ ] Concurrent git operations handled
 
 ### Demo Workflow Tests
 
@@ -4599,7 +4846,7 @@ If file watching proves unreliable on a platform:
 
 ---
 
-## Priority 3: Documentation Gaps (Critical for Adoption) 📚
+## Priority 7: Documentation Gaps (Critical for Adoption) 📚
 
 **Priority:** HIGH - Users won't adopt without clear docs
 
@@ -5400,7 +5647,7 @@ Broader knowledge workers as 'markdown as database' becomes standard practice.
 
 ---
 
-## Priority 0: Mutator Battle-Hardening (Pre-Launch Critical) 🛡️
+## Priority 3: Mutator Battle-Hardening (Pre-Launch Critical) 🛡️
 
 **Status:** CRITICAL - Must complete before broader launch
 
@@ -5505,7 +5752,7 @@ Recent indentation bugs (v0.7.3 fix for prepending with multi-level nesting) rev
 
 ---
 
-## Priority 0.5: Complex Policy Test Suite (Business Process Automation) 🏭
+## Priority 4: Complex Policy Test Suite (Business Process Automation) 🏭
 
 **Status:** HIGH PRIORITY - Required to prove enterprise-readiness
 
@@ -6008,7 +6255,7 @@ checklists:
 
 ---
 
-## Priority 4: UX Improvements 🎨
+## Priority 8: UX Improvements 🎨
 
 **Status:** Quality-of-life improvements to enhance agent experience and prevent confusion
 
@@ -6081,7 +6328,7 @@ Current behavior surfaces `gitError` in tool responses when vault mutations succ
 
 ---
 
-## Priority 5: Marketing & Positioning Review
+## Priority 9: Marketing & Positioning Review
 
 **Status:** Planning Phase  
 **Target:** Pre-Launch (Critical)  
