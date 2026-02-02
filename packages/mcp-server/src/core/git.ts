@@ -12,8 +12,6 @@ import {
   type StateDb,
 } from '@velvetmonkey/vault-core';
 
-const LAST_COMMIT_FILE = '.claude/last-crank-commit.json';
-
 /**
  * Module-level StateDb reference for crank state storage
  * Set via setStateDb() during initialization
@@ -61,62 +59,39 @@ export interface LastCrankCommit {
 /**
  * Save tracking info for the last successful Crank commit.
  * This enables safe undo verification.
- *
- * Uses StateDb if available, falls back to JSON file.
  */
-export async function saveLastCrankCommit(
-  vaultPath: string,
+export function saveLastCrankCommit(
   hash: string,
   message: string
-): Promise<void> {
+): void {
+  if (!moduleStateDb) {
+    console.error('[Crank] No StateDb available for saving last commit');
+    return;
+  }
+
   const data: LastCrankCommit = {
     hash,
     message,
     timestamp: new Date().toISOString(),
   };
 
-  // Try StateDb first
-  if (moduleStateDb) {
-    try {
-      setCrankState(moduleStateDb, 'last_commit', data);
-      return;
-    } catch (e) {
-      console.error('[Crank] StateDb save failed, falling back to JSON:', e);
-    }
+  try {
+    setCrankState(moduleStateDb, 'last_commit', data);
+  } catch (e) {
+    console.error('[Crank] Failed to save last commit to StateDb:', e);
   }
-
-  // Fallback to JSON file
-  const filePath = path.join(vaultPath, LAST_COMMIT_FILE);
-  const dirPath = path.dirname(filePath);
-
-  // Ensure .claude directory exists
-  await fs.mkdir(dirPath, { recursive: true });
-  await fs.writeFile(filePath, JSON.stringify(data, null, 2));
 }
 
 /**
  * Get the last tracked Crank commit, if any.
- *
- * Uses StateDb if available, falls back to JSON file.
  */
-export async function getLastCrankCommit(
-  vaultPath: string
-): Promise<LastCrankCommit | null> {
-  // Try StateDb first
-  if (moduleStateDb) {
-    try {
-      const data = getCrankState<LastCrankCommit>(moduleStateDb, 'last_commit');
-      if (data) return data;
-    } catch (e) {
-      console.error('[Crank] StateDb read failed, falling back to JSON:', e);
-    }
+export function getLastCrankCommit(): LastCrankCommit | null {
+  if (!moduleStateDb) {
+    return null;
   }
 
-  // Fallback to JSON file
   try {
-    const filePath = path.join(vaultPath, LAST_COMMIT_FILE);
-    const content = await fs.readFile(filePath, 'utf-8');
-    return JSON.parse(content) as LastCrankCommit;
+    return getCrankState<LastCrankCommit>(moduleStateDb, 'last_commit');
   } catch {
     return null;
   }
@@ -124,25 +99,16 @@ export async function getLastCrankCommit(
 
 /**
  * Clear the last Crank commit tracking (after successful undo).
- *
- * Uses StateDb if available, also clears JSON file for compatibility.
  */
-export async function clearLastCrankCommit(vaultPath: string): Promise<void> {
-  // Clear from StateDb if available
-  if (moduleStateDb) {
-    try {
-      deleteCrankState(moduleStateDb, 'last_commit');
-    } catch {
-      // Ignore errors
-    }
+export function clearLastCrankCommit(): void {
+  if (!moduleStateDb) {
+    return;
   }
 
-  // Also clear JSON file for backward compatibility
   try {
-    const filePath = path.join(vaultPath, LAST_COMMIT_FILE);
-    await fs.unlink(filePath);
+    deleteCrankState(moduleStateDb, 'last_commit');
   } catch {
-    // File doesn't exist, ignore
+    // Ignore errors
   }
 }
 
@@ -429,7 +395,7 @@ export async function commitChange(
 
       // Track this commit for safe undo verification
       if (result.commit) {
-        await saveLastCrankCommit(vaultPath, result.commit, commitMessage);
+        saveLastCrankCommit(result.commit, commitMessage);
       }
 
       return {
@@ -650,7 +616,7 @@ export async function commitPolicyChanges(
 
       // Track this commit for safe undo verification
       if (result.commit) {
-        await saveLastCrankCommit(vaultPath, result.commit, commitMessage);
+        saveLastCrankCommit(result.commit, commitMessage);
       }
 
       return {

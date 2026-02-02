@@ -177,7 +177,7 @@ export function registerSystemTools(
         }
 
         // 3. Verify HEAD matches expected Crank commit (safety check)
-        const lastCrankCommit = await getLastCrankCommit(vaultPath);
+        const lastCrankCommit = getLastCrankCommit();
         const lastCommit = await getLastCommit(vaultPath);
 
         if (lastCrankCommit && lastCommit) {
@@ -205,7 +205,7 @@ export function registerSystemTools(
         }
 
         // 5. Clear tracking after successful undo
-        await clearLastCrankCommit(vaultPath);
+        clearLastCrankCommit();
 
         const result: MutationResult = {
           success: true,

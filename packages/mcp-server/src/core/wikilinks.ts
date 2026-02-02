@@ -9,11 +9,11 @@
  * Both Flywheel and Crank use @velvetmonkey/vault-core for consistent scanning
  * logic, but each maintains its own cached copy of the entity index.
  *
- * Cache file: .claude/wikilink-entities.json (managed by vault-core)
+ * Storage: SQLite StateDb at .claude/state.db (managed by vault-core)
  *
  * Lifecycle:
- * 1. On startup: Load from cache file if valid, else full vault scan
- * 2. Cache includes version number for migration detection
+ * 1. On startup: Load from StateDb if valid, else full vault scan
+ * 2. StateDb includes version number for migration detection
  * 3. Index is held in memory for the duration of the MCP session
  * 4. Flywheel exposes entity data via MCP for LLM queries
  * 5. Crank uses its local copy for wikilink application during mutations
@@ -26,9 +26,6 @@ import {
   getEntityName,
   getEntityAliases,
   applyWikilinks,
-  loadEntityCache,
-  saveEntityCache,
-  ENTITY_CACHE_VERSION,
   getEntityIndexFromDb,
   type EntityIndex,
   type EntityCategory,
@@ -53,9 +50,8 @@ import {
 import {
   buildRecencyIndex,
   getRecencyBoost,
-  loadRecencyCache,
-  saveRecencyCache,
-  RECENCY_CACHE_VERSION,
+  loadRecencyFromStateDb,
+  saveRecencyToStateDb,
   type RecencyIndex,
 } from './recency.js';
 
@@ -127,13 +123,11 @@ const DEFAULT_EXCLUDE_FOLDERS = [
  * Initialize entity index in background
  * Called at MCP server startup - returns immediately, builds in background
  *
- * Tries loading from StateDb first, then JSON cache, then full rebuild.
+ * Tries loading from StateDb first, then full rebuild.
  */
 export async function initializeEntityIndex(vaultPath: string): Promise<void> {
-  const cacheFile = path.join(vaultPath, '.claude', 'wikilink-entities.json');
-
   try {
-    // Try loading from StateDb first (fastest path)
+    // Try loading from StateDb (fastest path)
     if (moduleStateDb) {
       try {
         const dbIndex = getEntityIndexFromDb(moduleStateDb);
@@ -144,35 +138,12 @@ export async function initializeEntityIndex(vaultPath: string): Promise<void> {
           return;
         }
       } catch (e) {
-        console.error('[Crank] Failed to load from StateDb, trying cache:', e);
+        console.error('[Crank] Failed to load from StateDb:', e);
       }
     }
 
-    // Try loading from JSON cache (fast path)
-    const cached = await loadEntityCache(cacheFile);
-    if (cached) {
-      // Check cache version - rebuild if outdated (e.g., no alias support)
-      const cacheVersion = cached._metadata.version ?? 1;
-      if (cacheVersion < ENTITY_CACHE_VERSION) {
-        console.error(`[Crank] Cache version ${cacheVersion} < ${ENTITY_CACHE_VERSION}, rebuilding...`);
-        await rebuildIndex(vaultPath, cacheFile);
-        return;
-      }
-
-      entityIndex = cached;
-      indexReady = true;
-      console.error(`[Crank] Loaded ${cached._metadata.total_entities} entities from cache`);
-
-      // Optionally rebuild in background if cache is old (>1 hour)
-      const cacheAge = Date.now() - new Date(cached._metadata.generated_at).getTime();
-      if (cacheAge > 60 * 60 * 1000) {
-        rebuildIndexInBackground(vaultPath, cacheFile);
-      }
-      return;
-    }
-
-    // No cache - build index
-    await rebuildIndex(vaultPath, cacheFile);
+    // No StateDb or empty - build index
+    await rebuildIndex(vaultPath);
   } catch (error) {
     indexError = error instanceof Error ? error : new Error(String(error));
     console.error(`[Crank] Failed to initialize entity index: ${indexError.message}`);
@@ -183,7 +154,7 @@ export async function initializeEntityIndex(vaultPath: string): Promise<void> {
 /**
  * Rebuild index synchronously
  */
-async function rebuildIndex(vaultPath: string, cacheFile: string): Promise<void> {
+async function rebuildIndex(vaultPath: string): Promise<void> {
   console.error(`[Crank] Scanning vault for entities...`);
   const startTime = Date.now();
 
@@ -210,16 +181,15 @@ async function rebuildIndex(vaultPath: string, cacheFile: string): Promise<void>
   }
 
   // Build recency index for temporal suggestions
-  const recencyCacheFile = path.join(vaultPath, '.claude', 'entity-recency.json');
   try {
-    // Try loading from cache first
-    const cachedRecency = await loadRecencyCache(recencyCacheFile);
+    // Try loading from StateDb first
+    const cachedRecency = loadRecencyFromStateDb();
     const cacheAgeMs = cachedRecency ? Date.now() - cachedRecency.lastUpdated : Infinity;
 
     if (cachedRecency && cacheAgeMs < 60 * 60 * 1000) {
       // Cache is valid and less than 1 hour old
       recencyIndex = cachedRecency;
-      console.error(`[Crank] Recency index loaded from cache (${recencyIndex.lastMentioned.size} entities)`);
+      console.error(`[Crank] Recency index loaded from StateDb (${recencyIndex.lastMentioned.size} entities)`);
     } else {
       // Build fresh recency index
       const recencyStart = Date.now();
@@ -227,19 +197,11 @@ async function rebuildIndex(vaultPath: string, cacheFile: string): Promise<void>
       const recencyDuration = Date.now() - recencyStart;
       console.error(`[Crank] Recency index built: ${recencyIndex.lastMentioned.size} entities in ${recencyDuration}ms`);
 
-      // Save to cache
-      await saveRecencyCache(recencyCacheFile, recencyIndex);
+      // Save to StateDb
+      saveRecencyToStateDb(recencyIndex);
     }
   } catch (e) {
     console.error(`[Crank] Failed to build recency index: ${e}`);
-  }
-
-  // Save to cache
-  try {
-    await saveEntityCache(cacheFile, entityIndex);
-    console.error(`[Crank] Entity cache saved`);
-  } catch (e) {
-    console.error(`[Crank] Failed to save entity cache: ${e}`);
   }
 }
 

@@ -8,11 +8,10 @@
  * "when entity was mentioned" - this is a lightweight approach
  * that doesn't require parsing every file on every update.
  *
- * When StateDb is available, recency data is also stored in SQLite
- * for persistence across sessions.
+ * All recency data is stored in SQLite StateDb.
  */
 
-import { readdir, readFile, stat, mkdir, writeFile } from 'fs/promises';
+import { readdir, readFile, stat } from 'fs/promises';
 import path from 'path';
 import {
   getEntityName,
@@ -54,14 +53,6 @@ export interface RecencyIndex {
  */
 export const RECENCY_CACHE_VERSION = 1;
 
-/**
- * Serializable form of RecencyIndex for JSON storage
- */
-interface RecencyIndexJSON {
-  lastMentioned: Record<string, number>;
-  lastUpdated: number;
-  version: number;
-}
 
 /**
  * Folders to exclude from recency scanning
@@ -206,7 +197,7 @@ export function getRecencyBoost(entityName: string, index: RecencyIndex): number
  *
  * @returns RecencyIndex or null if StateDb unavailable or empty
  */
-export function loadRecencyFromDb(): RecencyIndex | null {
+export function loadRecencyFromStateDb(): RecencyIndex | null {
   if (!moduleStateDb) return null;
 
   try {
@@ -233,106 +224,24 @@ export function loadRecencyFromDb(): RecencyIndex | null {
   }
 }
 
-/**
- * Load recency index from cache file
- *
- * Tries StateDb first, falls back to JSON file.
- *
- * @param cachePath - Path to cache file
- * @returns RecencyIndex or null if not found/invalid
- */
-export async function loadRecencyCache(cachePath: string): Promise<RecencyIndex | null> {
-  // Try StateDb first
-  const dbRecency = loadRecencyFromDb();
-  if (dbRecency) {
-    return dbRecency;
-  }
-
-  // Fallback to JSON file
-  try {
-    const content = await readFile(cachePath, 'utf-8');
-    const json = JSON.parse(content) as RecencyIndexJSON;
-
-    // Check version
-    if (json.version !== RECENCY_CACHE_VERSION) {
-      return null;
-    }
-
-    // Convert from JSON format to Map
-    const lastMentioned = new Map(Object.entries(json.lastMentioned));
-
-    return {
-      lastMentioned,
-      lastUpdated: json.lastUpdated,
-      version: json.version,
-    };
-  } catch {
-    return null;
-  }
-}
 
 /**
  * Save recency index to StateDb
  *
  * @param index - RecencyIndex to save
  */
-function saveRecencyToDb(index: RecencyIndex): void {
-  if (!moduleStateDb) return;
+export function saveRecencyToStateDb(index: RecencyIndex): void {
+  if (!moduleStateDb) {
+    console.error('[Crank] No StateDb available for saving recency');
+    return;
+  }
 
   try {
     for (const [entityNameLower, timestamp] of index.lastMentioned) {
       recordEntityMention(moduleStateDb, entityNameLower, new Date(timestamp));
     }
+    console.error(`[Crank] Saved ${index.lastMentioned.size} recency entries to StateDb`);
   } catch (e) {
     console.error('[Crank] Failed to save recency to StateDb:', e);
   }
-}
-
-/**
- * Save recency index to cache file
- *
- * Also writes to StateDb if available.
- *
- * @param cachePath - Path to cache file
- * @param index - RecencyIndex to save
- */
-export async function saveRecencyCache(
-  cachePath: string,
-  index: RecencyIndex
-): Promise<void> {
-  // Save to StateDb if available
-  saveRecencyToDb(index);
-
-  // Also write to JSON file for backward compatibility
-  const json: RecencyIndexJSON = {
-    lastMentioned: Object.fromEntries(index.lastMentioned),
-    lastUpdated: index.lastUpdated,
-    version: index.version,
-  };
-
-  const dir = path.dirname(cachePath);
-  await mkdir(dir, { recursive: true });
-  await writeFile(cachePath, JSON.stringify(json, null, 2), 'utf-8');
-}
-
-/**
- * Serialize recency index for transfer or logging
- */
-export function serializeRecencyIndex(index: RecencyIndex): RecencyIndexJSON {
-  return {
-    lastMentioned: Object.fromEntries(index.lastMentioned),
-    lastUpdated: index.lastUpdated,
-    version: index.version,
-  };
-}
-
-/**
- * Deserialize recency index from JSON
- */
-export function deserializeRecencyIndex(json: RecencyIndexJSON): RecencyIndex {
-  return {
-    lastMentioned: new Map(Object.entries(json.lastMentioned)),
-    lastUpdated: json.lastUpdated,
-    version: json.version,
-  };
 }

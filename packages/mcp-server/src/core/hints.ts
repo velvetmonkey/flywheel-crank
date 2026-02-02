@@ -1,15 +1,10 @@
 /**
  * Mutation hints for Flywheel integration
  *
- * Writes hints to .claude/crank-mutation-hints.json so Flywheel
- * can prioritize reindexing of recently mutated files.
- *
- * When StateDb is available, hints are also stored in SQLite
- * for faster access and cross-server coordination.
+ * Stores hints in SQLite StateDb so Flywheel can prioritize
+ * reindexing of recently mutated files.
  */
 
-import fs from 'fs/promises';
-import path from 'path';
 import crypto from 'crypto';
 import {
   setCrankState,
@@ -69,97 +64,58 @@ export function computeHash(content: string): string {
 }
 
 /**
- * Get the path to the hints file
+ * Read the current hints from StateDb
  */
-export function getHintsPath(vaultPath: string): string {
-  return path.join(vaultPath, '.claude', 'crank-mutation-hints.json');
-}
-
-/**
- * Read the current hints file
- *
- * Uses StateDb if available, falls back to JSON file.
- */
-export async function readHints(vaultPath: string): Promise<HintsFile> {
-  // Try StateDb first
-  if (moduleStateDb) {
-    try {
-      const data = getCrankState<HintsFile>(moduleStateDb, 'mutation_hints');
-      if (data && data.version === HINT_VERSION) {
-        return data;
-      }
-    } catch {
-      // Fallback to JSON
-    }
-  }
-
-  // Fallback to JSON file
-  const hintsPath = getHintsPath(vaultPath);
-
-  try {
-    const content = await fs.readFile(hintsPath, 'utf-8');
-    const data = JSON.parse(content) as HintsFile;
-
-    // Validate version
-    if (data.version !== HINT_VERSION) {
-      // Reset on version mismatch
-      return { version: HINT_VERSION, mutations: [] };
-    }
-
-    return data;
-  } catch {
-    // File doesn't exist or is invalid
+export function readHints(): HintsFile {
+  if (!moduleStateDb) {
     return { version: HINT_VERSION, mutations: [] };
   }
+
+  try {
+    const data = getCrankState<HintsFile>(moduleStateDb, 'mutation_hints');
+    if (data && data.version === HINT_VERSION) {
+      return data;
+    }
+  } catch {
+    // StateDb error
+  }
+
+  return { version: HINT_VERSION, mutations: [] };
 }
 
 /**
- * Write hints file
- *
- * Uses StateDb if available, also writes JSON for backward compatibility.
+ * Write hints to StateDb
  */
-export async function writeHints(vaultPath: string, hints: HintsFile): Promise<void> {
-  // Write to StateDb if available
-  if (moduleStateDb) {
-    try {
-      setCrankState(moduleStateDb, 'mutation_hints', hints);
-    } catch (e) {
-      console.error('[Crank] Failed to write hints to StateDb:', e);
-    }
+export function writeHints(hints: HintsFile): void {
+  if (!moduleStateDb) {
+    console.error('[Crank] No StateDb available for writing hints');
+    return;
   }
 
-  // Also write to JSON file for backward compatibility
-  const hintsPath = getHintsPath(vaultPath);
-  const hintsDir = path.dirname(hintsPath);
-
-  // Ensure .claude directory exists
-  await fs.mkdir(hintsDir, { recursive: true });
-
-  // Write atomically (write to temp, then rename)
-  const tempPath = hintsPath + '.tmp';
-  await fs.writeFile(tempPath, JSON.stringify(hints, null, 2), 'utf-8');
-  await fs.rename(tempPath, hintsPath);
+  try {
+    setCrankState(moduleStateDb, 'mutation_hints', hints);
+  } catch (e) {
+    console.error('[Crank] Failed to write hints to StateDb:', e);
+  }
 }
 
 /**
  * Add a mutation hint
  *
- * @param vaultPath - Path to the vault root
  * @param notePath - Vault-relative path to the mutated file
  * @param operation - Name of the mutation operation
  * @param beforeContent - Content before mutation
  * @param afterContent - Content after mutation
  * @returns true if hint was written successfully
  */
-export async function addMutationHint(
-  vaultPath: string,
+export function addMutationHint(
   notePath: string,
   operation: string,
   beforeContent: string,
   afterContent: string
-): Promise<boolean> {
+): boolean {
   try {
-    const hints = await readHints(vaultPath);
+    const hints = readHints();
 
     // Create new hint
     const hint: MutationHint = {
@@ -178,7 +134,7 @@ export async function addMutationHint(
       hints.mutations = hints.mutations.slice(0, MAX_HINTS);
     }
 
-    await writeHints(vaultPath, hints);
+    writeHints(hints);
     return true;
   } catch (error) {
     // Log but don't fail the mutation
@@ -190,22 +146,16 @@ export async function addMutationHint(
 /**
  * Get recent mutations for a specific path
  */
-export async function getHintsForPath(
-  vaultPath: string,
-  notePath: string
-): Promise<MutationHint[]> {
-  const hints = await readHints(vaultPath);
+export function getHintsForPath(notePath: string): MutationHint[] {
+  const hints = readHints();
   return hints.mutations.filter(h => h.path === notePath);
 }
 
 /**
  * Get all mutations since a given timestamp
  */
-export async function getHintsSince(
-  vaultPath: string,
-  since: Date
-): Promise<MutationHint[]> {
-  const hints = await readHints(vaultPath);
+export function getHintsSince(since: Date): MutationHint[] {
+  const hints = readHints();
   const sinceMs = since.getTime();
 
   return hints.mutations.filter(h => {
@@ -217,6 +167,6 @@ export async function getHintsSince(
 /**
  * Clear all hints (useful for testing or reset)
  */
-export async function clearHints(vaultPath: string): Promise<void> {
-  await writeHints(vaultPath, { version: HINT_VERSION, mutations: [] });
+export function clearHints(): void {
+  writeHints({ version: HINT_VERSION, mutations: [] });
 }
