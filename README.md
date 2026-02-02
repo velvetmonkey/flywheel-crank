@@ -82,7 +82,10 @@ actions:
 | `team/Stacy Thompson.md` | `current_project: null` | `current_project: [[Acme Website...]]` |
 
 **The Output (Auto-Wikilinks + Context Cloud):**
-```
+
+`daily-notes/2026-02-02.md`:
+```markdown
+## Log
 - 14:32 Onboarded [[Acme Website Redesign]] - $45K, [[Stacy Thompson]] leading
   → [[TechStart Inc]] [[Q2 Delivery]] [[Website Projects]]
 ```
