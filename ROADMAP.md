@@ -3,9 +3,9 @@
 ## Vision: The Self-Building Knowledge Graph
 
 **Current State (Feb 2026):**
-- **Flywheel MCP:** 51 read-only tools + search_entities (v1.27.29)
-- **Flywheel-Crank MCP:** Deterministic write operations (mutations) (v1.27.29)
-- **vault-core:** Shared package with SQLite StateDb + FTS5 search (v1.27.29)
+- **Flywheel MCP:** 51 read-only tools + search_entities (v1.27.30)
+- **Flywheel-Crank MCP:** Deterministic write operations (mutations) (v1.27.30)
+- **vault-core:** Shared package with SQLite StateDb + FTS5 search (v1.27.30)
 - **flywheel-bench:** Reliability testing & benchmarking infrastructure
 - **CI Status:** ✅ All tests passing (flywheel: 395, crank: 1326)
 
@@ -28,6 +28,25 @@ Flywheel + Crank form a **self-maintaining knowledge graph**:
 ```
 
 The more you write, the smarter the graph gets. No manual linking required.
+
+---
+
+## Progress Update: Feb 2, 2026 (Late Night)
+
+### CI Stability Release (v1.27.30)
+
+Fixed all GitHub Actions CI failures across the flywheel ecosystem:
+
+| Package | Key Fixes |
+|---------|-----------|
+| **vault-core** | FTS5 test expectations for whitespace normalization |
+| **flywheel-crank** | Relaxed performance thresholds for CI variability (mutations, entity links, degradation tests) |
+| **flywheel** | Platform-aware path tests, Promise.withResolvers polyfill, Windows file locking handling, Node 20+ requirement |
+
+All 1,819 tests now passing across all three repos:
+- vault-core: 98 tests
+- flywheel-crank: 1,326 tests
+- flywheel: 395 tests
 
 ---
 
