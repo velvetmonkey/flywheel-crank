@@ -42,6 +42,10 @@ Try these 3 commands to see Flywheel Crank in action:
 
 ### 1. Add a timestamped log entry
 
+```
+You: Log that I reviewed Test 3 thermal data with Marcus - margins look excellent
+```
+
 ```javascript
 vault_add_to_section({
   path: "daily-notes/2026-01-02.md",
@@ -51,9 +55,22 @@ vault_add_to_section({
 })
 ```
 
-**Result**: Adds `- 14:30 Reviewed Test 3 thermal data with Marcus - margins look excellent` to the Notes section with wikilink suggestions.
+`daily-notes/2026-01-02.md` *(updated)*:
+```markdown
+## Notes
+- 14:30 Reviewed [[Test 3]] thermal data with [[Marcus Johnson|Marcus]] - margins look excellent
+  → [[Propulsion System]] [[Engine Design]] [[David Kim]]
+```
+
+**What happened:**
+- Auto-wikilinks: "Test 3" → `[[Test 3]]`, "Marcus" → `[[Marcus Johnson|Marcus]]`
+- Context cloud: Related entities appended as `→ [[...]]`
 
 ### 2. Toggle a completed task
+
+```
+You: Mark "Complete Test 3 analysis report" as done in Sprint Planning
+```
 
 ```javascript
 vault_toggle_task({
@@ -62,7 +79,19 @@ vault_toggle_task({
 })
 ```
 
-**Result**: Toggles `- [ ] David Kim: Complete Test 3 analysis report` to `- [x] ...`
+**Before:**
+```markdown
+## Action Items
+- [ ] David Kim: Complete Test 3 analysis report
+- [ ] Marcus: Review turbopump delivery schedule
+```
+
+**After:**
+```markdown
+## Action Items
+- [x] David Kim: Complete Test 3 analysis report
+- [ ] Marcus: Review turbopump delivery schedule
+```
 
 ### 3. List sections in a note
 
@@ -72,7 +101,22 @@ vault_list_sections({
 })
 ```
 
-**Result**: Returns all headings: `["Attendance", "Key Updates", "Action Items", "Risks & Issues", "Schedule Status", "Budget Status", "Decisions Made", "Notes", "Links"]`
+**Result:**
+```json
+{
+  "sections": [
+    "Attendance",
+    "Key Updates",
+    "Action Items",
+    "Risks & Issues",
+    "Schedule Status",
+    "Budget Status",
+    "Decisions Made",
+    "Notes",
+    "Links"
+  ]
+}
+```
 
 ---
 
@@ -90,8 +134,17 @@ vault_list_sections({
 
 **Use case**: Agent creates a decision record artifact, logs transaction to daily note.
 
+```
+You: Create a decision record for turbopump schedule mitigation.
+     Turbopump delivery delayed from Jan 5 to Jan 20 due to vendor supply chain issues.
+     This impacts Test 4 scheduled for Jan 15. Marcus is tracking with Acme Aerospace.
+     Sarah owns the decision.
+```
+
+Claude executes 3 tool calls:
+
 ```javascript
-// Step 1: CREATE ARTIFACT — the decision record with full context
+// Step 1: CREATE ARTIFACT — the decision record with structure
 vault_create_note({
   path: "decisions/ADR-006 Turbopump Schedule Mitigation.md",
   frontmatter: {
@@ -120,23 +173,37 @@ vault_add_to_section({
 })
 ```
 
-**Results**:
+**Output:**
 
-**The artifact** (`decisions/ADR-006 Turbopump Schedule Mitigation.md`):
+`decisions/ADR-006 Turbopump Schedule Mitigation.md` *(created)*:
 ```markdown
+---
+type: decision
+status: proposed
+date: 2026-01-03
+owner: "[[Sarah Chen]]"
+---
+# ADR-006: Turbopump Schedule Mitigation
+
 ## Context
 Turbopump delivery delayed from Jan 5 to Jan 20 due to vendor supply chain issues.
 This impacts the [[Test 4]] campaign scheduled for Jan 15. [[Marcus Johnson]]
 tracking with [[Acme Aerospace]].
 → [[Propulsion System]] [[Elena Rodriguez]] [[ADR-002 Engine Selection]]
+
+## Decision
+
+## Consequences
 ```
 
-**The transaction log** (`daily-notes/2026-01-03.md`):
+`daily-notes/2026-01-03.md` *(updated)*:
 ```markdown
 ## Activity Log
-- **14:30** Created [[ADR-006 Turbopump Schedule Mitigation]]
+- 14:30 Created [[ADR-006 Turbopump Schedule Mitigation]]
   → [[Sarah Chen]] [[Turbopump]] [[Test 4]]
 ```
+
+**3 files created/updated. 1 commit. 1 undo.**
 
 **Why artifact-first?**
 - The **artifact** (ADR-006) captures full context, rationale, consequences
@@ -149,12 +216,15 @@ tracking with [[Acme Aerospace]].
 
 **Use case**: Voice memo creates an interaction record, logs transaction.
 
-```javascript
-// Voice transcription: "Just wrapped up call with Sarah at Acme about
-// the data migration. Validation showing 85% complete. Mentioned they
-// might have another project for Q2."
+```
+Voice transcription: "Just wrapped up call with Sarah at Acme about the data migration.
+Validation showing 85% complete. Mentioned they might have another project for Q2."
+```
 
-// Step 1: CREATE ARTIFACT — interaction record with full context
+Claude executes 3 tool calls:
+
+```javascript
+// Step 1: CREATE ARTIFACT — interaction record with structure
 vault_create_note({
   path: "interactions/2026-01-03 Acme Data Migration Call.md",
   frontmatter: {
@@ -184,24 +254,39 @@ vault_add_to_section({
 })
 ```
 
-**Results**:
+**Output:**
 
-**The artifact** (`interactions/2026-01-03 Acme Data Migration Call.md`):
+`interactions/2026-01-03 Acme Data Migration Call.md` *(created)*:
 ```markdown
+---
+type: call
+date: 2026-01-03
+contact: "[[Sarah Thompson]]"
+client: "[[Acme Corp]]"
+project: "[[Acme Data Migration]]"
+---
+# Acme Data Migration Call
+
 ## Summary
 Discussed data migration validation status - 85% complete. [[Sarah Thompson|Sarah]]
 mentioned potential Q2 project. Invoice [[INV-2025-047]] due Feb 15.
 → [[TechStart Inc]] [[GlobalBank]] [[Acme Corp]]
+
+## Action Items
+
+## Notes
 ```
 
-**The transaction log** (`daily-notes/2026-01-03.md`):
+`daily-notes/2026-01-03.md` *(updated)*:
 ```markdown
 ## Log
-- **14:30** [[2026-01-03 Acme Data Migration Call|Acme Data Migration Call]] - validation 85% complete
+- 14:30 [[2026-01-03 Acme Data Migration Call|Acme Data Migration Call]] - validation 85% complete
   → [[Sarah Thompson]] [[Acme Corp]] [[Acme Data Migration]]
 ```
 
-**Why these suggestions?**
+**2 files created/updated. 1 commit. 1 undo.**
+
+**Why these context cloud suggestions?**
 - **"TechStart Inc", "GlobalBank"** — Co-occurrence: consultant often works these clients together
 - **"INV-2025-047"** — Acme work = billable hours, invoice context captured automatically
 - Graph structure: daily → interaction → client + contact + project

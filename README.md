@@ -240,56 +240,174 @@ Claude: [executes daily-log policy]
 
 ## The Determinism Story
 
-### The Craft Loop (Human + Claude)
+### CRAFT: Authoring the Policy (one-time)
 
+**Carter:**
+> I need a standard workflow for onboarding new client projects.
+> Create the project file, update the client record, log it to my daily note.
+
+**Claude:** Here's a starting point:
+
+```yaml
+name: onboard-project
+actions:
+  - tool: vault_create_note
+    target: projects/{project_name}.md
+    frontmatter:
+      type: project
+      client: "{client}"
+      status: active
+  - tool: vault_add_to_section
+    target: clients/{client}.md
+    section: "## Projects"
+    content: "- {project_name}"
+  - tool: vault_add_to_section
+    target: daily-notes/{today}.md
+    section: "## Log"
+    content: "Onboarded {project_name}"
 ```
-┌─────────────────────────────────────────────────────────────────┐
-│                     CRAFT PHASE (one-time)                      │
-├─────────────────────────────────────────────────────────────────┤
-│                                                                 │
-│   Human: "I need a workflow for onboarding new projects.        │
-│           Create the project file, update the client,           │
-│           log it, and mark the lead as assigned."               │
-│                          ↓                                      │
-│   Claude: [generates policy YAML]                               │
-│                          ↓                                      │
-│   Human: "Add budget tracking. Use timestamp format for log."   │
-│                          ↓                                      │
-│   Claude: [refines policy]                                      │
-│                          ↓                                      │
-│   Human: "Looks good."                                          │
-│                          ↓                                      │
-│   git commit → .crank/policies/onboard-project.yaml             │
-│                                                                 │
-│   ════════════════════════════════════════════════════════════  │
-│   Policy is now CODE. Versioned. Reviewable. Auditable.         │
-│                                                                 │
-└─────────────────────────────────────────────────────────────────┘
+
+**Carter:**
+> Link the client and lead in frontmatter so I can query relationships.
+> Add budget and timeline fields. Use timestamp format for the log.
+
+**Claude:** Updated:
+
+```yaml
+name: onboard-project
+description: Standard workflow for new client projects
+actions:
+  - tool: vault_create_note
+    target: projects/{project_name}.md
+    frontmatter:
+      type: project
+      client: "[[{client}]]"
+      lead: "[[{lead}]]"
+      budget: {budget}
+      timeline: {timeline}
+      status: active
+
+  - tool: vault_add_to_section
+    target: clients/{client}.md
+    section: "## Active Projects"
+    content: "- [[{project_name}]] - ${budget}"
+
+  - tool: vault_add_to_section
+    target: daily-notes/{today}.md
+    section: "## Log"
+    content: "Onboarded [[{project_name}]]"
+    format: timestamp-bullet
 ```
 
-**The craft loop:** Describe → Generate → Review → Refine → Confirm → Commit.
+**Carter:** That's what I need.
 
-Human stays in control. Claude accelerates authoring. The result is deterministic code.
+```bash
+# Save to .crank/policies/onboard-project.yaml
+git add .crank/policies/onboard-project.yaml
+git commit -m "Add project onboarding policy"
+```
+
+**Policy is now code.** Versioned. Reviewed. Auditable.
 
 ---
 
+### MINT: Executing the Policy (deterministic, forever)
+
+**Execution 1:**
+
 ```
-┌─────────────────────────────────────────────────────────────────┐
-│                     MINT PHASE (every use)                      │
-├─────────────────────────────────────────────────────────────────┤
-│                                                                 │
-│   Human: "Onboard Acme Corp website redesign, $45K, Q2"         │
-│                          ↓                                      │
-│   Claude: [matches intent → onboard-project policy]             │
-│                          ↓                                      │
-│   Crank: [executes deterministically with parameters]           │
-│                          ↓                                      │
-│   4 files updated. 1 commit. 1 undo.                            │
-│                                                                 │
-└─────────────────────────────────────────────────────────────────┘
+Carter: Onboard Acme Corp website redesign, $45K, Q2, Stacy leads
 ```
 
-**The key insight:** AI creativity happens during *craft*. Execution is deterministic *forever*.
+Claude matches intent → `onboard-project` policy → executes:
+
+`projects/Acme Website Redesign.md` *(created)*:
+```markdown
+---
+type: project
+client: "[[Acme Corp]]"
+lead: "[[Stacy Thompson]]"
+budget: 45000
+timeline: Q2 2026
+status: active
+---
+# Acme Website Redesign
+```
+
+`clients/Acme Corp.md` *(updated)*:
+```markdown
+## Active Projects
+- [[Acme Website Redesign]] - $45000
+```
+
+`daily-notes/2026-02-02.md` *(updated)*:
+```markdown
+## Log
+- 14:32 Onboarded [[Acme Website Redesign]]
+  → [[Acme Corp]] [[Stacy Thompson]] [[Q2 Delivery]]
+```
+
+**3 files. 1 commit. 1 undo.**
+
+---
+
+**Execution 2:**
+
+```
+Carter: New project for TechStart - mobile app, $28K, March delivery, Marcus
+```
+
+`projects/TechStart Mobile App.md` *(created)*:
+```markdown
+---
+type: project
+client: "[[TechStart Inc]]"
+lead: "[[Marcus Johnson]]"
+budget: 28000
+timeline: March 2026
+status: active
+---
+```
+
+`daily-notes/2026-02-02.md` *(updated)*:
+```markdown
+- 14:45 Onboarded [[TechStart Mobile App]]
+  → [[TechStart Inc]] [[Marcus Johnson]] [[Mobile Projects]]
+```
+
+**3 files. 1 commit. 1 undo.**
+
+---
+
+**Execution 3:**
+
+```
+Carter: Onboard DataFlow analytics dashboard, $65K, Q3, Sarah
+```
+
+`projects/DataFlow Analytics Dashboard.md` *(created)*:
+```markdown
+---
+type: project
+client: "[[DataFlow Systems]]"
+lead: "[[Sarah Chen]]"
+budget: 65000
+timeline: Q3 2026
+status: active
+---
+```
+
+`daily-notes/2026-02-02.md` *(updated)*:
+```markdown
+- 15:10 Onboarded [[DataFlow Analytics Dashboard]]
+  → [[DataFlow Systems]] [[Sarah Chen]] [[Analytics]]
+```
+
+**3 files. 1 commit. 1 undo.**
+
+---
+
+**The insight:** One craft session. Infinite deterministic mints.
 
 **Why not just let AI edit files directly?**
 
@@ -521,14 +639,30 @@ See [Configuration Guide](./docs/configuration.md) for complete options.
 
 ### Contextual Cloud (Suggested Links)
 
-Beyond auto-wikilinks, mutations suggest semantically related entities — the **contextual cloud**:
+Mutations apply two types of linking: **syntactic** (exact matches) and **semantic** (graph-derived context).
+
+**Syntactic vs Semantic Linking:**
+
+| | Auto-Wikilinks (Syntactic) | Context Cloud (Semantic) |
+|---|----------------------------|--------------------------|
+| **Matching** | Exact text → entity name | Graph patterns → related concepts |
+| **Input** | `"...with Marcus..."` | Your vault's link graph |
+| **Output** | `[[Marcus Johnson]]` | `→ [[Propulsion System]] [[Test 4]]` |
+| **Logic** | String found in text | Co-occurrence, shared neighbors, rare connections |
+
+**Example:**
+```
+Input: "Discussed turbopump testing with Marcus"
+Auto-wikilinks: [[Marcus Johnson]]
+Context cloud: → [[Propulsion System]] [[Test 4]] [[Thermal Analysis]]
+```
 
 | Parameter | Default | Description |
 |-----------|---------|-------------|
 | `suggestOutgoingLinks` | `true` | Append contextual cloud (e.g., `→ [[Entity1]] [[Entity2]]`) |
 | `maxSuggestions` | `3` | Number of suggestions (1-10) |
 
-**Why "contextual cloud"?** These suggestions aren't mentioned in your text — they're related concepts surfaced by graph patterns (co-occurrence, shared neighbors, hub connections). They capture implicit context you might forget to link.
+**Why this matters:** When you query later — "What was Marcus working on?" — the context cloud creates a **colocated network of meaning**. Related concepts cluster together even when not explicitly mentioned, making your vault's graph richer and more queryable over time.
 
 ---
 
@@ -611,22 +745,70 @@ claude
 
 ## Under the Hood
 
-<div align="center">
+### The Tech Stack
 
-**The self-building knowledge graph.** No AI. No cloud. Just graph intelligence.
+| Technology | Purpose |
+|------------|---------|
+| **SQLite + FTS5** | Full-text search with instant prefix matching |
+| **Porter Stemmer** | `testing` → `test`, matches across word forms |
+| **Adamic-Adar** | Weights rare connections over common hubs |
+| **Co-occurrence Matrix** | Learns link patterns from YOUR vault |
 
-| | | | |
-|:---:|:---:|:---:|:---:|
-| **Porter Stemmer** | **Adamic-Adar Index** | **Co-occurrence Mining** | **Transitive Inference** |
-| Matches plurals, tenses | Rare connections matter more | Learns from YOUR vault | A→B→C suggests A→C |
+### The 9-Layer Scoring Pipeline
 
-</div>
+Every suggestion passes through 9 layers of scoring:
 
-**How it works:**
-- **Entity Index** — Scans your vault, derives aliases, categorizes by structure
-- **Graph Algorithms** — Common neighbors, path counting, co-occurrence patterns
-- **Zero-Shot Learning** — No training data needed, learns from your graph
-- **Offline-First** — Everything runs locally, your data never leaves your machine
+```
+Input → Filter → Match → Boost → Rank → Suggest
+         1-2       3-4    5-9
+```
+
+**Layers 1-2: Quality Filters**
+- Skip entities >25 chars (article titles)
+- Skip patterns like "Guide to", "How to", "Tutorial"
+
+**Layers 3-4: Word Matching**
+
+| Type | Points | Example |
+|------|--------|---------|
+| Exact match | +10 | `TypeScript` in text → +10 |
+| Stem match | +3-6 | `testing` → `test` → +5 |
+| Alias match | +8 bonus | `TS` matches `TypeScript` |
+
+**Layers 5-9: Context Boosting**
+
+| Layer | Boost | Logic |
+|-------|-------|-------|
+| **Type** | +5 | People score higher than technologies |
+| **Context** | +5 | Daily notes boost people, tech docs boost frameworks |
+| **Recency** | +5 | Mentioned in last 24h? Boost it |
+| **Cross-folder** | +3 | Entity from different folder = richer graph |
+| **Hub score** | +3 | 5+ backlinks = well-connected concept |
+
+**Example scored:**
+```
+Input: "Met with Marcus about the turbopump"
+Note: daily-notes/2026-02-02.md
+
+Entity "Marcus Johnson":
+  Exact match:     +10
+  Type (person):   +5
+  Context (daily): +5
+  Recency (today): +5
+  Cross-folder:    +3
+  Hub (8 links):   +3
+  Total:           31 ← suggested first
+
+Entity "Turbopump":
+  Exact match:     +10
+  Type (tech):     +0
+  Context (daily): +0
+  Total:           10 ← suggested second
+```
+
+See [WIKILINK_INFERENCE.md](./docs/WIKILINK_INFERENCE.md) for the full algorithm specification.
+
+### The Flywheel Effect
 
 The more you use it, the smarter it gets. Not through AI training, but through the graph itself accumulating relationship intelligence.
 
