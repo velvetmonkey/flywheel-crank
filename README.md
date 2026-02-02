@@ -43,33 +43,46 @@
 name: onboard-project
 description: Standard workflow for new client projects
 actions:
+  # 1. Create the project file with structured frontmatter
   - tool: vault_create_note
-    target: projects/{project_name}.md
+    target: projects/{project_name}.md      # Template variable → "Acme Website Redesign"
     frontmatter:
       type: project
-      client: "[[{client}]]"
+      client: "[[{client}]]"                # Wikilink in frontmatter → queryable relationship
       budget: {budget}
       timeline: {timeline}
-      lead: "[[{lead}]]"
+      lead: "[[{lead}]]"                    # Links to team member's note
       status: active
 
+  # 2. Update the client's file with new engagement
   - tool: vault_add_to_section
     target: clients/{client}.md
     section: "## Active Engagement"
     content: "- [[{project_name}]] - ${budget}, {timeline}"
 
+  # 3. Log to daily note with automatic timestamp
   - tool: vault_add_to_section
-    target: daily-notes/{today}.md
+    target: daily-notes/{today}.md          # {today} → "2026-02-02"
     section: "## Log"
     content: "Onboarded [[{project_name}]] project"
-    format: timestamp-bullet
+    format: timestamp-bullet                # Adds "- 14:32 " prefix automatically
 
+  # 4. Update team member's availability
   - tool: vault_update_frontmatter
     target: team/{lead}.md
     fields:
       current_project: "[[{project_name}]]"
       utilization: 80
 ```
+
+**What makes this powerful:**
+
+| Element | Example | Why It Matters |
+|---------|---------|----------------|
+| Template variables | `{project_name}` → `Acme Website Redesign` | One policy, infinite projects |
+| Wikilinks in YAML | `client: "[[{client}]]"` | Frontmatter becomes queryable graph |
+| Built-in variables | `{today}` → `2026-02-02` | No date math needed |
+| Format options | `timestamp-bullet` | Consistent log formatting |
 
 > **Authored once.** Reviewed. Committed to git. This is how Carter onboards every project.
 
