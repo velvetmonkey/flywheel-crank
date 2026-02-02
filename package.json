@@ -22,5 +22,8 @@
     "url": "https://github.com/velvetmonkey/flywheel-crank.git"
   },
   "author": "velvetmonkey",
-  "license": "AGPL-3.0"
+  "license": "AGPL-3.0",
+  "dependencies": {
+    "@velvetmonkey/vault-core": "^1.27.33"
+  }
 }

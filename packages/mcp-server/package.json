@@ -1,6 +1,6 @@
 {
   "name": "@velvetmonkey/flywheel-crank",
-  "version": "1.27.33",
+  "version": "1.27.35",
   "description": "Deterministic vault mutations for Obsidian via MCP",
   "type": "module",
   "main": "dist/index.js",
@@ -55,7 +55,7 @@
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.25.1",
-    "@velvetmonkey/vault-core": "^1.27.32",
+    "@velvetmonkey/vault-core": "^1.27.35",
     "gray-matter": "^4.0.3",
     "simple-git": "^3.22.0",
     "zod": "^3.22.4"
