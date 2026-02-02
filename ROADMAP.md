@@ -3918,7 +3918,7 @@ Human can always override/edit manually
 
 ---
 
-## Priority 5: Wikilink Ecosystem 🔗
+## Priority 4: Wikilink Ecosystem 🔗
 
 **Status:** Core implemented, needs documentation and loop validation
 
@@ -4195,7 +4195,7 @@ CREATE TABLE crank_state (
 
 ---
 
-## Priority 2: Comprehensive Testing with Proof 🧪
+## Priority 5: Comprehensive Testing with Proof 🧪
 
 **Status:** Battle-hardening implemented, needs validation on WSL
 
@@ -5741,7 +5741,7 @@ Broader knowledge workers as 'markdown as database' becomes standard practice.
 
 ---
 
-## Priority 3: Mutator Battle-Hardening (Pre-Launch Critical) 🛡️
+## Priority 2: Mutator Battle-Hardening (Pre-Launch Critical) 🛡️
 
 **Status:** CRITICAL - Must complete before broader launch
 
@@ -5846,7 +5846,7 @@ Recent indentation bugs (v0.7.3 fix for prepending with multi-level nesting) rev
 
 ---
 
-## Priority 4: Complex Policy Test Suite (Business Process Automation) 🏭
+## Priority 3: Complex Policy Test Suite (Business Process Automation) 🏭
 
 **Status:** HIGH PRIORITY - Required to prove enterprise-readiness
 
