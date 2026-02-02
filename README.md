@@ -240,10 +240,42 @@ Claude: [executes daily-log policy]
 
 ## The Determinism Story
 
-1. **Claude generates YAML** — AI helps author the policy
-2. **Policy lives in git** — Version controlled, reviewable, auditable
-3. **Execution is deterministic** — The policy defines the behavior exactly
-4. **Undo reverts atomically** — Single command restores entire policy execution
+### The Craft Loop (Human + Claude)
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                     CRAFT PHASE (one-time)                      │
+├─────────────────────────────────────────────────────────────────┤
+│                                                                 │
+│   Human: "I need a workflow for onboarding new projects"        │
+│                          ↓                                      │
+│   Claude: [generates policy YAML with actions, variables]       │
+│                          ↓                                      │
+│   Human: [reviews, tweaks, approves]                            │
+│                          ↓                                      │
+│   git commit → .crank/policies/onboard-project.yaml             │
+│                                                                 │
+│   ════════════════════════════════════════════════════════════  │
+│   Policy is now CODE. Versioned. Reviewable. Auditable.         │
+│                                                                 │
+└─────────────────────────────────────────────────────────────────┘
+                              ↓
+┌─────────────────────────────────────────────────────────────────┐
+│                     MINT PHASE (every use)                      │
+├─────────────────────────────────────────────────────────────────┤
+│                                                                 │
+│   Human: "Onboard Acme Corp website redesign, $45K, Q2"         │
+│                          ↓                                      │
+│   Claude: [matches intent → onboard-project policy]             │
+│                          ↓                                      │
+│   Crank: [executes deterministically with parameters]           │
+│                          ↓                                      │
+│   4 files updated. 1 commit. 1 undo.                            │
+│                                                                 │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+**The key insight:** AI creativity happens *once* during authoring. Execution is deterministic *forever*.
 
 **Why not just let AI edit files directly?**
 
