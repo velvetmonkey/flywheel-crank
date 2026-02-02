@@ -373,6 +373,47 @@ See [SCALE_BENCHMARKS.md](./docs/SCALE_BENCHMARKS.md) for full methodology and r
 
 ---
 
+## Prove It Yourself
+
+Don't trust marketing. Run the tests:
+
+```bash
+# Clone the ecosystem
+git clone https://github.com/velvetmonkey/flywheel-mcp
+git clone https://github.com/velvetmonkey/flywheel-crank
+
+# Run flywheel-crank tests (1,326 tests - mutations, scale, security)
+cd flywheel-crank && npm install && npm test
+
+# Run flywheel tests (395 tests - read tools, demos)
+cd ../flywheel-mcp && npm install && npm test
+```
+
+**Total: 1,721 tests** proving the ecosystem works.
+
+| Repo | Tests | Proves |
+|------|-------|--------|
+| **flywheel-crank** | 1,326 | Mutations at scale, format preservation, security |
+| **flywheel** | 395 | Graph queries, entity indexing, file watching |
+
+### Try a Demo
+
+Pick a persona and start asking questions:
+
+```bash
+cd flywheel-mcp/demos/carter-strategy
+# Add .mcp.json with flywheel + flywheel-crank
+claude
+```
+
+| Demo | You Are | First Question |
+|------|---------|----------------|
+| [Carter Strategy](https://github.com/velvetmonkey/flywheel-mcp/tree/main/demos/carter-strategy) | Solo consultant | "What's overdue?" |
+| [Artemis Rocket](https://github.com/velvetmonkey/flywheel-mcp/tree/main/demos/artemis-rocket) | Chief Engineer | "What blocks propulsion?" |
+| [Startup Ops](https://github.com/velvetmonkey/flywheel-mcp/tree/main/demos/startup-ops) | SaaS Co-founder | "Onboard a customer" |
+
+---
+
 ## Under the Hood
 
 <div align="center">
