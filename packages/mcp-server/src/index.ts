@@ -24,9 +24,6 @@ const vaultPath = process.env.PROJECT_PATH || findVaultRoot();
 // State database (SQLite with FTS5) - initialized after server starts
 let stateDb: StateDb | null = null;
 
-console.error(`[Crank] Starting Flywheel Crank MCP server`);
-console.error(`[Crank] Vault path: ${vaultPath}`);
-
 // Register all tool modules (uses lazy getter for stateDb)
 registerMutationTools(server, vaultPath);
 registerTaskTools(server, vaultPath);
@@ -41,6 +38,8 @@ async function main() {
   // Start server FIRST (fast startup - don't wait for StateDb or entity index)
   const transport = new StdioServerTransport();
   await server.connect(transport);
+  console.error(`[Crank] Starting Flywheel Crank MCP server`);
+  console.error(`[Crank] Vault path: ${vaultPath}`);
   console.error(`[Crank] Flywheel Crank MCP server started successfully`);
 
   // Initialize logging in background (for operation metrics)
