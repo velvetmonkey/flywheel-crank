@@ -206,15 +206,6 @@ async function rebuildIndex(vaultPath: string): Promise<void> {
 }
 
 /**
- * Rebuild index in background (non-blocking)
- */
-function rebuildIndexInBackground(vaultPath: string, cacheFile: string): void {
-  rebuildIndex(vaultPath, cacheFile).catch(error => {
-    console.error(`[Crank] Background index rebuild failed: ${error}`);
-  });
-}
-
-/**
  * Check if entity index is ready
  */
 export function isEntityIndexReady(): boolean {
