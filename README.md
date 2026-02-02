@@ -247,11 +247,17 @@ Claude: [executes daily-log policy]
 │                     CRAFT PHASE (one-time)                      │
 ├─────────────────────────────────────────────────────────────────┤
 │                                                                 │
-│   Human: "I need a workflow for onboarding new projects"        │
+│   Human: "I need a workflow for onboarding new projects.        │
+│           Create the project file, update the client,           │
+│           log it, and mark the lead as assigned."               │
 │                          ↓                                      │
-│   Claude: [generates policy YAML with actions, variables]       │
+│   Claude: [generates policy YAML]                               │
 │                          ↓                                      │
-│   Human: [reviews, tweaks, approves]                            │
+│   Human: "Add budget tracking. Use timestamp format for log."   │
+│                          ↓                                      │
+│   Claude: [refines policy]                                      │
+│                          ↓                                      │
+│   Human: "Looks good."                                          │
 │                          ↓                                      │
 │   git commit → .crank/policies/onboard-project.yaml             │
 │                                                                 │
@@ -259,7 +265,15 @@ Claude: [executes daily-log policy]
 │   Policy is now CODE. Versioned. Reviewable. Auditable.         │
 │                                                                 │
 └─────────────────────────────────────────────────────────────────┘
-                              ↓
+```
+
+**The craft loop:** Describe → Generate → Review → Refine → Confirm → Commit.
+
+Human stays in control. Claude accelerates authoring. The result is deterministic code.
+
+---
+
+```
 ┌─────────────────────────────────────────────────────────────────┐
 │                     MINT PHASE (every use)                      │
 ├─────────────────────────────────────────────────────────────────┤
@@ -275,7 +289,7 @@ Claude: [executes daily-log policy]
 └─────────────────────────────────────────────────────────────────┘
 ```
 
-**The key insight:** AI creativity happens *once* during authoring. Execution is deterministic *forever*.
+**The key insight:** AI creativity happens during *craft*. Execution is deterministic *forever*.
 
 **Why not just let AI edit files directly?**
 
