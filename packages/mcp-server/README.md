@@ -16,6 +16,12 @@ While **Flywheel** provides read-only graph intelligence (backlinks, queries, st
 - Create and delete notes
 - Optional git commits with undo support
 
+## Requirements
+
+- **Node.js 18-22** (LTS recommended)
+  - Node 22 LTS has prebuilt binaries and works out of the box
+  - Node 23+ may require native compilation of `better-sqlite3` (slower install)
+
 ## Installation
 
 ### Via `.mcp.json`
