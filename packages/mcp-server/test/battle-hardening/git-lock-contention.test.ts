@@ -27,9 +27,10 @@ import {
   getLastCommit,
   undoLastCommit,
   getLastCrankCommit,
-  saveLastCrankCommit,
   clearLastCrankCommit,
+  setGitStateDb,
 } from '../../src/core/git.js';
+import { openStateDb, deleteStateDb, type StateDb } from '@velvetmonkey/vault-core';
 
 /**
  * Create a temporary vault with git initialized
@@ -79,12 +80,18 @@ async function removeLockFile(lockPath: string): Promise<void> {
 
 describe('Battle-Hardening: Git Lock Contention', () => {
   let vaultPath: string;
+  let stateDb: StateDb;
 
   beforeEach(async () => {
     vaultPath = await createGitVault();
+    stateDb = openStateDb(vaultPath);
+    setGitStateDb(stateDb);
   });
 
   afterEach(async () => {
+    setGitStateDb(null);
+    stateDb.db.close();
+    deleteStateDb(vaultPath);
     await cleanupVault(vaultPath);
   });
 
@@ -314,7 +321,7 @@ important: preserved
       const result = await commitChange(vaultPath, notePath, '[Crank:Add]');
       expect(result.success).toBe(true);
 
-      const tracked = await getLastCrankCommit(vaultPath);
+      const tracked = getLastCrankCommit();
       expect(tracked).not.toBeNull();
       expect(tracked!.hash).toBe(result.hash);
       expect(tracked!.message).toContain('[Crank:Add]');
@@ -327,7 +334,7 @@ important: preserved
       const result1 = await commitChange(vaultPath, notePath, '[Crank:Add]');
       expect(result1.success).toBe(true);
 
-      const tracked1 = await getLastCrankCommit(vaultPath);
+      const tracked1 = getLastCrankCommit();
       expect(tracked1!.hash).toBe(result1.hash);
 
       // Second commit
@@ -335,7 +342,7 @@ important: preserved
       const result2 = await commitChange(vaultPath, notePath, '[Crank:Add]');
       expect(result2.success).toBe(true);
 
-      const tracked2 = await getLastCrankCommit(vaultPath);
+      const tracked2 = getLastCrankCommit();
       expect(tracked2!.hash).toBe(result2.hash);
       expect(tracked2!.hash).not.toBe(tracked1!.hash);
     });
@@ -348,7 +355,7 @@ important: preserved
       const result1 = await commitChange(vaultPath, notePath, '[Crank:Add]');
       expect(result1.success).toBe(true);
 
-      const tracked1 = await getLastCrankCommit(vaultPath);
+      const tracked1 = getLastCrankCommit();
 
       // Lock and try another commit
       await writeVaultFile(vaultPath, notePath, '# Test\n- Entry\n', {});
@@ -359,7 +366,7 @@ important: preserved
         expect(result2.success).toBe(false);
 
         // Tracking should still point to first commit
-        const tracked2 = await getLastCrankCommit(vaultPath);
+        const tracked2 = getLastCrankCommit();
         expect(tracked2!.hash).toBe(tracked1!.hash);
       } finally {
         await removeLockFile(lockPath);
@@ -395,7 +402,7 @@ important: preserved
       const crankResult = await commitChange(vaultPath, notePath, '[Crank:Add]');
       expect(crankResult.success).toBe(true);
 
-      const tracked = await getLastCrankCommit(vaultPath);
+      const tracked = getLastCrankCommit();
       expect(tracked!.hash).toBe(crankResult.hash);
 
       // Simulate external process making a commit
@@ -415,13 +422,13 @@ important: preserved
 
       await commitChange(vaultPath, notePath, '[Crank:Add]');
 
-      const trackedBefore = await getLastCrankCommit(vaultPath);
+      const trackedBefore = getLastCrankCommit();
       expect(trackedBefore).not.toBeNull();
 
       await undoLastCommit(vaultPath);
-      await clearLastCrankCommit(vaultPath);
+      clearLastCrankCommit();
 
-      const trackedAfter = await getLastCrankCommit(vaultPath);
+      const trackedAfter = getLastCrankCommit();
       expect(trackedAfter).toBeNull();
     });
   });
@@ -488,7 +495,7 @@ important: preserved
       const crankResult = await commitChange(vaultPath, notePath, '[Crank:Add]');
       expect(crankResult.success).toBe(true);
 
-      const trackedAfterCrank = await getLastCrankCommit(vaultPath);
+      const trackedAfterCrank = getLastCrankCommit();
       expect(trackedAfterCrank).not.toBeNull();
 
       // External process makes a commit
@@ -503,7 +510,7 @@ important: preserved
       expect(currentHead!.hash).not.toBe(trackedAfterCrank!.hash);
 
       // But tracking still points to Crank's commit
-      const trackedNow = await getLastCrankCommit(vaultPath);
+      const trackedNow = getLastCrankCommit();
       expect(trackedNow!.hash).toBe(trackedAfterCrank!.hash);
     });
 
@@ -532,7 +539,7 @@ important: preserved
       // The undo will work but it undoes the external commit, not the Crank commit
       // This is the expected behavior - undo always undoes HEAD
       // The warning comes from checking tracked vs HEAD mismatch
-      const tracked = await getLastCrankCommit(vaultPath);
+      const tracked = getLastCrankCommit();
       const currentHead = await getLastCommit(vaultPath);
 
       // After undo, HEAD should match Crank's commit
@@ -561,7 +568,7 @@ important: preserved
       }
 
       // After interleaving, tracked commit should be the last Crank commit
-      const tracked = await getLastCrankCommit(vaultPath);
+      const tracked = getLastCrankCommit();
       expect(tracked).not.toBeNull();
       expect(tracked!.message).toContain('[Crank:Add] 2');
 
@@ -593,7 +600,7 @@ important: preserved
       expect(log.latest!.message).toContain('[Crank:Add]');
 
       // Tracked should match
-      const tracked = await getLastCrankCommit(vaultPath);
+      const tracked = getLastCrankCommit();
       expect(tracked!.hash).toBe(log.latest!.hash);
     });
 
@@ -610,7 +617,7 @@ important: preserved
       const crank1 = await commitChange(vaultPath, notePath, '[Crank:Add] First');
       expect(crank1.success).toBe(true);
 
-      const tracked1 = await getLastCrankCommit(vaultPath);
+      const tracked1 = getLastCrankCommit();
 
       // External commit
       await writeVaultFile(vaultPath, 'ext.md', '# Ext\n', {});
@@ -618,7 +625,7 @@ important: preserved
       await git.commit('External');
 
       // Tracking should still point to Crank's commit
-      const trackedAfterExternal = await getLastCrankCommit(vaultPath);
+      const trackedAfterExternal = getLastCrankCommit();
       expect(trackedAfterExternal!.hash).toBe(tracked1!.hash);
 
       // Second Crank commit
@@ -627,7 +634,7 @@ important: preserved
       expect(crank2.success).toBe(true);
 
       // Tracking should now point to second Crank commit
-      const tracked2 = await getLastCrankCommit(vaultPath);
+      const tracked2 = getLastCrankCommit();
       expect(tracked2!.hash).toBe(crank2.hash);
       expect(tracked2!.hash).not.toBe(tracked1!.hash);
     });

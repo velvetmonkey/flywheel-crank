@@ -1,21 +1,20 @@
 /**
- * Tests for mutation hints
+ * Tests for mutation hints (SQLite StateDb)
  */
 
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import fs from 'fs/promises';
-import path from 'path';
 import {
   computeHash,
-  getHintsPath,
   readHints,
   writeHints,
   addMutationHint,
   getHintsForPath,
   getHintsSince,
   clearHints,
+  setHintsStateDb,
 } from '../../src/core/hints.js';
 import { createTempVault, cleanupTempVault } from '../helpers/testUtils.js';
+import { openStateDb, deleteStateDb, type StateDb } from '@velvetmonkey/vault-core';
 
 describe('computeHash', () => {
   it('should produce consistent hashes', () => {
@@ -37,31 +36,30 @@ describe('computeHash', () => {
 
 describe('Hints operations', () => {
   let tempVault: string;
+  let stateDb: StateDb;
 
   beforeEach(async () => {
     tempVault = await createTempVault();
+    stateDb = openStateDb(tempVault);
+    setHintsStateDb(stateDb);
   });
 
   afterEach(async () => {
+    setHintsStateDb(null);
+    stateDb.db.close();
+    deleteStateDb(tempVault);
     await cleanupTempVault(tempVault);
   });
 
-  describe('getHintsPath', () => {
-    it('should return path in .claude directory', () => {
-      const hintsPath = getHintsPath('/vault');
-      expect(hintsPath).toBe(path.join('/vault', '.claude', 'crank-mutation-hints.json'));
-    });
-  });
-
   describe('readHints/writeHints', () => {
-    it('should return empty hints for non-existent file', async () => {
-      const hints = await readHints(tempVault);
+    it('should return empty hints when no hints exist', () => {
+      const hints = readHints();
 
       expect(hints.version).toBe(1);
       expect(hints.mutations).toHaveLength(0);
     });
 
-    it('should write and read hints', async () => {
+    it('should write and read hints', () => {
       const hints = {
         version: 1,
         mutations: [
@@ -75,26 +73,16 @@ describe('Hints operations', () => {
         ],
       };
 
-      await writeHints(tempVault, hints);
-      const read = await readHints(tempVault);
+      writeHints(hints);
+      const read = readHints();
 
       expect(read).toEqual(hints);
-    });
-
-    it('should create .claude directory if needed', async () => {
-      await writeHints(tempVault, { version: 1, mutations: [] });
-
-      const claudeDir = path.join(tempVault, '.claude');
-      const stat = await fs.stat(claudeDir);
-
-      expect(stat.isDirectory()).toBe(true);
     });
   });
 
   describe('addMutationHint', () => {
-    it('should add a mutation hint', async () => {
-      const result = await addMutationHint(
-        tempVault,
+    it('should add a mutation hint', () => {
+      const result = addMutationHint(
         'daily-notes/2026-01-29.md',
         'add_to_section',
         '# Before',
@@ -103,29 +91,29 @@ describe('Hints operations', () => {
 
       expect(result).toBe(true);
 
-      const hints = await readHints(tempVault);
+      const hints = readHints();
       expect(hints.mutations).toHaveLength(1);
       expect(hints.mutations[0].path).toBe('daily-notes/2026-01-29.md');
       expect(hints.mutations[0].operation).toBe('add_to_section');
     });
 
-    it('should add new hints at the front', async () => {
-      await addMutationHint(tempVault, 'first.md', 'op1', 'a', 'b');
-      await addMutationHint(tempVault, 'second.md', 'op2', 'c', 'd');
+    it('should add new hints at the front', () => {
+      addMutationHint('first.md', 'op1', 'a', 'b');
+      addMutationHint('second.md', 'op2', 'c', 'd');
 
-      const hints = await readHints(tempVault);
+      const hints = readHints();
 
       expect(hints.mutations[0].path).toBe('second.md');
       expect(hints.mutations[1].path).toBe('first.md');
     });
 
-    it('should trim old hints at max limit', async () => {
+    it('should trim old hints at max limit', () => {
       // Add 105 hints (max is 100)
       for (let i = 0; i < 105; i++) {
-        await addMutationHint(tempVault, `note${i}.md`, 'op', `${i}`, `${i + 1}`);
+        addMutationHint(`note${i}.md`, 'op', `${i}`, `${i + 1}`);
       }
 
-      const hints = await readHints(tempVault);
+      const hints = readHints();
       expect(hints.mutations).toHaveLength(100);
 
       // Most recent should be at the front
@@ -134,28 +122,28 @@ describe('Hints operations', () => {
   });
 
   describe('getHintsForPath', () => {
-    it('should filter hints by path', async () => {
-      await addMutationHint(tempVault, 'note1.md', 'op1', 'a', 'b');
-      await addMutationHint(tempVault, 'note2.md', 'op2', 'c', 'd');
-      await addMutationHint(tempVault, 'note1.md', 'op3', 'e', 'f');
+    it('should filter hints by path', () => {
+      addMutationHint('note1.md', 'op1', 'a', 'b');
+      addMutationHint('note2.md', 'op2', 'c', 'd');
+      addMutationHint('note1.md', 'op3', 'e', 'f');
 
-      const hints = await getHintsForPath(tempVault, 'note1.md');
+      const hints = getHintsForPath('note1.md');
 
       expect(hints).toHaveLength(2);
       expect(hints.every(h => h.path === 'note1.md')).toBe(true);
     });
 
-    it('should return empty array for unknown path', async () => {
-      await addMutationHint(tempVault, 'known.md', 'op', 'a', 'b');
+    it('should return empty array for unknown path', () => {
+      addMutationHint('known.md', 'op', 'a', 'b');
 
-      const hints = await getHintsForPath(tempVault, 'unknown.md');
+      const hints = getHintsForPath('unknown.md');
 
       expect(hints).toHaveLength(0);
     });
   });
 
   describe('getHintsSince', () => {
-    it('should filter hints by timestamp', async () => {
+    it('should filter hints by timestamp', () => {
       // Add hints with known timestamps
       const hints = {
         version: 1,
@@ -176,10 +164,10 @@ describe('Hints operations', () => {
           },
         ],
       };
-      await writeHints(tempVault, hints);
+      writeHints(hints);
 
       const since = new Date('2026-01-29T00:00:00Z');
-      const filtered = await getHintsSince(tempVault, since);
+      const filtered = getHintsSince(since);
 
       expect(filtered).toHaveLength(1);
       expect(filtered[0].path).toBe('recent.md');
@@ -187,11 +175,11 @@ describe('Hints operations', () => {
   });
 
   describe('clearHints', () => {
-    it('should remove all hints', async () => {
-      await addMutationHint(tempVault, 'note.md', 'op', 'a', 'b');
-      await clearHints(tempVault);
+    it('should remove all hints', () => {
+      addMutationHint('note.md', 'op', 'a', 'b');
+      clearHints();
 
-      const hints = await readHints(tempVault);
+      const hints = readHints();
 
       expect(hints.mutations).toHaveLength(0);
     });

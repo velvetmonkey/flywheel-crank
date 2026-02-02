@@ -15,6 +15,7 @@ import {
   suggestRelatedLinks,
   extractLinkedEntities,
   isLikelyArticleTitle,
+  setCrankStateDb,
 } from '../../src/core/wikilinks.js';
 import {
   createTempVault,
@@ -23,6 +24,11 @@ import {
   createVaultWithEntities,
   createEntityCache,
   createEntityCacheWithDetails,
+  createEntityCacheInStateDb,
+  createEntityCacheWithDetailsInStateDb,
+  openStateDb,
+  deleteStateDb,
+  type StateDb,
 } from '../helpers/testUtils.js';
 import { mkdir, writeFile, readFile } from 'fs/promises';
 import path from 'path';
@@ -389,71 +395,68 @@ type: test
 });
 
 // ========================================
-// Cache Lifecycle Tests
+// Cache Lifecycle Tests (StateDb-based)
 // ========================================
 
 describe('cache lifecycle', () => {
   let tempVault: string;
+  let stateDb: StateDb;
 
   beforeEach(async () => {
     tempVault = await createTempVault();
+    stateDb = openStateDb(tempVault);
+    setCrankStateDb(stateDb);
   });
 
   afterEach(async () => {
+    setCrankStateDb(null);
+    stateDb.db.close();
+    deleteStateDb(tempVault);
     await cleanupTempVault(tempVault);
   });
 
-  it('should load from fresh cache', async () => {
-    await createEntityCache(tempVault, {
+  it('should load from StateDb when entities exist', async () => {
+    const count = createEntityCacheInStateDb(stateDb, tempVault, {
       people: ['Test Person'],
       projects: ['Test Project'],
     });
 
-    // Cache file exists - should attempt to load
-    const cacheFile = path.join(tempVault, '.claude', 'wikilink-entities.json');
-    const cacheContent = await readFile(cacheFile, 'utf-8');
-    const cache = JSON.parse(cacheContent);
+    expect(count).toBe(2);
 
-    expect(cache._metadata.total_entities).toBe(2);
-    expect(cache.people.length).toBe(1);
-    expect(cache.projects.length).toBe(1);
+    // Verify entities are retrievable from StateDb
+    const { getEntityIndexFromDb } = await import('@velvetmonkey/vault-core');
+    const index = getEntityIndexFromDb(stateDb);
+    expect(index._metadata.total_entities).toBe(2);
+    expect(index.people.length).toBe(1);
+    expect(index.projects.length).toBe(1);
   });
 
-  it('should handle stale cache (>1 hour old)', async () => {
-    const staleDate = new Date(Date.now() - 2 * 60 * 60 * 1000); // 2 hours ago
-    await createEntityCache(
-      tempVault,
-      {
-        people: ['Old Person'],
-      },
-      staleDate
-    );
+  it('should initialize from StateDb', async () => {
+    createEntityCacheInStateDb(stateDb, tempVault, {
+      people: ['Test Person'],
+      technologies: ['TypeScript'],
+    });
 
-    const cacheFile = path.join(tempVault, '.claude', 'wikilink-entities.json');
-    const cacheContent = await readFile(cacheFile, 'utf-8');
-    const cache = JSON.parse(cacheContent);
+    // Initialize should load from StateDb
+    await initializeEntityIndex(tempVault);
 
-    // Verify cache has old timestamp
-    const cacheAge = Date.now() - new Date(cache._metadata.generated_at).getTime();
-    expect(cacheAge).toBeGreaterThan(60 * 60 * 1000); // > 1 hour
+    expect(isEntityIndexReady()).toBe(true);
+    const index = getEntityIndex();
+    expect(index?._metadata.total_entities).toBe(2);
   });
 
-  it('should handle missing cache file', async () => {
-    await mkdir(path.join(tempVault, '.claude'), { recursive: true });
-    // Don't create cache file
-
-    // Should handle gracefully
+  it('should handle empty StateDb gracefully', async () => {
+    // StateDb exists but no entities
+    // Should handle gracefully (will scan vault)
     await expect(initializeEntityIndex(tempVault)).resolves.not.toThrow();
   });
 
-  it('should handle corrupted cache file', async () => {
-    await mkdir(path.join(tempVault, '.claude'), { recursive: true });
-    await writeFile(
-      path.join(tempVault, '.claude', 'wikilink-entities.json'),
-      'not valid json {'
-    );
+  it('should handle missing .claude directory', async () => {
+    // No .claude directory at all
+    setCrankStateDb(null);
+    stateDb.db.close();
 
-    // Should handle gracefully (will rebuild)
+    // Should handle gracefully
     await expect(initializeEntityIndex(tempVault)).resolves.not.toThrow();
   });
 });
@@ -737,18 +740,24 @@ describe('suggestRelatedLinks', () => {
 
 describe('suggestRelatedLinks integration', () => {
   let tempVault: string;
+  let stateDb: StateDb;
 
   beforeEach(async () => {
     tempVault = await createTempVault();
+    stateDb = openStateDb(tempVault);
+    setCrankStateDb(stateDb);
   });
 
   afterEach(async () => {
+    setCrankStateDb(null);
+    stateDb.db.close();
+    deleteStateDb(tempVault);
     await cleanupTempVault(tempVault);
   });
 
   it('should work with initialized entity index', async () => {
-    // Create a cache with known entities
-    await createEntityCache(tempVault, {
+    // Create entities in StateDb
+    createEntityCacheInStateDb(stateDb, tempVault, {
       technologies: ['TypeScript', 'JavaScript', 'Python'],
       projects: ['MCP Server', 'Flywheel Crank'],
       people: ['Jordan Smith'],
@@ -764,9 +773,8 @@ describe('suggestRelatedLinks integration', () => {
     expect(result).toHaveProperty('suffix');
   });
 
-  it('should handle vault without entity cache', async () => {
-    // Don't create cache
-    await mkdir(path.join(tempVault, '.claude'), { recursive: true });
+  it('should handle vault without entities', async () => {
+    // StateDb exists but empty
 
     // Should still work, just return empty
     const result = suggestRelatedLinks('Some content about programming');
@@ -778,7 +786,7 @@ describe('suggestRelatedLinks integration', () => {
     // Regression test for bug where code treated entities as objects with .name
     // but getAllEntities() returns string[] not {name: string}[]
     // See: observation #831 - "Cannot read properties of undefined (reading 'toLowerCase')"
-    await createEntityCache(tempVault, {
+    createEntityCacheInStateDb(stateDb, tempVault, {
       technologies: ['TypeScript', 'Python'],
       people: ['Jordan Smith', 'Jane Smith'],
       projects: ['MCP Server'],
@@ -809,19 +817,25 @@ describe('suggestRelatedLinks integration', () => {
 
 describe('suggestRelatedLinks scoring layers', () => {
   let tempVault: string;
+  let stateDb: StateDb;
 
   beforeEach(async () => {
     tempVault = await createTempVault();
+    stateDb = openStateDb(tempVault);
+    setCrankStateDb(stateDb);
   });
 
   afterEach(async () => {
+    setCrankStateDb(null);
+    stateDb.db.close();
+    deleteStateDb(tempVault);
     await cleanupTempVault(tempVault);
   });
 
   describe('Layer 1: Length filter', () => {
     it('should filter out entities longer than 30 characters', async () => {
-      // Create cache with both short and long entity names
-      await createEntityCache(tempVault, {
+      // Create entities with both short and long entity names
+      createEntityCacheInStateDb(stateDb, tempVault, {
         technologies: ['TypeScript', 'Python'],
         // This simulates an article title (>30 chars)
         other: ['Complete Guide To Fat Loss And Fitness'],
@@ -837,7 +851,7 @@ describe('suggestRelatedLinks scoring layers', () => {
     });
 
     it('should include entities with 30 or fewer characters', async () => {
-      await createEntityCache(tempVault, {
+      createEntityCacheInStateDb(stateDb, tempVault, {
         technologies: ['TypeScript'],
         projects: ['Flywheel Crank'], // 14 chars, under limit
       });
@@ -858,7 +872,7 @@ describe('suggestRelatedLinks scoring layers', () => {
 
   describe('Layer 2: Exact word matching', () => {
     it('should prefer exact word matches over partial matches', async () => {
-      await createEntityCache(tempVault, {
+      createEntityCacheInStateDb(stateDb, tempVault, {
         technologies: ['TypeScript', 'Type'],
         projects: ['Script Editor'],
       });
@@ -879,7 +893,7 @@ describe('suggestRelatedLinks scoring layers', () => {
 
   describe('Layer 3: Stem matching', () => {
     it('should match philosophical to Philosophy via stemming', async () => {
-      await createEntityCache(tempVault, {
+      createEntityCacheInStateDb(stateDb, tempVault, {
         other: ['Philosophy'],
       });
 
@@ -897,7 +911,7 @@ describe('suggestRelatedLinks scoring layers', () => {
     });
 
     it('should match thinking to related concept words', async () => {
-      await createEntityCache(tempVault, {
+      createEntityCacheInStateDb(stateDb, tempVault, {
         technologies: ['Python', 'JavaScript'],
         other: ['Critical Thinking'],
       });
@@ -914,7 +928,7 @@ describe('suggestRelatedLinks scoring layers', () => {
 
   describe('Multi-word entity threshold', () => {
     it('should require 40% of words to match for multi-word entities', async () => {
-      await createEntityCache(tempVault, {
+      createEntityCacheInStateDb(stateDb, tempVault, {
         projects: ['Model Context Protocol Server'],
       });
 
@@ -935,7 +949,7 @@ describe('suggestRelatedLinks scoring layers', () => {
 
   describe('Minimum score threshold', () => {
     it('should require minimum score of 5 (one stem match)', async () => {
-      await createEntityCache(tempVault, {
+      createEntityCacheInStateDb(stateDb, tempVault, {
         technologies: ['TypeScript'],
         other: ['Random Unrelated Entity'],
       });
@@ -953,7 +967,7 @@ describe('suggestRelatedLinks scoring layers', () => {
 
   describe('Scoring priority', () => {
     it('should rank higher-scoring entities first', async () => {
-      await createEntityCache(tempVault, {
+      createEntityCacheInStateDb(stateDb, tempVault, {
         technologies: ['TypeScript', 'JavaScript', 'Python'],
         projects: ['MCP Server', 'API Development'],
       });
@@ -978,18 +992,24 @@ describe('suggestRelatedLinks scoring layers', () => {
 
 describe('garbage suggestion prevention', () => {
   let tempVault: string;
+  let stateDb: StateDb;
 
   beforeEach(async () => {
     tempVault = await createTempVault();
+    stateDb = openStateDb(tempVault);
+    setCrankStateDb(stateDb);
   });
 
   afterEach(async () => {
+    setCrankStateDb(null);
+    stateDb.db.close();
+    deleteStateDb(tempVault);
     await cleanupTempVault(tempVault);
   });
 
   it('should NOT suggest "Complete Guide To Fat Loss" for "Completed 0.5.1"', async () => {
     // This is the original bug scenario
-    await createEntityCache(tempVault, {
+    createEntityCacheInStateDb(stateDb, tempVault, {
       technologies: ['TypeScript'],
       projects: ['Flywheel Crank', 'Flywheel'],
       other: ['Complete Guide To Fat Loss And Fitness'], // Article title (>30 chars)
@@ -1016,7 +1036,7 @@ describe('garbage suggestion prevention', () => {
   });
 
   it('should suggest relevant entities for "Thinking about AI consciousness"', async () => {
-    await createEntityCache(tempVault, {
+    createEntityCacheInStateDb(stateDb, tempVault, {
       technologies: ['Python', 'TypeScript'],
       other: ['Consciousness', 'Philosophy', 'Ethics'],
     });
@@ -1165,17 +1185,23 @@ describe('isLikelyArticleTitle', () => {
 
 describe('suggestion quality - length filter', () => {
   let tempVault: string;
+  let stateDb: StateDb;
 
   beforeEach(async () => {
     tempVault = await createTempVault();
+    stateDb = openStateDb(tempVault);
+    setCrankStateDb(stateDb);
   });
 
   afterEach(async () => {
+    setCrankStateDb(null);
+    stateDb.db.close();
+    deleteStateDb(tempVault);
     await cleanupTempVault(tempVault);
   });
 
   it('should accept entities up to 25 characters', async () => {
-    await createEntityCache(tempVault, {
+    createEntityCacheInStateDb(stateDb, tempVault, {
       technologies: ['Natural Language Process'], // 24 chars - OK
     });
 
@@ -1187,7 +1213,7 @@ describe('suggestion quality - length filter', () => {
   });
 
   it('should reject entities over 25 characters', async () => {
-    await createEntityCache(tempVault, {
+    createEntityCacheInStateDb(stateDb, tempVault, {
       technologies: ['Natural Language Processing V2'], // 30 chars - too long
     });
 
@@ -1201,17 +1227,23 @@ describe('suggestion quality - length filter', () => {
 
 describe('suggestion quality - article pattern filter', () => {
   let tempVault: string;
+  let stateDb: StateDb;
 
   beforeEach(async () => {
     tempVault = await createTempVault();
+    stateDb = openStateDb(tempVault);
+    setCrankStateDb(stateDb);
   });
 
   afterEach(async () => {
+    setCrankStateDb(null);
+    stateDb.db.close();
+    deleteStateDb(tempVault);
     await cleanupTempVault(tempVault);
   });
 
   it('should NOT suggest article-like entities even if they match', async () => {
-    await createEntityCache(tempVault, {
+    createEntityCacheInStateDb(stateDb, tempVault, {
       other: [
         'Git Cheatsheet',        // Has "cheatsheet" pattern
         'Docker Tutorial',        // Has "tutorial" pattern
@@ -1231,7 +1263,7 @@ describe('suggestion quality - article pattern filter', () => {
   });
 
   it('should NOT suggest "How to" style entities', async () => {
-    await createEntityCache(tempVault, {
+    createEntityCacheInStateDb(stateDb, tempVault, {
       other: [
         'How to Code Well',      // Article title
         'Coding',                 // Valid concept
@@ -1250,17 +1282,23 @@ describe('suggestion quality - article pattern filter', () => {
 
 describe('suggestion quality - word count filter', () => {
   let tempVault: string;
+  let stateDb: StateDb;
 
   beforeEach(async () => {
     tempVault = await createTempVault();
+    stateDb = openStateDb(tempVault);
+    setCrankStateDb(stateDb);
   });
 
   afterEach(async () => {
+    setCrankStateDb(null);
+    stateDb.db.close();
+    deleteStateDb(tempVault);
     await cleanupTempVault(tempVault);
   });
 
   it('should accept 3-word entities', async () => {
-    await createEntityCache(tempVault, {
+    createEntityCacheInStateDb(stateDb, tempVault, {
       technologies: ['Azure App Service'],
     });
 
@@ -1272,7 +1310,7 @@ describe('suggestion quality - word count filter', () => {
   });
 
   it('should reject >3-word entities', async () => {
-    await createEntityCache(tempVault, {
+    createEntityCacheInStateDb(stateDb, tempVault, {
       other: ['Very Long Name Here'], // 4 words - rejected
     });
 
@@ -1286,18 +1324,24 @@ describe('suggestion quality - word count filter', () => {
 
 describe('suggestion quality - real-world scenarios', () => {
   let tempVault: string;
+  let stateDb: StateDb;
 
   beforeEach(async () => {
     tempVault = await createTempVault();
+    stateDb = openStateDb(tempVault);
+    setCrankStateDb(stateDb);
   });
 
   afterEach(async () => {
+    setCrankStateDb(null);
+    stateDb.db.close();
+    deleteStateDb(tempVault);
     await cleanupTempVault(tempVault);
   });
 
   it('should handle typical clipping-style long titles (integration)', async () => {
     // These are realistic entity names that might come from a clippings folder
-    await createEntityCache(tempVault, {
+    createEntityCacheInStateDb(stateDb, tempVault, {
       projects: [
         'Flywheel',                                         // Valid project
         'Flywheel Crank',                                   // Valid project
@@ -1332,7 +1376,7 @@ describe('suggestion quality - real-world scenarios', () => {
   });
 
   it('should prefer concept names over partial word matches', async () => {
-    await createEntityCache(tempVault, {
+    createEntityCacheInStateDb(stateDb, tempVault, {
       technologies: ['TypeScript', 'JavaScript'],
       other: ['Scripting', 'Type Systems'],
     });
@@ -1354,18 +1398,24 @@ describe('suggestion quality - real-world scenarios', () => {
 
 describe('strictness modes', () => {
   let tempVault: string;
+  let stateDb: StateDb;
 
   beforeEach(async () => {
     tempVault = await createTempVault();
+    stateDb = openStateDb(tempVault);
+    setCrankStateDb(stateDb);
   });
 
   afterEach(async () => {
+    setCrankStateDb(null);
+    stateDb.db.close();
+    deleteStateDb(tempVault);
     await cleanupTempVault(tempVault);
   });
 
   describe('conservative mode (default)', () => {
     it('should use conservative mode by default', async () => {
-      await createEntityCache(tempVault, {
+      createEntityCacheInStateDb(stateDb, tempVault, {
         technologies: ['TypeScript'],
         // "Start" would match loosely via stem with "started"
         other: ['Start'],
@@ -1382,7 +1432,7 @@ describe('strictness modes', () => {
     });
 
     it('should require exact match for single-word entities in conservative mode', async () => {
-      await createEntityCache(tempVault, {
+      createEntityCacheInStateDb(stateDb, tempVault, {
         other: ['Guide', 'Complete'],
       });
 
@@ -1400,7 +1450,7 @@ describe('strictness modes', () => {
 
   describe('balanced mode', () => {
     it('should allow stem-only matches in balanced mode', async () => {
-      await createEntityCache(tempVault, {
+      createEntityCacheInStateDb(stateDb, tempVault, {
         other: ['Philosophy'],
       });
 
@@ -1417,7 +1467,7 @@ describe('strictness modes', () => {
     });
 
     it('should produce consistent results for exact matches in both modes', async () => {
-      await createEntityCache(tempVault, {
+      createEntityCacheInStateDb(stateDb, tempVault, {
         technologies: ['TypeScript'],
       });
 
@@ -1448,7 +1498,7 @@ describe('strictness modes', () => {
 
   describe('aggressive mode', () => {
     it('should be most permissive with suggestions', async () => {
-      await createEntityCache(tempVault, {
+      createEntityCacheInStateDb(stateDb, tempVault, {
         other: ['Machine Learning'],
       });
 
@@ -1471,18 +1521,24 @@ describe('strictness modes', () => {
 
 describe('false positive prevention', () => {
   let tempVault: string;
+  let stateDb: StateDb;
 
   beforeEach(async () => {
     tempVault = await createTempVault();
+    stateDb = openStateDb(tempVault);
+    setCrankStateDb(stateDb);
   });
 
   afterEach(async () => {
+    setCrankStateDb(null);
+    stateDb.db.close();
+    deleteStateDb(tempVault);
     await cleanupTempVault(tempVault);
   });
 
   it('should NOT suggest "Complete Guide" for "Completed 0.5.1"', async () => {
     // This is the original bug from roadmap: "Completed" matching "Complete Guide"
-    await createEntityCache(tempVault, {
+    createEntityCacheInStateDb(stateDb, tempVault, {
       projects: ['Flywheel Crank', 'Flywheel'],
       other: ['Complete Guide'],
     });
@@ -1506,7 +1562,7 @@ describe('false positive prevention', () => {
   });
 
   it('should NOT suggest "Start" for "Started working"', async () => {
-    await createEntityCache(tempVault, {
+    createEntityCacheInStateDb(stateDb, tempVault, {
       projects: ['API Development'],
       other: ['Start', 'Getting Started'],
     });
@@ -1521,7 +1577,7 @@ describe('false positive prevention', () => {
   });
 
   it('should NOT suggest "Test" for "Testing the feature"', async () => {
-    await createEntityCache(tempVault, {
+    createEntityCacheInStateDb(stateDb, tempVault, {
       technologies: ['TypeScript'],
       other: ['Test', 'Unit Test'],
     });
@@ -1535,7 +1591,7 @@ describe('false positive prevention', () => {
   });
 
   it('should NOT suggest "Work" for "Working on project"', async () => {
-    await createEntityCache(tempVault, {
+    createEntityCacheInStateDb(stateDb, tempVault, {
       projects: ['MCP Server'],
       other: ['Work', 'Works'],
     });
@@ -1550,7 +1606,7 @@ describe('false positive prevention', () => {
   });
 
   it('should NOT suggest "Today" for content containing "today"', async () => {
-    await createEntityCache(tempVault, {
+    createEntityCacheInStateDb(stateDb, tempVault, {
       technologies: ['TypeScript'],
       other: ['Today', 'Daily'],
     });
@@ -1565,7 +1621,7 @@ describe('false positive prevention', () => {
   });
 
   it('should suggest valid entities despite surrounding stopwords', async () => {
-    await createEntityCache(tempVault, {
+    createEntityCacheInStateDb(stateDb, tempVault, {
       technologies: ['TypeScript', 'JavaScript'],
       projects: ['Flywheel Crank'],
     });
@@ -1593,17 +1649,23 @@ describe('false positive prevention', () => {
 
 describe('expanded stopwords', () => {
   let tempVault: string;
+  let stateDb: StateDb;
 
   beforeEach(async () => {
     tempVault = await createTempVault();
+    stateDb = openStateDb(tempVault);
+    setCrankStateDb(stateDb);
   });
 
   afterEach(async () => {
+    setCrankStateDb(null);
+    stateDb.db.close();
+    deleteStateDb(tempVault);
     await cleanupTempVault(tempVault);
   });
 
   it('should filter common verbs from tokenization', async () => {
-    await createEntityCache(tempVault, {
+    createEntityCacheInStateDb(stateDb, tempVault, {
       other: ['Create', 'Update', 'Delete', 'Fix', 'Build'],
     });
 
@@ -1623,7 +1685,7 @@ describe('expanded stopwords', () => {
   });
 
   it('should filter time words from tokenization', async () => {
-    await createEntityCache(tempVault, {
+    createEntityCacheInStateDb(stateDb, tempVault, {
       other: ['Morning', 'Weekly', 'Monthly'],
     });
 
@@ -1640,7 +1702,7 @@ describe('expanded stopwords', () => {
   });
 
   it('should filter generic words from tokenization', async () => {
-    await createEntityCache(tempVault, {
+    createEntityCacheInStateDb(stateDb, tempVault, {
       other: ['Thing', 'Something', 'Better', 'Different'],
     });
 
@@ -1661,7 +1723,7 @@ describe('expanded stopwords', () => {
     // Bug regression test: "a test message" was suggesting unrelated entities like
     // [[Active Directory]] [[App Gateway]] [[Application Insights]]
     // because "message" matched entities that co-occurred with Azure services
-    await createEntityCache(tempVault, {
+    createEntityCacheInStateDb(stateDb, tempVault, {
       technologies: ['Active Directory', 'App Gateway', 'Application Insights'],
       concepts: ['Error Message', 'Message Queue', 'File Manager'],
     });
@@ -1692,43 +1754,33 @@ describe('expanded stopwords', () => {
 
 describe('alias matching', () => {
   let tempVault: string;
+  let stateDb: StateDb;
 
   beforeEach(async () => {
     tempVault = await createTempVault();
+    stateDb = openStateDb(tempVault);
+    setCrankStateDb(stateDb);
   });
 
   afterEach(async () => {
+    setCrankStateDb(null);
+    stateDb.db.close();
+    deleteStateDb(tempVault);
     await cleanupTempVault(tempVault);
   });
 
   it('should match entity by alias when content contains alias word', async () => {
-    // Create cache with entity having aliases
+    // Create entities with aliases in StateDb
     // Note: Entity names must be 4+ chars to pass tokenization filter
-    const cacheDir = path.join(tempVault, '.claude');
-    await mkdir(cacheDir, { recursive: true });
-    await writeFile(
-      path.join(cacheDir, 'wikilink-entities.json'),
-      JSON.stringify({
-        _metadata: {
-          generated_at: new Date().toISOString(),
-          vault_path: tempVault,
-          source: 'test',
-          version: ENTITY_CACHE_VERSION,
-          total_entities: 1,
+    createEntityCacheWithDetailsInStateDb(stateDb, tempVault, {
+      other: [
+        {
+          name: 'Product Reqs',
+          path: 'product-reqs.md',
+          aliases: ['PRD Document', 'Production Requirements'],
         },
-        technologies: [],
-        acronyms: [],
-        people: [],
-        projects: [],
-        other: [
-          {
-            name: 'Product Reqs',
-            path: 'product-reqs.md',
-            aliases: ['PRD Document', 'Production Requirements'],
-          },
-        ],
-      })
-    );
+      ],
+    });
 
     await initializeEntityIndex(tempVault);
 
@@ -1743,31 +1795,15 @@ describe('alias matching', () => {
   });
 
   it('should match via alias stem (e.g., "productivity" matching "Production" alias)', async () => {
-    const cacheDir = path.join(tempVault, '.claude');
-    await mkdir(cacheDir, { recursive: true });
-    await writeFile(
-      path.join(cacheDir, 'wikilink-entities.json'),
-      JSON.stringify({
-        _metadata: {
-          generated_at: new Date().toISOString(),
-          vault_path: tempVault,
-          source: 'test',
-          version: ENTITY_CACHE_VERSION,
-          total_entities: 1,
+    createEntityCacheWithDetailsInStateDb(stateDb, tempVault, {
+      other: [
+        {
+          name: 'Product Line',
+          path: 'product-line.md',
+          aliases: ['Production System'],
         },
-        technologies: [],
-        acronyms: [],
-        people: [],
-        projects: [],
-        other: [
-          {
-            name: 'Product Line',
-            path: 'product-line.md',
-            aliases: ['Production System'],
-          },
-        ],
-      })
-    );
+      ],
+    });
 
     await initializeEntityIndex(tempVault);
 
@@ -1782,36 +1818,20 @@ describe('alias matching', () => {
   });
 
   it('should prefer higher-scoring alias match over lower-scoring name match', async () => {
-    const cacheDir = path.join(tempVault, '.claude');
-    await mkdir(cacheDir, { recursive: true });
-    await writeFile(
-      path.join(cacheDir, 'wikilink-entities.json'),
-      JSON.stringify({
-        _metadata: {
-          generated_at: new Date().toISOString(),
-          vault_path: tempVault,
-          source: 'test',
-          version: ENTITY_CACHE_VERSION,
-          total_entities: 2,
+    createEntityCacheWithDetailsInStateDb(stateDb, tempVault, {
+      other: [
+        {
+          name: 'Product Reqs',
+          path: 'ProductReqs.md',
+          aliases: ['Product Requirements'],
         },
-        technologies: [],
-        acronyms: [],
-        people: [],
-        projects: [],
-        other: [
-          {
-            name: 'Product Reqs',
-            path: 'ProductReqs.md',
-            aliases: ['Product Requirements'],
-          },
-          {
-            name: 'Requirements',
-            path: 'Requirements.md',
-            aliases: [],
-          },
-        ],
-      })
-    );
+        {
+          name: 'Requirements',
+          path: 'Requirements.md',
+          aliases: [],
+        },
+      ],
+    });
 
     await initializeEntityIndex(tempVault);
 
@@ -1833,31 +1853,15 @@ describe('alias matching', () => {
   });
 
   it('should not suggest entity if already linked', async () => {
-    const cacheDir = path.join(tempVault, '.claude');
-    await mkdir(cacheDir, { recursive: true });
-    await writeFile(
-      path.join(cacheDir, 'wikilink-entities.json'),
-      JSON.stringify({
-        _metadata: {
-          generated_at: new Date().toISOString(),
-          vault_path: tempVault,
-          source: 'test',
-          version: ENTITY_CACHE_VERSION,
-          total_entities: 1,
+    createEntityCacheWithDetailsInStateDb(stateDb, tempVault, {
+      other: [
+        {
+          name: 'Product Reqs',
+          path: 'product-reqs.md',
+          aliases: ['Production Requirements'],
         },
-        technologies: [],
-        acronyms: [],
-        people: [],
-        projects: [],
-        other: [
-          {
-            name: 'Product Reqs',
-            path: 'product-reqs.md',
-            aliases: ['Production Requirements'],
-          },
-        ],
-      })
-    );
+      ],
+    });
 
     await initializeEntityIndex(tempVault);
 
@@ -1873,35 +1877,17 @@ describe('alias matching', () => {
   it('should filter long aliases (>25 chars or >3 words) during import', async () => {
     // This tests that the alias filtering happens at vault-core level
     // Long aliases should never make it into the cache
-    const cacheDir = path.join(tempVault, '.claude');
-    await mkdir(cacheDir, { recursive: true });
-
-    // Manually create cache with pre-filtered aliases (as vault-core would do)
-    await writeFile(
-      path.join(cacheDir, 'wikilink-entities.json'),
-      JSON.stringify({
-        _metadata: {
-          generated_at: new Date().toISOString(),
-          vault_path: tempVault,
-          source: 'test',
-          version: ENTITY_CACHE_VERSION,
-          total_entities: 1,
+    createEntityCacheWithDetailsInStateDb(stateDb, tempVault, {
+      other: [
+        {
+          name: 'prd',
+          path: 'prd.md',
+          // Only short aliases should be included (filtered during scan)
+          aliases: ['Prod', 'Production'],
+          // NOT: 'Product Requirements Document' (4 words - filtered)
         },
-        technologies: [],
-        acronyms: [],
-        people: [],
-        projects: [],
-        other: [
-          {
-            name: 'prd',
-            path: 'prd.md',
-            // Only short aliases should be included (filtered during scan)
-            aliases: ['Prod', 'Production'],
-            // NOT: 'Product Requirements Document' (4 words - filtered)
-          },
-        ],
-      })
-    );
+      ],
+    });
 
     await initializeEntityIndex(tempVault);
 
@@ -1917,31 +1903,15 @@ describe('alias matching', () => {
   });
 
   it('should handle entity with multiple aliases', async () => {
-    const cacheDir = path.join(tempVault, '.claude');
-    await mkdir(cacheDir, { recursive: true });
-    await writeFile(
-      path.join(cacheDir, 'wikilink-entities.json'),
-      JSON.stringify({
-        _metadata: {
-          generated_at: new Date().toISOString(),
-          vault_path: tempVault,
-          source: 'test',
-          version: ENTITY_CACHE_VERSION,
-          total_entities: 1,
+    createEntityCacheWithDetailsInStateDb(stateDb, tempVault, {
+      other: [
+        {
+          name: 'Artificial Intel',
+          path: 'artificial-intel.md',
+          aliases: ['Artificial Intelligence', 'Machine Learning'],
         },
-        technologies: [],
-        acronyms: [],
-        people: [],
-        projects: [],
-        other: [
-          {
-            name: 'Artificial Intel',
-            path: 'artificial-intel.md',
-            aliases: ['Artificial Intelligence', 'Machine Learning'],
-          },
-        ],
-      })
-    );
+      ],
+    });
 
     await initializeEntityIndex(tempVault);
 
@@ -1961,29 +1931,11 @@ describe('alias matching', () => {
   });
 
   it('should suggest entity when single-word alias exactly matches in conservative mode', async () => {
-    const cacheDir = path.join(tempVault, '.claude');
-    await mkdir(cacheDir, { recursive: true });
-
-    // PRD entity with "production" alias (matches real-world case)
-    await writeFile(
-      path.join(cacheDir, 'wikilink-entities.json'),
-      JSON.stringify({
-        _metadata: {
-          generated_at: new Date().toISOString(),
-          vault_path: tempVault,
-          source: 'test',
-          version: ENTITY_CACHE_VERSION,
-          total_entities: 1,
-        },
-        technologies: [],
-        acronyms: [],
-        people: [],
-        projects: [],
-        other: [
-          { name: 'prd', path: 'prd.md', aliases: ['production', 'prod'] },
-        ],
-      })
-    );
+    createEntityCacheWithDetailsInStateDb(stateDb, tempVault, {
+      other: [
+        { name: 'prd', path: 'prd.md', aliases: ['production', 'prod'] },
+      ],
+    });
 
     await initializeEntityIndex(tempVault);
 
@@ -1995,31 +1947,15 @@ describe('alias matching', () => {
   });
 
   it('should work with entities that have no aliases (backward compatibility)', async () => {
-    const cacheDir = path.join(tempVault, '.claude');
-    await mkdir(cacheDir, { recursive: true });
-    await writeFile(
-      path.join(cacheDir, 'wikilink-entities.json'),
-      JSON.stringify({
-        _metadata: {
-          generated_at: new Date().toISOString(),
-          vault_path: tempVault,
-          source: 'test',
-          version: ENTITY_CACHE_VERSION,
-          total_entities: 1,
+    createEntityCacheWithDetailsInStateDb(stateDb, tempVault, {
+      technologies: [
+        {
+          name: 'TypeScript',
+          path: 'TypeScript.md',
+          aliases: [],
         },
-        technologies: [
-          {
-            name: 'TypeScript',
-            path: 'TypeScript.md',
-            aliases: [],
-          },
-        ],
-        acronyms: [],
-        people: [],
-        projects: [],
-        other: [],
-      })
-    );
+      ],
+    });
 
     await initializeEntityIndex(tempVault);
 
@@ -2040,17 +1976,23 @@ describe('alias matching', () => {
 
 describe('adaptive thresholds', () => {
   let tempVault: string;
+  let stateDb: StateDb;
 
   beforeEach(async () => {
     tempVault = await createTempVault();
+    stateDb = openStateDb(tempVault);
+    setCrankStateDb(stateDb);
   });
 
   afterEach(async () => {
+    setCrankStateDb(null);
+    stateDb.db.close();
+    deleteStateDb(tempVault);
     await cleanupTempVault(tempVault);
   });
 
   it('should use lower threshold for short content (<50 chars)', async () => {
-    await createEntityCache(tempVault, {
+    createEntityCacheInStateDb(stateDb, tempVault, {
       people: ['Ben Carter'],  // 2-word person, gets type boost
     });
 
@@ -2067,7 +2009,7 @@ describe('adaptive thresholds', () => {
   });
 
   it('should use higher threshold for long content (>200 chars)', async () => {
-    await createEntityCache(tempVault, {
+    createEntityCacheInStateDb(stateDb, tempVault, {
       technologies: ['TypeScript'],
     });
 
@@ -2085,7 +2027,7 @@ describe('adaptive thresholds', () => {
   });
 
   it('should use standard threshold for medium content', async () => {
-    await createEntityCache(tempVault, {
+    createEntityCacheInStateDb(stateDb, tempVault, {
       technologies: ['TypeScript'],
     });
 
@@ -2110,18 +2052,24 @@ describe('adaptive thresholds', () => {
 
 describe('entity type boosting', () => {
   let tempVault: string;
+  let stateDb: StateDb;
 
   beforeEach(async () => {
     tempVault = await createTempVault();
+    stateDb = openStateDb(tempVault);
+    setCrankStateDb(stateDb);
   });
 
   afterEach(async () => {
+    setCrankStateDb(null);
+    stateDb.db.close();
+    deleteStateDb(tempVault);
     await cleanupTempVault(tempVault);
   });
 
   it('should boost people entities higher than technologies', async () => {
     // Create cache with both person and technology with same word overlap
-    await createEntityCache(tempVault, {
+    createEntityCacheInStateDb(stateDb, tempVault, {
       people: ['Ben Carter'],       // +5 type boost for people
       technologies: ['Carter API'], // +0 type boost for technologies
     });
@@ -2141,7 +2089,7 @@ describe('entity type boosting', () => {
   });
 
   it('should boost projects over technologies', async () => {
-    await createEntityCache(tempVault, {
+    createEntityCacheInStateDb(stateDb, tempVault, {
       projects: ['Flywheel Crank'],  // +3 type boost
       technologies: ['React'],        // +0 type boost
     });
@@ -2160,7 +2108,7 @@ describe('entity type boosting', () => {
   });
 
   it('should apply organization boost', async () => {
-    await createEntityCache(tempVault, {
+    createEntityCacheInStateDb(stateDb, tempVault, {
       organizations: ['Anthropic Team'],  // +2 type boost
     });
 
@@ -2182,17 +2130,23 @@ describe('entity type boosting', () => {
 
 describe('context-aware matching', () => {
   let tempVault: string;
+  let stateDb: StateDb;
 
   beforeEach(async () => {
     tempVault = await createTempVault();
+    stateDb = openStateDb(tempVault);
+    setCrankStateDb(stateDb);
   });
 
   afterEach(async () => {
+    setCrankStateDb(null);
+    stateDb.db.close();
+    deleteStateDb(tempVault);
     await cleanupTempVault(tempVault);
   });
 
   it('should boost people in daily notes context', async () => {
-    await createEntityCache(tempVault, {
+    createEntityCacheInStateDb(stateDb, tempVault, {
       people: ['Ben Carter'],
       technologies: ['TypeScript'],
     });
@@ -2217,7 +2171,7 @@ describe('context-aware matching', () => {
   });
 
   it('should boost projects in project notes context', async () => {
-    await createEntityCache(tempVault, {
+    createEntityCacheInStateDb(stateDb, tempVault, {
       projects: ['Flywheel Crank'],
       people: ['Ben Carter'],
     });
@@ -2238,7 +2192,7 @@ describe('context-aware matching', () => {
   });
 
   it('should boost technologies in tech docs context', async () => {
-    await createEntityCache(tempVault, {
+    createEntityCacheInStateDb(stateDb, tempVault, {
       technologies: ['TypeScript'],
       projects: ['MCP Server'],
     });
@@ -2259,7 +2213,7 @@ describe('context-aware matching', () => {
   });
 
   it('should use general context for unrecognized paths', async () => {
-    await createEntityCache(tempVault, {
+    createEntityCacheInStateDb(stateDb, tempVault, {
       technologies: ['TypeScript'],
     });
 
@@ -2276,7 +2230,7 @@ describe('context-aware matching', () => {
   });
 
   it('should detect journal path as daily context', async () => {
-    await createEntityCache(tempVault, {
+    createEntityCacheInStateDb(stateDb, tempVault, {
       people: ['Ben Carter'],
     });
 
@@ -2301,17 +2255,23 @@ describe('context-aware matching', () => {
 
 describe('combined scoring formula', () => {
   let tempVault: string;
+  let stateDb: StateDb;
 
   beforeEach(async () => {
     tempVault = await createTempVault();
+    stateDb = openStateDb(tempVault);
+    setCrankStateDb(stateDb);
   });
 
   afterEach(async () => {
+    setCrankStateDb(null);
+    stateDb.db.close();
+    deleteStateDb(tempVault);
     await cleanupTempVault(tempVault);
   });
 
   it('should combine type boost and context boost', async () => {
-    await createEntityCache(tempVault, {
+    createEntityCacheInStateDb(stateDb, tempVault, {
       people: ['Ben Carter'],      // people type boost +5
     });
 
@@ -2330,7 +2290,7 @@ describe('combined scoring formula', () => {
   });
 
   it('should prioritize entities with multiple boost sources', async () => {
-    await createEntityCache(tempVault, {
+    createEntityCacheInStateDb(stateDb, tempVault, {
       people: ['Ben Carter'],       // +5 type + +5 daily context = +10
       technologies: ['TypeScript'], // +0 type + +0 context = +0
     });
@@ -2355,18 +2315,24 @@ describe('combined scoring formula', () => {
 
 describe('Cross-Folder Boost', () => {
   let tempVault: string;
+  let stateDb: StateDb;
 
   beforeEach(async () => {
     tempVault = await createTempVault();
+    stateDb = openStateDb(tempVault);
+    setCrankStateDb(stateDb);
   });
 
   afterEach(async () => {
+    setCrankStateDb(null);
+    stateDb.db.close();
+    deleteStateDb(tempVault);
     await cleanupTempVault(tempVault);
   });
 
   it('should boost entities from different folders', async () => {
     // Use createEntityCacheWithDetails for custom paths
-    await createEntityCacheWithDetails(tempVault, {
+    createEntityCacheWithDetailsInStateDb(stateDb, tempVault, {
       people: [
         { name: 'Alice Smith', path: 'people/Alice Smith.md' },
         { name: 'Bob Jones', path: 'people/Bob Jones.md' },
@@ -2397,7 +2363,7 @@ describe('Cross-Folder Boost', () => {
   });
 
   it('should not boost entities from same folder', async () => {
-    await createEntityCacheWithDetails(tempVault, {
+    createEntityCacheWithDetailsInStateDb(stateDb, tempVault, {
       projects: [
         { name: 'Project Alpha', path: 'projects/Project Alpha.md' },
         { name: 'Project Beta', path: 'projects/Project Beta.md' },
@@ -2418,7 +2384,7 @@ describe('Cross-Folder Boost', () => {
   });
 
   it('should handle entities without paths gracefully', async () => {
-    await createEntityCacheWithDetails(tempVault, {
+    createEntityCacheWithDetailsInStateDb(stateDb, tempVault, {
       other: [
         { name: 'Concept One', path: '' }, // Empty path
         { name: 'Concept Two', path: 'concepts/Concept Two.md' },
@@ -2443,17 +2409,23 @@ describe('Cross-Folder Boost', () => {
 
 describe('Hub Score Boost', () => {
   let tempVault: string;
+  let stateDb: StateDb;
 
   beforeEach(async () => {
     tempVault = await createTempVault();
+    stateDb = openStateDb(tempVault);
+    setCrankStateDb(stateDb);
   });
 
   afterEach(async () => {
+    setCrankStateDb(null);
+    stateDb.db.close();
+    deleteStateDb(tempVault);
     await cleanupTempVault(tempVault);
   });
 
   it('should boost hub notes (hubScore >= 5)', async () => {
-    await createEntityCacheWithDetails(tempVault, {
+    createEntityCacheWithDetailsInStateDb(stateDb, tempVault, {
       concepts: [
         { name: 'Hub Concept', path: 'concepts/Hub Concept.md', hubScore: 10 }, // Hub: 10 backlinks
         { name: 'Regular Concept', path: 'concepts/Regular Concept.md', hubScore: 2 }, // Not a hub
@@ -2478,7 +2450,7 @@ describe('Hub Score Boost', () => {
   });
 
   it('should not boost entities below hub threshold', async () => {
-    await createEntityCacheWithDetails(tempVault, {
+    createEntityCacheWithDetailsInStateDb(stateDb, tempVault, {
       projects: [
         { name: 'Project A', path: 'projects/Project A.md', hubScore: 4 }, // Just below threshold
         { name: 'Project B', path: 'projects/Project B.md', hubScore: 5 }, // At threshold
@@ -2503,7 +2475,7 @@ describe('Hub Score Boost', () => {
   });
 
   it('should handle missing hubScore gracefully', async () => {
-    await createEntityCacheWithDetails(tempVault, {
+    createEntityCacheWithDetailsInStateDb(stateDb, tempVault, {
       technologies: [
         { name: 'TypeScript', path: 'tech/TypeScript.md' }, // No hubScore
         { name: 'React', path: 'tech/React.md', hubScore: 0 }, // Zero hubScore
@@ -2527,17 +2499,23 @@ describe('Hub Score Boost', () => {
 
 describe('Combined Cross-Folder and Hub Boosts', () => {
   let tempVault: string;
+  let stateDb: StateDb;
 
   beforeEach(async () => {
     tempVault = await createTempVault();
+    stateDb = openStateDb(tempVault);
+    setCrankStateDb(stateDb);
   });
 
   afterEach(async () => {
+    setCrankStateDb(null);
+    stateDb.db.close();
+    deleteStateDb(tempVault);
     await cleanupTempVault(tempVault);
   });
 
   it('should combine cross-folder and hub boosts', async () => {
-    await createEntityCacheWithDetails(tempVault, {
+    createEntityCacheWithDetailsInStateDb(stateDb, tempVault, {
       people: [
         { name: 'Alice Smith', path: 'people/Alice Smith.md', hubScore: 10 }, // Hub + cross-folder
       ],
@@ -2568,7 +2546,7 @@ describe('Combined Cross-Folder and Hub Boosts', () => {
   });
 
   it('should handle inline detection with priority sorting', async () => {
-    await createEntityCacheWithDetails(tempVault, {
+    createEntityCacheWithDetailsInStateDb(stateDb, tempVault, {
       people: [
         { name: 'Priority', path: 'people/Priority.md', hubScore: 10 }, // Hub
         { name: 'Prioriti', path: 'daily-notes/Prioriti.md', hubScore: 0 }, // Same folder, not hub
@@ -2592,18 +2570,24 @@ describe('Combined Cross-Folder and Hub Boosts', () => {
 
 describe('zero-relevance content filtering', () => {
   let tempVault: string;
+  let stateDb: StateDb;
 
   beforeEach(async () => {
     tempVault = await createTempVault();
+    stateDb = openStateDb(tempVault);
+    setCrankStateDb(stateDb);
   });
 
   afterEach(async () => {
+    setCrankStateDb(null);
+    stateDb.db.close();
+    deleteStateDb(tempVault);
     await cleanupTempVault(tempVault);
   });
 
   it('should not suggest entities with zero content overlap', async () => {
     // Create entities that have high boosts but no content relevance
-    await createEntityCacheWithDetails(tempVault, {
+    createEntityCacheWithDetailsInStateDb(stateDb, tempVault, {
       people: [
         // Major hub entity that should NOT be suggested for unrelated content
         { name: 'Jane Doe', path: 'people/Jane Doe.md', hubScore: 150 },
@@ -2628,7 +2612,7 @@ describe('zero-relevance content filtering', () => {
 
   it('should return empty suggestions for completely unrelated content', async () => {
     // Create entities with various high boosts
-    await createEntityCacheWithDetails(tempVault, {
+    createEntityCacheWithDetailsInStateDb(stateDb, tempVault, {
       people: [
         { name: 'Test Person', path: 'people/Test Person.md', hubScore: 100 },
         { name: 'Another Person', path: 'people/Another Person.md', hubScore: 50 },
@@ -2654,7 +2638,7 @@ describe('zero-relevance content filtering', () => {
   });
 
   it('should still suggest entities with content overlap', async () => {
-    await createEntityCacheWithDetails(tempVault, {
+    createEntityCacheWithDetailsInStateDb(stateDb, tempVault, {
       technologies: [
         { name: 'TypeScript', path: 'tech/TypeScript.md', hubScore: 50 },
       ],
@@ -2680,7 +2664,7 @@ describe('zero-relevance content filtering', () => {
 
   it('should require content overlap for co-occurrence suggestions', async () => {
     // Create entities where one matches and the other only has co-occurrence
-    await createEntityCacheWithDetails(tempVault, {
+    createEntityCacheWithDetailsInStateDb(stateDb, tempVault, {
       projects: [
         { name: 'Project Alpha', path: 'projects/Project Alpha.md', hubScore: 10 },
         // This entity has completely different words - won't match content
@@ -2704,7 +2688,7 @@ describe('zero-relevance content filtering', () => {
   });
 
   it('should filter out popularity-boosted entities without content match', async () => {
-    await createEntityCacheWithDetails(tempVault, {
+    createEntityCacheWithDetailsInStateDb(stateDb, tempVault, {
       people: [
         // Very popular (high hub) but name has no overlap with test content
         { name: 'Important Person', path: 'people/Important Person.md', hubScore: 200 },

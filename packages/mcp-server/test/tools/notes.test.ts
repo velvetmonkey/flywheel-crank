@@ -10,11 +10,16 @@ import {
   readTestNote,
   createTestNote,
   createEntityCache,
+  createEntityCacheInStateDb,
+  openStateDb,
+  deleteStateDb,
+  type StateDb,
 } from '../helpers/testUtils.js';
 import {
   initializeEntityIndex,
   maybeApplyWikilinks,
   suggestRelatedLinks,
+  setCrankStateDb,
 } from '../../src/core/wikilinks.js';
 import fs from 'fs/promises';
 import path from 'path';
@@ -390,11 +395,14 @@ describe('vault_delete_note workflow', () => {
 
 describe('vault_create_note wikilink integration', () => {
   let tempVault: string;
+  let stateDb: StateDb;
 
   beforeEach(async () => {
     tempVault = await createTempVault();
-    // Create entity cache with test entities
-    await createEntityCache(tempVault, {
+    stateDb = openStateDb(tempVault);
+    setCrankStateDb(stateDb);
+    // Create entity cache with test entities in StateDb
+    createEntityCacheInStateDb(stateDb, tempVault, {
       people: ['Jordan Smith'],
       projects: ['MCP Server'],
       technologies: ['TypeScript', 'JavaScript'],
@@ -404,6 +412,9 @@ describe('vault_create_note wikilink integration', () => {
   });
 
   afterEach(async () => {
+    setCrankStateDb(null);
+    stateDb.db.close();
+    deleteStateDb(tempVault);
     await cleanupTempVault(tempVault);
   });
 

@@ -20,11 +20,16 @@ import {
   createTestNote,
   readTestNote,
   createEntityCache,
+  createEntityCacheInStateDb,
+  openStateDb,
+  deleteStateDb,
+  type StateDb,
 } from '../helpers/testUtils.js';
 import type { Position } from '../../src/core/types.js';
 import {
   initializeEntityIndex,
   suggestRelatedLinks,
+  setCrankStateDb,
 } from '../../src/core/wikilinks.js';
 
 /**
@@ -719,11 +724,14 @@ type: test
 
 describe('vault_add_task suggestOutgoingLinks parameter', () => {
   let tempVault: string;
+  let stateDb: StateDb;
 
   beforeEach(async () => {
     tempVault = await createTempVault();
+    stateDb = openStateDb(tempVault);
+    setCrankStateDb(stateDb);
     // Create entity cache with known entities
-    await createEntityCache(tempVault, {
+    createEntityCacheInStateDb(stateDb, tempVault, {
       technologies: ['TypeScript', 'JavaScript', 'Python'],
       projects: ['MCP Server', 'Flywheel Crank'],
       people: ['Jordan Smith', 'Alex Rivera'],
@@ -734,6 +742,9 @@ describe('vault_add_task suggestOutgoingLinks parameter', () => {
   });
 
   afterEach(async () => {
+    setCrankStateDb(null);
+    stateDb.db.close();
+    deleteStateDb(tempVault);
     await cleanupTempVault(tempVault);
   });
 

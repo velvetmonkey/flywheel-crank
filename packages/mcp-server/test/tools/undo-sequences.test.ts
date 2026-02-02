@@ -20,10 +20,13 @@ import {
   clearLastCrankCommit,
   hasUncommittedChanges,
   isGitRepo,
+  setGitStateDb,
 } from '../../src/core/git.js';
+import { openStateDb, deleteStateDb, type StateDb } from '@velvetmonkey/vault-core';
 
 let tempVault: string;
 let git: SimpleGit;
+let stateDb: StateDb;
 
 async function createTempVault(): Promise<string> {
   const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'undo-sequence-test-'));
@@ -71,9 +74,14 @@ describe('Sequential Undo Operations', () => {
   beforeEach(async () => {
     tempVault = await createTempVault();
     await initGitRepo(tempVault);
+    stateDb = openStateDb(tempVault);
+    setGitStateDb(stateDb);
   });
 
   afterEach(async () => {
+    setGitStateDb(null);
+    stateDb.db.close();
+    deleteStateDb(tempVault);
     await cleanupTempVault(tempVault);
   });
 
@@ -89,7 +97,7 @@ describe('Sequential Undo Operations', () => {
     const undoResult = await undoLastCommit(tempVault);
 
     expect(undoResult.success).toBe(true);
-    expect(undoResult.undoneCommit).toBe(commitResult.hash);
+    expect(undoResult.undoneCommit?.hash).toBe(commitResult.hash);
 
     const finalCommits = await getCommitCount();
     expect(finalCommits).toBe(initialCommits - 1);
@@ -100,15 +108,15 @@ describe('Sequential Undo Operations', () => {
     const commitResult = await commitChange(tempVault, 'test.md', '[Crank]');
 
     // Save tracking info
-    await saveLastCrankCommit(tempVault, commitResult.hash!, 'Test commit');
+    saveLastCrankCommit(commitResult.hash!, 'Test commit');
 
-    const tracked = await getLastCrankCommit(tempVault);
+    const tracked = getLastCrankCommit();
     expect(tracked).not.toBeNull();
     expect(tracked?.hash).toBe(commitResult.hash);
 
     // Clear tracking
-    await clearLastCrankCommit(tempVault);
-    const clearedTracking = await getLastCrankCommit(tempVault);
+    clearLastCrankCommit();
+    const clearedTracking = getLastCrankCommit();
     expect(clearedTracking).toBeNull();
   });
 
@@ -148,7 +156,7 @@ describe('Sequential Undo Operations', () => {
       const finalCommits = await getCommitCount();
       expect(finalCommits).toBeGreaterThanOrEqual(1);
     } else {
-      expect(undoResult.error).toBeDefined();
+      expect(undoResult.message).toBeDefined();
     }
   });
 });
@@ -157,9 +165,14 @@ describe('External Commit Interference', () => {
   beforeEach(async () => {
     tempVault = await createTempVault();
     await initGitRepo(tempVault);
+    stateDb = openStateDb(tempVault);
+    setGitStateDb(stateDb);
   });
 
   afterEach(async () => {
+    setGitStateDb(null);
+    stateDb.db.close();
+    deleteStateDb(tempVault);
     await cleanupTempVault(tempVault);
   });
 
@@ -167,7 +180,7 @@ describe('External Commit Interference', () => {
     // Make a crank commit
     await createTestNote(tempVault, 'crank-note.md', '# Crank Note');
     const crankCommit = await commitChange(tempVault, 'crank-note.md', '[Crank]');
-    await saveLastCrankCommit(tempVault, crankCommit.hash!, 'Crank commit');
+    saveLastCrankCommit(crankCommit.hash!, 'Crank commit');
 
     const crankHash = crankCommit.hash;
 
@@ -178,7 +191,7 @@ describe('External Commit Interference', () => {
 
     // Now HEAD != tracked crank commit
     const currentHead = await getHeadCommit();
-    const tracked = await getLastCrankCommit(tempVault);
+    const tracked = getLastCrankCommit();
 
     expect(currentHead).not.toBe(tracked?.hash);
   });
@@ -187,7 +200,7 @@ describe('External Commit Interference', () => {
     // Make a crank commit
     await createTestNote(tempVault, 'crank.md', '# Crank');
     const crankCommit = await commitChange(tempVault, 'crank.md', '[Crank]');
-    await saveLastCrankCommit(tempVault, crankCommit.hash!, 'Crank commit');
+    saveLastCrankCommit(crankCommit.hash!, 'Crank commit');
 
     // External commit
     await createTestNote(tempVault, 'external.md', '# External');
@@ -210,15 +223,21 @@ describe('Dirty Working Tree Handling', () => {
   beforeEach(async () => {
     tempVault = await createTempVault();
     await initGitRepo(tempVault);
+    stateDb = openStateDb(tempVault);
+    setGitStateDb(stateDb);
   });
 
   afterEach(async () => {
+    setGitStateDb(null);
+    stateDb.db.close();
+    deleteStateDb(tempVault);
     await cleanupTempVault(tempVault);
   });
 
   it('should detect uncommitted changes', async () => {
     await createTestNote(tempVault, 'committed.md', '# Committed');
-    await git.add('committed.md');
+    // Also commit the .claude directory created by StateDb
+    await git.add('.');
     await git.commit('Add committed file');
 
     // No uncommitted changes yet
@@ -288,9 +307,14 @@ describe('Undo Result Information', () => {
   beforeEach(async () => {
     tempVault = await createTempVault();
     await initGitRepo(tempVault);
+    stateDb = openStateDb(tempVault);
+    setGitStateDb(stateDb);
   });
 
   afterEach(async () => {
+    setGitStateDb(null);
+    stateDb.db.close();
+    deleteStateDb(tempVault);
     await cleanupTempVault(tempVault);
   });
 
@@ -302,7 +326,7 @@ describe('Undo Result Information', () => {
     const undoResult = await undoLastCommit(tempVault);
 
     expect(undoResult.success).toBe(true);
-    expect(undoResult.undoneCommit).toBe(committedHash);
+    expect(undoResult.undoneCommit?.hash).toBe(committedHash);
   });
 
   it('should provide clear error for non-git repo', async () => {
@@ -312,8 +336,8 @@ describe('Undo Result Information', () => {
       const undoResult = await undoLastCommit(nonGitDir);
 
       expect(undoResult.success).toBe(false);
-      expect(undoResult.error).toBeDefined();
-      expect(undoResult.error?.toLowerCase()).toMatch(/git|repository/);
+      expect(undoResult.message).toBeDefined();
+      expect(undoResult.message.toLowerCase()).toMatch(/git|repository/);
     } finally {
       await fs.rm(nonGitDir, { recursive: true, force: true });
     }
@@ -324,10 +348,14 @@ describe('Last Commit Tracking', () => {
   beforeEach(async () => {
     tempVault = await createTempVault();
     await initGitRepo(tempVault);
-    await fs.mkdir(path.join(tempVault, '.claude'), { recursive: true });
+    stateDb = openStateDb(tempVault);
+    setGitStateDb(stateDb);
   });
 
   afterEach(async () => {
+    setGitStateDb(null);
+    stateDb.db.close();
+    deleteStateDb(tempVault);
     await cleanupTempVault(tempVault);
   });
 
@@ -335,9 +363,9 @@ describe('Last Commit Tracking', () => {
     const hash = 'abc123def456';
     const message = 'Test commit message';
 
-    await saveLastCrankCommit(tempVault, hash, message);
+    saveLastCrankCommit(hash, message);
 
-    const retrieved = await getLastCrankCommit(tempVault);
+    const retrieved = getLastCrankCommit();
 
     expect(retrieved).not.toBeNull();
     expect(retrieved?.hash).toBe(hash);
@@ -346,19 +374,19 @@ describe('Last Commit Tracking', () => {
   });
 
   it('should clear last commit tracking', async () => {
-    await saveLastCrankCommit(tempVault, 'hash123', 'message');
+    saveLastCrankCommit('hash123', 'message');
 
-    await clearLastCrankCommit(tempVault);
+    clearLastCrankCommit();
 
-    const retrieved = await getLastCrankCommit(tempVault);
+    const retrieved = getLastCrankCommit();
     expect(retrieved).toBeNull();
   });
 
   it('should overwrite previous tracking on new commit', async () => {
-    await saveLastCrankCommit(tempVault, 'first-hash', 'First commit');
-    await saveLastCrankCommit(tempVault, 'second-hash', 'Second commit');
+    saveLastCrankCommit('first-hash', 'First commit');
+    saveLastCrankCommit('second-hash', 'Second commit');
 
-    const retrieved = await getLastCrankCommit(tempVault);
+    const retrieved = getLastCrankCommit();
 
     expect(retrieved?.hash).toBe('second-hash');
     expect(retrieved?.message).toBe('Second commit');
@@ -369,9 +397,14 @@ describe('Get Last Commit Info', () => {
   beforeEach(async () => {
     tempVault = await createTempVault();
     await initGitRepo(tempVault);
+    stateDb = openStateDb(tempVault);
+    setGitStateDb(stateDb);
   });
 
   afterEach(async () => {
+    setGitStateDb(null);
+    stateDb.db.close();
+    deleteStateDb(tempVault);
     await cleanupTempVault(tempVault);
   });
 

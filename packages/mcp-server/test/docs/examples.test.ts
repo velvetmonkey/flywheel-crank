@@ -21,11 +21,16 @@ import {
   createTestNote,
   readTestNote,
   createEntityCache,
+  createEntityCacheInStateDb,
+  openStateDb,
+  deleteStateDb,
+  type StateDb,
 } from '../helpers/testUtils.js';
 import {
   initializeEntityIndex,
   processWikilinks,
   suggestRelatedLinks,
+  setCrankStateDb,
 } from '../../src/core/wikilinks.js';
 
 const DOCS_DIR = path.join(__dirname, '../../../docs');
@@ -233,9 +238,22 @@ ${Array.from({ length: 50 }, (_, i) => `Line ${i} of section 3`).join('\n')}
   });
 
   describe('wikilinks.md examples', () => {
+    let stateDb: StateDb;
+
+    beforeEach(() => {
+      stateDb = openStateDb(tempVault);
+      setCrankStateDb(stateDb);
+    });
+
+    afterEach(() => {
+      setCrankStateDb(null);
+      stateDb.db.close();
+      deleteStateDb(tempVault);
+    });
+
     it('should demonstrate auto-wikilink application', async () => {
       // Set up entity cache
-      await createEntityCache(tempVault, {
+      createEntityCacheInStateDb(stateDb, tempVault, {
         people: ['Alice', 'Bob'],
         projects: ['Project X'],
       });
@@ -270,7 +288,7 @@ Met with Alice and Bob to discuss Project X progress.
     });
 
     it('should demonstrate suggestion suffix generation', async () => {
-      await createEntityCache(tempVault, {
+      createEntityCacheInStateDb(stateDb, tempVault, {
         people: ['Alice', 'Bob', 'Charlie'],
         projects: ['Project X', 'Project Y'],
         technologies: ['TypeScript', 'Node.js'],

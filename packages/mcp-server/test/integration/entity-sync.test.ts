@@ -26,7 +26,11 @@ import {
   createTestNote,
   readTestNote,
   createEntityCache,
+  createEntityCacheInStateDb,
   createVaultWithEntities,
+  openStateDb,
+  deleteStateDb,
+  type StateDb,
 } from '../helpers/testUtils.js';
 import {
   initializeEntityIndex,
@@ -34,23 +38,30 @@ import {
   suggestRelatedLinks,
   isEntityIndexReady,
   getEntityIndexStats,
+  setCrankStateDb,
 } from '../../src/core/wikilinks.js';
 
 describe('Entity Index Sync Validation', () => {
   let tempVault: string;
+  let stateDb: StateDb;
 
   beforeEach(async () => {
     tempVault = await createTempVault();
+    stateDb = openStateDb(tempVault);
+    setCrankStateDb(stateDb);
   });
 
   afterEach(async () => {
+    setCrankStateDb(null);
+    stateDb.db.close();
+    deleteStateDb(tempVault);
     await cleanupTempVault(tempVault);
   });
 
   describe('sync after mutation with new wikilinks', () => {
     it('should have entity index available after initialization', async () => {
       // Initial setup with entities
-      await createEntityCache(tempVault, {
+      createEntityCacheInStateDb(stateDb, tempVault, {
         people: ['Alice'],
         projects: ['Project X'],
       });
@@ -68,7 +79,7 @@ describe('Entity Index Sync Validation', () => {
 
     it('should maintain consistency across sequential mutations', async () => {
       await createVaultWithEntities(tempVault);
-      await createEntityCache(tempVault, {
+      createEntityCacheInStateDb(stateDb, tempVault, {
         people: ['Jordan Smith'],
         projects: ['MCP Server'],
         technologies: ['TypeScript'],
@@ -111,7 +122,7 @@ Morning entry.
 
   describe('entity cache structure', () => {
     it('should handle different entity categories', async () => {
-      await createEntityCache(tempVault, {
+      createEntityCacheInStateDb(stateDb, tempVault, {
         people: ['Alice', 'Bob'],
         projects: ['Project A', 'Project B'],
         technologies: ['TypeScript', 'Node.js'],
@@ -138,7 +149,7 @@ Morning entry.
     });
 
     it('should handle empty categories gracefully', async () => {
-      await createEntityCache(tempVault, {
+      createEntityCacheInStateDb(stateDb, tempVault, {
         people: ['Alice'],
         // All other categories empty
       });
@@ -178,7 +189,7 @@ Content here.
 
   describe('suggestions after index changes', () => {
     it('should provide suggestions based on current index', async () => {
-      await createEntityCache(tempVault, {
+      createEntityCacheInStateDb(stateDb, tempVault, {
         people: ['Alice', 'Bob', 'Charlie'],
         projects: ['Project X', 'Project Y'],
       });
@@ -194,7 +205,7 @@ Content here.
     });
 
     it('should exclude linked entities from suggestions', async () => {
-      await createEntityCache(tempVault, {
+      createEntityCacheInStateDb(stateDb, tempVault, {
         people: ['Alice', 'Bob'],
         projects: ['Project X'],
       });
@@ -217,7 +228,7 @@ Content here.
 
   describe('wikilink processing with different note contexts', () => {
     it('should process wikilinks with note path context', async () => {
-      await createEntityCache(tempVault, {
+      createEntityCacheInStateDb(stateDb, tempVault, {
         people: ['Alice'],
         projects: ['Project X'],
       });
@@ -248,7 +259,7 @@ Working with Alice on Project X.
     });
 
     it('should process wikilinks without note path', async () => {
-      await createEntityCache(tempVault, {
+      createEntityCacheInStateDb(stateDb, tempVault, {
         people: ['Alice'],
       });
 
@@ -263,7 +274,7 @@ Working with Alice on Project X.
 
   describe('edge cases in entity matching', () => {
     it('should handle very short entity names', async () => {
-      await createEntityCache(tempVault, {
+      createEntityCacheInStateDb(stateDb, tempVault, {
         acronyms: ['AI', 'ML', 'API'],
       });
 
@@ -277,7 +288,7 @@ Working with Alice on Project X.
     });
 
     it('should handle entity names with numbers', async () => {
-      await createEntityCache(tempVault, {
+      createEntityCacheInStateDb(stateDb, tempVault, {
         projects: ['Project 2026', 'Phase 2'],
         technologies: ['ES2024', 'Node20'],
       });
@@ -291,7 +302,7 @@ Working with Alice on Project X.
     });
 
     it('should handle entity names that are substrings of words', async () => {
-      await createEntityCache(tempVault, {
+      createEntityCacheInStateDb(stateDb, tempVault, {
         technologies: ['React'],
         concepts: ['Act'],
       });

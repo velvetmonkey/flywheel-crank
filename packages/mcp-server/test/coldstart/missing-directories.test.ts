@@ -14,12 +14,17 @@ import {
   cleanupTempVault,
   createTestNote,
   createEntityCache,
+  createEntityCacheInStateDb,
+  openStateDb,
+  deleteStateDb,
+  type StateDb,
 } from '../helpers/testUtils.js';
 import {
   readVaultFile,
   writeVaultFile,
   validatePath,
 } from '../../src/core/writer.js';
+import { setCrankStateDb } from '../../src/core/wikilinks.js';
 
 let tempVault: string;
 
@@ -39,11 +44,20 @@ describe('Missing .claude Directory', () => {
     const beforeExists = await fs.access(claudeDir).then(() => true).catch(() => false);
     expect(beforeExists).toBe(false);
 
-    // Create entity cache (should auto-create .claude)
-    await createEntityCache(tempVault, { people: ['Test Person'] });
+    // Open StateDb (should auto-create .claude)
+    const stateDb = openStateDb(tempVault);
+    setCrankStateDb(stateDb);
+
+    // Create entity cache in StateDb
+    createEntityCacheInStateDb(stateDb, tempVault, { people: ['Test Person'] });
 
     const afterExists = await fs.access(claudeDir).then(() => true).catch(() => false);
     expect(afterExists).toBe(true);
+
+    // Cleanup
+    setCrankStateDb(null);
+    stateDb.db.close();
+    deleteStateDb(tempVault);
   });
 
   it('should auto-create .claude/policies when needed', async () => {

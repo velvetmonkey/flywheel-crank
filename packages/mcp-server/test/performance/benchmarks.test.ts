@@ -20,22 +20,33 @@ import {
   initializeEntityIndex,
   suggestRelatedLinks,
   getEntityIndexStats,
+  setCrankStateDb,
 } from '../../src/core/wikilinks.js';
 import {
   createTempVault,
   cleanupTempVault,
   createTestNote,
   createEntityCache,
+  createEntityCacheInStateDb,
+  openStateDb,
+  deleteStateDb,
+  type StateDb,
 } from '../helpers/testUtils.js';
 
 describe('performance benchmarks', () => {
   let tempVault: string;
+  let stateDb: StateDb;
 
   beforeEach(async () => {
     tempVault = await createTempVault();
+    stateDb = openStateDb(tempVault);
+    setCrankStateDb(stateDb);
   });
 
   afterEach(async () => {
+    setCrankStateDb(null);
+    stateDb.db.close();
+    deleteStateDb(tempVault);
     await cleanupTempVault(tempVault);
   });
 
@@ -208,7 +219,7 @@ type: test
         entities.push(`Entity ${i + 1}`);
       }
 
-      await createEntityCache(tempVault, {
+      createEntityCacheInStateDb(stateDb, tempVault, {
         technologies: entities.slice(0, 50),
         projects: entities.slice(50, 100),
         people: entities.slice(100, 150),
@@ -241,7 +252,7 @@ type: test
         entities.push(`Entity Number ${i + 1}`);
       }
 
-      await createEntityCache(tempVault, {
+      createEntityCacheInStateDb(stateDb, tempVault, {
         technologies: entities.slice(0, 250),
         projects: entities.slice(250, 500),
         people: entities.slice(500, 750),
@@ -271,7 +282,7 @@ type: test
   describe('wikilink processing performance', () => {
     it('should suggest related links in 1000-char content in <10ms', async () => {
       // Create entity cache
-      await createEntityCache(tempVault, {
+      createEntityCacheInStateDb(stateDb, tempVault, {
         technologies: ['TypeScript', 'JavaScript', 'Python', 'Rust', 'Go'],
         projects: ['Project Alpha', 'Project Beta', 'Project Gamma'],
         people: ['Alice Smith', 'Bob Jones', 'Charlie Brown'],
@@ -310,7 +321,7 @@ Python scripting helps with Go deployment automation.
         entities.push(`Entity With Longer Name ${i + 1}`);
       }
 
-      await createEntityCache(tempVault, {
+      createEntityCacheInStateDb(stateDb, tempVault, {
         technologies: entities.slice(0, 625),
         projects: entities.slice(625, 1250),
         people: entities.slice(1250, 1875),

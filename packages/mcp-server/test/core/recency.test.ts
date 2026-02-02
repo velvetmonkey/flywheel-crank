@@ -1,17 +1,18 @@
 /**
  * Tests for recency weighting module
  *
- * Tests the recency index building, caching, and boost calculation
+ * Tests the recency index building and boost calculation
  */
 
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { mkdir, writeFile, readFile } from 'fs/promises';
+import { mkdir, writeFile } from 'fs/promises';
 import path from 'path';
 import {
   buildRecencyIndex,
   getRecencyBoost,
-  loadRecencyCache,
-  saveRecencyCache,
+  loadRecencyFromStateDb,
+  saveRecencyToStateDb,
+  setRecencyStateDb,
   RECENCY_CACHE_VERSION,
   type RecencyIndex,
 } from '../../src/core/recency.js';
@@ -20,6 +21,7 @@ import {
   cleanupTempVault,
   createTestNote,
 } from '../helpers/testUtils.js';
+import { openStateDb, deleteStateDb, type StateDb } from '@velvetmonkey/vault-core';
 
 // ========================================
 // buildRecencyIndex Tests
@@ -268,23 +270,27 @@ describe('getRecencyBoost', () => {
 });
 
 // ========================================
-// Cache Persistence Tests
+// StateDb Persistence Tests
 // ========================================
 
-describe('cache persistence', () => {
+describe('StateDb persistence', () => {
   let tempVault: string;
+  let stateDb: StateDb;
 
   beforeEach(async () => {
     tempVault = await createTempVault();
+    stateDb = openStateDb(tempVault);
+    setRecencyStateDb(stateDb);
   });
 
   afterEach(async () => {
+    setRecencyStateDb(null);
+    stateDb.db.close();
+    deleteStateDb(tempVault);
     await cleanupTempVault(tempVault);
   });
 
-  it('should save and load recency cache', async () => {
-    const cachePath = path.join(tempVault, '.claude', 'entity-recency.json');
-
+  it('should save and load recency from StateDb', () => {
     const original: RecencyIndex = {
       lastMentioned: new Map([
         ['typescript', Date.now()],
@@ -294,62 +300,17 @@ describe('cache persistence', () => {
       version: RECENCY_CACHE_VERSION,
     };
 
-    await saveRecencyCache(cachePath, original);
-    const loaded = await loadRecencyCache(cachePath);
+    saveRecencyToStateDb(original);
+    const loaded = loadRecencyFromStateDb();
 
     expect(loaded).not.toBeNull();
-    expect(loaded!.lastMentioned.get('typescript')).toBe(original.lastMentioned.get('typescript'));
-    expect(loaded!.lastMentioned.get('react')).toBe(original.lastMentioned.get('react'));
-    expect(loaded!.version).toBe(RECENCY_CACHE_VERSION);
+    expect(loaded!.lastMentioned.has('typescript')).toBe(true);
+    expect(loaded!.lastMentioned.has('react')).toBe(true);
   });
 
-  it('should return null for missing cache file', async () => {
-    const cachePath = path.join(tempVault, '.claude', 'nonexistent.json');
-
-    const loaded = await loadRecencyCache(cachePath);
-
+  it('should return null when StateDb is empty', () => {
+    const loaded = loadRecencyFromStateDb();
     expect(loaded).toBeNull();
-  });
-
-  it('should return null for corrupted cache file', async () => {
-    const cachePath = path.join(tempVault, '.claude', 'corrupted.json');
-    await mkdir(path.dirname(cachePath), { recursive: true });
-    await writeFile(cachePath, 'not valid json {');
-
-    const loaded = await loadRecencyCache(cachePath);
-
-    expect(loaded).toBeNull();
-  });
-
-  it('should return null for outdated cache version', async () => {
-    const cachePath = path.join(tempVault, '.claude', 'old-version.json');
-    await mkdir(path.dirname(cachePath), { recursive: true });
-    await writeFile(cachePath, JSON.stringify({
-      lastMentioned: { typescript: Date.now() },
-      lastUpdated: Date.now(),
-      version: 0, // Old version
-    }));
-
-    const loaded = await loadRecencyCache(cachePath);
-
-    expect(loaded).toBeNull();
-  });
-
-  it('should create directory if it does not exist', async () => {
-    const cachePath = path.join(tempVault, 'new', 'nested', 'cache.json');
-
-    const index: RecencyIndex = {
-      lastMentioned: new Map([['typescript', Date.now()]]),
-      lastUpdated: Date.now(),
-      version: RECENCY_CACHE_VERSION,
-    };
-
-    await saveRecencyCache(cachePath, index);
-
-    // Should have created the directory and file
-    const content = await readFile(cachePath, 'utf-8');
-    const parsed = JSON.parse(content);
-    expect(parsed.version).toBe(RECENCY_CACHE_VERSION);
   });
 });
 

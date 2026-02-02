@@ -24,7 +24,11 @@ import {
   createTestNote,
   readTestNote,
   createEntityCache,
+  createEntityCacheInStateDb,
   createVaultWithEntities,
+  openStateDb,
+  deleteStateDb,
+  type StateDb,
 } from '../helpers/testUtils.js';
 import {
   initializeEntityIndex,
@@ -33,16 +37,23 @@ import {
   suggestRelatedLinks,
   isEntityIndexReady,
   extractLinkedEntities,
+  setCrankStateDb,
 } from '../../src/core/wikilinks.js';
 
 describe('Wikilink Flywheel Loop', () => {
   let tempVault: string;
+  let stateDb: StateDb;
 
   beforeEach(async () => {
     tempVault = await createTempVault();
+    stateDb = openStateDb(tempVault);
+    setCrankStateDb(stateDb);
   });
 
   afterEach(async () => {
+    setCrankStateDb(null);
+    stateDb.db.close();
+    deleteStateDb(tempVault);
     await cleanupTempVault(tempVault);
   });
 
@@ -52,7 +63,7 @@ describe('Wikilink Flywheel Loop', () => {
       await createVaultWithEntities(tempVault);
 
       // Also create entity cache
-      await createEntityCache(tempVault, {
+      createEntityCacheInStateDb(stateDb, tempVault, {
         people: ['Jordan Smith'],
         projects: ['MCP Server'],
         technologies: ['TypeScript'],
@@ -110,7 +121,7 @@ date: 2026-02-01
     });
 
     it('should not create nested or duplicate wikilinks', async () => {
-      await createEntityCache(tempVault, {
+      createEntityCacheInStateDb(stateDb, tempVault, {
         people: ['Alice', 'Bob'],
         projects: ['Project X'],
       });
@@ -151,7 +162,7 @@ Talked about Project X with the team.
 
   describe('entity edge cases', () => {
     it('should handle special characters in entity names', async () => {
-      await createEntityCache(tempVault, {
+      createEntityCacheInStateDb(stateDb, tempVault, {
         technologies: ['Node.js', 'React.js', 'Vue.js'],
       });
 
@@ -177,7 +188,7 @@ Using React.js and Vue.js with Node.js backend.
 
     it('should handle duplicate entity names across categories', async () => {
       // Entity "React" exists in technologies
-      await createEntityCache(tempVault, {
+      createEntityCacheInStateDb(stateDb, tempVault, {
         technologies: ['React'],
       });
 
@@ -205,7 +216,7 @@ React is great for building UIs. I love working with React daily.
 
   describe('idempotency', () => {
     it('should not duplicate links on re-run', async () => {
-      await createEntityCache(tempVault, {
+      createEntityCacheInStateDb(stateDb, tempVault, {
         people: ['Alice'],
         projects: ['Project X'],
       });
@@ -249,7 +260,7 @@ Working with Alice on Project X.
     });
 
     it('should not corrupt nested wikilinks', async () => {
-      await createEntityCache(tempVault, {
+      createEntityCacheInStateDb(stateDb, tempVault, {
         people: ['Alice'],
         projects: ['Project X'],
       });
@@ -289,7 +300,7 @@ The [[Project X|main project]] is progressing.
 
   describe('excluded entities', () => {
     it('should track already linked entities correctly', async () => {
-      await createEntityCache(tempVault, {
+      createEntityCacheInStateDb(stateDb, tempVault, {
         people: ['Alice', 'Bob', 'Charlie'],
         projects: ['Project X'],
       });
@@ -322,7 +333,7 @@ Charlie will join tomorrow.
 
   describe('suggestion suffix format', () => {
     it('should return suggestions as array with suffix', async () => {
-      await createEntityCache(tempVault, {
+      createEntityCacheInStateDb(stateDb, tempVault, {
         people: ['Alice', 'Bob'],
         projects: ['Project X', 'Project Y'],
       });
@@ -345,7 +356,7 @@ Charlie will join tomorrow.
     });
 
     it('should respect maxSuggestions option', async () => {
-      await createEntityCache(tempVault, {
+      createEntityCacheInStateDb(stateDb, tempVault, {
         people: ['Alice', 'Bob', 'Charlie', 'David', 'Eve'],
         projects: ['Project A', 'Project B', 'Project C'],
       });
@@ -363,7 +374,7 @@ Charlie will join tomorrow.
 
   describe('maybeApplyWikilinks integration', () => {
     it('should apply wikilinks when skipWikilinks is false', async () => {
-      await createEntityCache(tempVault, {
+      createEntityCacheInStateDb(stateDb, tempVault, {
         people: ['Alice'],
         projects: ['Project X'],
       });
@@ -378,7 +389,7 @@ Charlie will join tomorrow.
     });
 
     it('should skip wikilinks when skipWikilinks is true', async () => {
-      await createEntityCache(tempVault, {
+      createEntityCacheInStateDb(stateDb, tempVault, {
         people: ['Alice'],
         projects: ['Project X'],
       });
