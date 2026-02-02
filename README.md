@@ -34,72 +34,82 @@
 
 ### Carter Consultancy: Onboard a Project in One Prompt
 
-Carter just finished a call with Acme Corp. They want a website redesign—$45K budget, Q2 delivery, Stacy Thompson as lead. Time to onboard.
+---
 
-**The Prompt:**
-```
-You: Onboard new project: Acme Corp website redesign,
-     Q2 delivery, $45K budget, Stacy as lead
-```
+#### The Policy (authored once, reused forever)
 
-**Claude Crafts the Policy:**
 ```yaml
+# .crank/policies/onboard-project.yaml
 name: onboard-project
+description: Standard workflow for new client projects
 actions:
   - tool: vault_create_note
-    target: projects/Acme Website Redesign.md
+    target: projects/{project_name}.md
     frontmatter:
       type: project
-      client: "[[Acme Corp]]"
-      budget: 45000
-      timeline: Q2 2026
-      lead: "[[Stacy Thompson]]"
+      client: "[[{client}]]"
+      budget: {budget}
+      timeline: {timeline}
+      lead: "[[{lead}]]"
       status: active
 
   - tool: vault_add_to_section
-    target: clients/Acme Corp.md
+    target: clients/{client}.md
     section: "## Active Engagement"
-    content: "- [[Acme Website Redesign]] - $45K, Q2 2026"
+    content: "- [[{project_name}]] - ${budget}, {timeline}"
 
   - tool: vault_add_to_section
-    target: daily-notes/2026-02-02.md
+    target: daily-notes/{today}.md
     section: "## Log"
-    content: "Onboarded [[Acme Website Redesign]] project"
+    content: "Onboarded [[{project_name}]] project"
     format: timestamp-bullet
-    wikilinks: auto
 
   - tool: vault_update_frontmatter
-    target: team/Stacy Thompson.md
+    target: team/{lead}.md
     fields:
-      current_project: "[[Acme Website Redesign]]"
+      current_project: "[[{project_name}]]"
       utilization: 80
 ```
 
-**Before → After:**
+> **Authored once.** Reviewed. Committed to git. This is how Carter onboards every project.
+
+---
+
+#### The Prompt (runtime)
+
+```
+You: Onboard new project: Acme Corp website redesign,
+     Q2 delivery, $45K budget, Stacy Thompson as lead
+```
+
+---
+
+#### The Execution (deterministic)
+
+Claude matches intent to `onboard-project`, fills parameters, executes:
+
+```
+Claude: Running onboard-project...
+  ✓ vault_create_note → projects/Acme Website Redesign.md
+  ✓ vault_add_to_section → clients/Acme Corp.md
+  ✓ vault_add_to_section → daily-notes/2026-02-02.md
+  ✓ vault_update_frontmatter → team/Stacy Thompson.md
+```
+
+---
+
+#### Results
 
 | File | Before | After |
 |------|--------|-------|
-| `projects/Acme Website Redesign.md` | *(new)* | Project with frontmatter, linked to client |
-| `clients/Acme Corp.md` | `## Active Engagement` | + `[[Acme Website Redesign]]` entry |
-| `daily-notes/2026-02-02.md` | `## Log` | + `14:32 Onboarded [[Acme Website...]]` |
-| `team/Stacy Thompson.md` | `current_project: null` | `current_project: [[Acme Website...]]` |
+| `projects/Acme Website Redesign.md` | *(new)* | Project with frontmatter |
+| `clients/Acme Corp.md` | `## Active Engagement` | + project entry |
+| `daily-notes/2026-02-02.md` | `## Log` | + timestamped entry |
+| `team/Stacy Thompson.md` | `utilization: 50` | `utilization: 80` |
 
-**The Output (Auto-Wikilinks + Context Cloud):**
-
-`daily-notes/2026-02-02.md`:
-```markdown
-## Log
-- 14:32 Onboarded [[Acme Website Redesign]] - $45K, [[Stacy Thompson]] leading
-  → [[TechStart Inc]] [[Q2 Delivery]] [[Website Projects]]
+**Git Commit:**
 ```
-
-**The Git Commit:**
-```
-[Crank:onboard-project] Acme Website Redesign
-  + projects/Acme Website Redesign.md (created)
-  ~ clients/Acme Corp.md (updated)
-  ~ daily-notes/2026-02-02.md (updated)
-  ~ team/Stacy Thompson.md (updated)
+[Crank:onboard-project] Acme Website Redesign (4 files)
 ```
 
 ### Key Concepts
