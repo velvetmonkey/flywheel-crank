@@ -29,12 +29,17 @@ import {
   loadEntityCache,
   saveEntityCache,
   ENTITY_CACHE_VERSION,
+  getEntityIndexFromDb,
   type EntityIndex,
   type EntityCategory,
   type EntityWithType,
   type WikilinkResult,
   type Entity,
+  type StateDb,
 } from '@velvetmonkey/vault-core';
+import { setGitStateDb } from './git.js';
+import { setHintsStateDb } from './hints.js';
+import { setRecencyStateDb } from './recency.js';
 import path from 'path';
 import type { SuggestOptions, SuggestResult, SuggestionConfig, StrictnessMode, NoteContext } from './types.js';
 import { stem, tokenize } from './stemmer.js';
@@ -53,6 +58,23 @@ import {
   RECENCY_CACHE_VERSION,
   type RecencyIndex,
 } from './recency.js';
+
+/**
+ * Module-level StateDb reference
+ */
+let moduleStateDb: StateDb | null = null;
+
+/**
+ * Set the StateDb instance for all Crank core modules
+ * Called during MCP server initialization
+ */
+export function setCrankStateDb(stateDb: StateDb | null): void {
+  moduleStateDb = stateDb;
+  // Propagate to other modules
+  setGitStateDb(stateDb);
+  setHintsStateDb(stateDb);
+  setRecencyStateDb(stateDb);
+}
 
 /**
  * Global entity index state
@@ -104,12 +126,29 @@ const DEFAULT_EXCLUDE_FOLDERS = [
 /**
  * Initialize entity index in background
  * Called at MCP server startup - returns immediately, builds in background
+ *
+ * Tries loading from StateDb first, then JSON cache, then full rebuild.
  */
 export async function initializeEntityIndex(vaultPath: string): Promise<void> {
   const cacheFile = path.join(vaultPath, '.claude', 'wikilink-entities.json');
 
   try {
-    // Try loading from cache first (fast path)
+    // Try loading from StateDb first (fastest path)
+    if (moduleStateDb) {
+      try {
+        const dbIndex = getEntityIndexFromDb(moduleStateDb);
+        if (dbIndex._metadata.total_entities > 0) {
+          entityIndex = dbIndex;
+          indexReady = true;
+          console.error(`[Crank] Loaded ${dbIndex._metadata.total_entities} entities from StateDb`);
+          return;
+        }
+      } catch (e) {
+        console.error('[Crank] Failed to load from StateDb, trying cache:', e);
+      }
+    }
+
+    // Try loading from JSON cache (fast path)
     const cached = await loadEntityCache(cacheFile);
     if (cached) {
       // Check cache version - rebuild if outdated (e.g., no alias support)

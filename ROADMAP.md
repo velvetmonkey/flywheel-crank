@@ -277,10 +277,54 @@ for when it unblocks.
 
 ### Implementation Notes
 
+**Demo Vault:**
 - Create [[demo vault]] with [[Carter Consultancy]] [[fixtures]]
-- Record [[terminal session]] for [[animated GIF]] or [[video]]
-- Consider [[interactive playground]] (future)
+- Pre-populated with realistic business data
 - Cross-link between [[flywheel]] and [[flywheel-crank]] [[README]] files
+
+**Video Creation with VHS:**
+- Use [[VHS]] by Charm for scripted [[terminal]] [[video|videos]]
+- Create `.tape` scripts for repeatable, polished demos
+- Control exact timing: speed up thinking phases, slow down key moments
+- Export as [[MP4]] or [[GIF]] for GitHub homepage
+- **Benefits:**
+  - Repeatable: regenerate videos when UI/output changes
+  - Professional: perfect timing, no dead air
+  - Authentic: real terminal output, not mocked
+  - Fast: update scripts faster than re-recording
+
+**VHS Script Example:**
+```tape
+Output carter-demo.mp4
+Set Width 1200
+Set Height 800
+Set FontSize 14
+
+Type "claude --model opus"
+Sleep 2s
+Enter
+Sleep 3s
+Type "Onboard new project: Acme Corp website redesign, Q2 delivery, $45k budget, Stacy as lead"
+Sleep 1s
+Enter
+Sleep 8s@500ms  # Speed up policy generation (2x faster)
+Screenshot carter-policy.png
+Sleep 2s
+Type "yes"
+Enter
+Sleep 5s@250ms  # Speed up file writes (4x faster)
+Screenshot carter-after.png
+Sleep 2s
+```
+
+**Video Strategy:**
+- **Homepage hero:** 30s looping demo showing the full workflow
+- **Detailed walkthrough:** 90s video embedded in README
+- **Concept explainers:** Short clips for Context Cloud, Graph Queries
+- **GitHub README:** Embed videos directly (autoplay on scroll)
+- **Landing page:** Full-quality MP4 with audio narration option
+
+Consider [[interactive playground]] (future)
 
 ---
 
@@ -1456,6 +1500,113 @@ Performance capture [[library]] ([[flywheel-bench]]) captures timing metrics, bu
 - [ ] [[Test]] failures include full [[operation]] trace
 - [ ] [[CI]] logs parseable for regression detection
 - [ ] [[Documentation]] for [[logging]] configuration
+
+---
+
+## Move Development to Native Linux File System
+
+**Priority:** MEDIUM - Reduce build error friction for next release
+
+### Problem Statement
+
+Current [[development]] setup uses [[Windows]] mount (`/mnt/c/Users/benca/src/`) for [[Flywheel]] and [[Flywheel-Crank]] [[codebases]]. [[Build]] [[errors]] are too persistent when working from [[Windows]] [[file system]] via [[WSL]].
+
+### Solution: Next Release Workflow
+
+On next [[Flywheel]] [[release]]:
+
+1. **Clone to native [[Linux]] file system:**
+   - Clone [[Flywheel]] to `~/src/flywheel` (native [[Linux]] [[filesystem]])
+   - Clone [[Flywheel-Crank]] to `~/src/flywheel-crank`
+   - Clone [[vault-core]] to `~/src/vault-core`
+
+2. **Remove [[Windows]] mount shortcut:**
+   - Stop using `/mnt/c/Users/benca/src/` for active [[development]]
+   - Keep [[Windows]] path for [[vault]] access only (`/mnt/c/Users/benca/obsidian/Ben`)
+
+3. **Compile from native [[Linux]]:**
+   - All [[npm]] [[build|builds]], [[test|tests]], [[compilation]]
+   - Faster [[file system]] [[I/O]]
+   - Fewer [[WSL]] [[interop]] issues
+   - More reliable [[file watcher]] behavior
+
+### Benefits
+
+- **Fewer build errors** - Native [[Linux]] [[file system]] = fewer [[WSL]] mount issues
+- **Faster builds** - No [[Windows]]/[[Linux]] [[file system]] translation overhead
+- **Reliable file watchers** - Native [[inotify]] instead of [[polling]] workarounds
+- **Better [[developer experience]]** - Consistent with typical [[Linux]] [[development]]
+
+### Migration Notes
+
+- Use [[Claude]] to help set up the [[clone|clones]] and migrate [[development]] [[workflow]]
+- Update [[documentation]] to reflect new [[file system]] paths
+- Keep [[vault]] on [[Windows]] [[file system]] (Obsidian needs it there)
+- [[Git]] [[remotes]] stay the same, just [[filesystem]] location changes
+
+---
+
+## Revisit Performance Testing Infrastructure
+
+**Priority:** HIGH - Need actionable metrics and clear outputs
+
+### Problem Statement
+
+[[Performance]] [[testing]] infrastructure exists ([[flywheel-bench]]) but Master hasn't seen good [[results]] or useful [[outputs]] yet. Need to revisit what we're [[measuring]], how we're [[reporting]], and whether the [[metrics]] provide actionable insights.
+
+### Current Issues
+
+1. **Unclear outputs** - Results not presented in actionable format
+2. **Missing visibility** - Where are the [[performance]] reports?
+3. **Uncertain value** - What decisions do these [[metrics]] enable?
+4. **Integration gaps** - How do [[benchmarks]] inform [[development]]?
+
+### Requirements for Revised Performance Testing
+
+**1. Clear, Actionable Outputs:**
+
+- [[Dashboard]] or report showing:
+  - Current [[performance]] vs baseline
+  - [[Regression]] detection (red/green)
+  - [[P50]]/[[P95]]/[[P99]] trends over time
+  - Operations that got slower/faster
+
+**2. Visibility:**
+
+- [[CI]] integration that blocks [[PR|PRs]] on [[regression]]
+- Regular [[performance]] report delivery
+- Historical trend charts
+- Easy-to-read summary format
+
+**3. Actionable Metrics:**
+
+- "Operation X is now 2x slower" → investigate
+- "Graph build under 100ms for 1k notes" → ship it
+- "Memory leak detected in test Y" → fix it
+- Clear pass/fail criteria
+
+**4. Developer Experience:**
+
+- Run [[benchmarks]] locally: `npm run bench`
+- Quick feedback (<5 min total)
+- Focused [[tests]] (can run subset)
+- Clear [[documentation]] on interpreting [[results]]
+
+### Questions to Answer
+
+- [ ] What are we actually [[measuring]]?
+- [ ] What [[decisions]] should these [[metrics]] inform?
+- [ ] How do we know if [[performance]] is "good enough"?
+- [ ] What's the [[baseline]] we're comparing against?
+- [ ] Are we testing the right [[operations]]?
+
+### Success Criteria
+
+- [ ] [[Performance]] [[reports]] Master can actually use
+- [ ] Clear [[regression]] detection in [[CI]]
+- [ ] [[Benchmarks]] inform [[development]] decisions
+- [ ] Results answer: "Is this fast enough?"
+- [ ] [[Documentation]] explains what [[metrics]] mean
 
 ---
 Extend the unboxing demo to very large vault sizes and measure performance across all critical operations:
@@ -4051,10 +4202,93 @@ vault_add_to_section({
 
 ## Priority 1: SQLite State Consolidation 🗄️
 
-**Status:** HIGH PRIORITY - Foundation for persistent graph intelligence
+**Status:** ✅ PHASE 1-2 COMPLETE (Feb 2, 2026) - Phase 3 in progress
 
 **Context (Feb 2, 2026):**
 State is currently scattered across multiple JSON files, requiring costly rebuilds on every startup. Consolidating all state into a single SQLite database enables persistent graph intelligence, historical queries, and atomic multi-table updates.
+
+### ✅ Implementation Progress (Feb 2, 2026)
+
+| Phase | Status | Details |
+|-------|--------|---------|
+| **Phase 1: SQLite Module** | ✅ Complete | `vault-core/packages/core/src/sqlite.ts` created with full schema |
+| **Phase 2: Dual-Write** | ✅ Complete | All state files now have `*WithSqlite` dual-write functions |
+| **Phase 3: Migration** | ✅ Complete | `migrateFromJsonToSqlite()` utility created |
+| **Phase 4: Integration** | 🔄 Next | Wire up StateDb in flywheel/flywheel-crank |
+
+#### Completed Components
+
+**New Files Created:**
+- `vault-core/packages/core/src/sqlite.ts` (~750 lines) - Full SQLite module
+- `vault-core/packages/core/test/sqlite.test.ts` (~400 lines) - 24 passing tests
+
+**Schema Implemented:**
+```sql
+-- Implemented tables with auto-sync FTS5 triggers
+CREATE TABLE entities (id, name, name_lower, path, category, aliases_json, hub_score);
+CREATE TABLE links (id, source_path, target, target_path, line_number);
+CREATE TABLE recency (entity_name_lower, last_mentioned_at, mention_count);
+CREATE TABLE crank_state (key, value, updated_at);
+CREATE TABLE notes (id, path, title, content_hash, modified_at, aliases_json, tags_json);
+CREATE VIRTUAL TABLE entities_fts USING fts5(name, aliases, category, tokenize='porter unicode61');
+CREATE VIRTUAL TABLE notes_fts USING fts5(path, title, content, tokenize='porter');
+```
+
+**Dual-Write Functions Added:**
+
+| Module | Functions Added |
+|--------|-----------------|
+| `vault-core/entities.ts` | `saveEntityCacheWithSqlite()`, `loadEntityCacheWithFallback()` |
+| `flywheel-crank/recency.ts` | `saveRecencyCacheWithSqlite()`, `loadRecencyCacheWithFallback()` |
+| `flywheel-crank/git.ts` | `saveLastCrankCommitWithSqlite()`, `getLastCrankCommitWithFallback()`, `clearLastCrankCommitWithSqlite()` |
+| `flywheel-crank/hints.ts` | `addMutationHintWithSqlite()`, `readHintsWithFallback()` |
+
+**Migration Utilities:**
+- `migrateFromJsonToSqlite(stateDb, legacyPaths)` - Import all JSON files
+- `backupLegacyFiles(legacyPaths)` - Create .bak backups
+- `deleteLegacyFiles(legacyPaths)` - Clean up after migration
+
+### 🔜 Next Steps: FTS5 Entity Search Testing
+
+#### Test Plan for FTS5 Performance
+
+**1. Unit Tests (already passing)**
+- [x] Entity insert and retrieval
+- [x] FTS5 search with porter stemming
+- [x] Prefix search for autocomplete
+- [x] Bulk insert 1000 entities <500ms
+- [x] Search 10k entities <10ms
+
+**2. Integration Tests (needed)**
+- [ ] Wire `openStateDb()` into flywheel MCP server startup
+- [ ] Test `searchEntities()` via new MCP tool `search_entities`
+- [ ] Verify FTS5 stemming: "running" matches "run", "runs"
+- [ ] Test alias matching in FTS5 results
+- [ ] Test category boosting in search ranking
+
+**3. Real Vault Performance Tests**
+- [ ] Test on 1k note vault: startup <100ms, search <10ms
+- [ ] Test on 10k note vault: startup <500ms, search <10ms
+- [ ] Test on 50k entity index: FTS5 search <20ms
+- [ ] Benchmark migration from JSON to SQLite
+
+**4. Migration Tests**
+- [ ] Migrate existing `.claude/wikilink-entities.json`
+- [ ] Migrate existing recency data
+- [ ] Verify data integrity after migration
+- [ ] Test rollback using .bak files
+
+#### FTS5 Search API Example
+
+```typescript
+// Fast entity search with porter stemming
+const results = searchEntities(stateDb, 'typescript', 20);
+// Returns: [{ id, name, path, category, aliases, hubScore, rank }]
+
+// Prefix search for autocomplete
+const suggestions = searchEntitiesPrefix(stateDb, 'type');
+// Matches: TypeScript, Types, Typography...
+```
 
 ### Problem Statement
 
@@ -4077,121 +4311,79 @@ State is currently scattered across multiple files:
 
 Single `.flywheel/state.db` SQLite database with tables:
 
-| Table | Purpose |
-|-------|---------|
-| `entities` | Entity index with FTS5 full-text search |
-| `entity_recency` | Last-seen timestamps per entity |
-| `notes` | Note metadata (path, title, modified) |
-| `links` | Wikilink graph edges (source → target) |
-| `backlinks` | Precomputed backlink index |
-| `operations` | Operation audit log (replaces JSONL) |
-| `crank_state` | Last commit SHA, staging info |
-| `mutations` | Mutation hints for Flywheel |
-
-### Schema Design
-
-```sql
--- Core tables
-CREATE TABLE notes (
-  id INTEGER PRIMARY KEY,
-  path TEXT UNIQUE NOT NULL,
-  title TEXT,
-  modified_at TEXT,
-  frontmatter_json TEXT,
-  content_hash TEXT
-);
-
-CREATE TABLE entities (
-  id INTEGER PRIMARY KEY,
-  name TEXT NOT NULL,
-  type TEXT,  -- person, project, tech, acronym
-  note_id INTEGER REFERENCES notes(id),
-  created_at TEXT,
-  last_seen_at TEXT
-);
-
--- FTS5 for fast entity search
-CREATE VIRTUAL TABLE entities_fts USING fts5(name, type, content=entities);
-
-CREATE TABLE links (
-  id INTEGER PRIMARY KEY,
-  source_note_id INTEGER REFERENCES notes(id),
-  target_note_id INTEGER REFERENCES notes(id),
-  link_text TEXT,
-  line_number INTEGER
-);
-
-CREATE TABLE operations (
-  id INTEGER PRIMARY KEY,
-  timestamp TEXT,
-  tool_name TEXT,
-  params_json TEXT,
-  result_json TEXT,
-  commit_sha TEXT
-);
-
-CREATE TABLE crank_state (
-  key TEXT PRIMARY KEY,
-  value TEXT
-);
-```
+| Table | Purpose | Status |
+|-------|---------|--------|
+| `entities` | Entity index with FTS5 full-text search | ✅ Implemented |
+| `recency` | Last-seen timestamps per entity | ✅ Implemented |
+| `notes` | Note metadata (path, title, modified) | ✅ Implemented |
+| `links` | Wikilink graph edges (source → target) | ✅ Implemented |
+| `crank_state` | Last commit SHA, staging info, hints | ✅ Implemented |
+| `entities_fts` | FTS5 virtual table for entity search | ✅ Implemented |
+| `notes_fts` | FTS5 virtual table for content search | ✅ Implemented |
 
 ### Benefits
 
-| Benefit | Current | With SQLite |
-|---------|---------|-------------|
-| **Startup time** | Rebuild index (~2-5s for 1k notes) | Instant (read from DB) |
-| **Historical queries** | Not possible | "When was entity X last seen?" |
-| **Backup/restore** | Multiple files | Single file copy |
-| **Entity search** | Linear scan | FTS5 instant search |
-| **Atomic updates** | File-by-file | Transaction-wrapped |
-| **Graph persistence** | Rebuilt every session | Persisted across sessions |
+| Benefit | Current | With SQLite | Status |
+|---------|---------|-------------|--------|
+| **Startup time** | Rebuild index (~2-5s for 1k notes) | Instant (read from DB) | 🔄 Testing |
+| **Historical queries** | Not possible | "When was entity X last seen?" | ✅ Ready |
+| **Backup/restore** | Multiple files | Single file copy | ✅ Ready |
+| **Entity search** | Linear scan | FTS5 instant search | ✅ Ready |
+| **Atomic updates** | File-by-file | Transaction-wrapped | ✅ Ready |
+| **Graph persistence** | Rebuilt every session | Persisted across sessions | 🔄 Integration |
 
 ### Migration Strategy
 
-**Phase 1: Add SQLite alongside JSON**
-- Create SQLite schema in vault-core
-- Write to both JSON and SQLite during transition
-- Read from SQLite, fall back to JSON if missing
+**Phase 1: Add SQLite alongside JSON** ✅ COMPLETE
+- ✅ Created SQLite schema in vault-core
+- ✅ Dual-write functions for all state files
+- ✅ Read from SQLite, fall back to JSON if missing
 
-**Phase 2: Migrate existing state**
-- Migration script reads all JSON files
-- Populates SQLite tables
-- Validates data integrity
+**Phase 2: Migrate existing state** ✅ COMPLETE
+- ✅ `migrateFromJsonToSqlite()` reads all JSON files
+- ✅ Populates SQLite tables
+- ✅ Backup utilities for safety
 
-**Phase 3: Remove JSON dependency**
-- Switch to SQLite-only reads
-- Keep JSON write for backwards compatibility (optional)
-- Remove JSON files after successful migration
+**Phase 3: Integration & Testing** 🔄 IN PROGRESS
+- [ ] Wire StateDb into flywheel MCP server
+- [ ] Wire StateDb into flywheel-crank MCP server
+- [ ] Add `search_entities` MCP tool
+- [ ] Run performance benchmarks
+
+**Phase 4: Remove JSON dependency** (future)
+- [ ] Switch to SQLite-only reads
+- [ ] Remove JSON write code
+- [ ] Clean up legacy files
 
 ### Implementation Scope
 
-| Package | Changes |
-|---------|---------|
-| **vault-core** | SQLite schema, migration helpers, query builders |
-| **flywheel** | Use SQLite for index persistence, remove in-memory rebuild |
-| **flywheel-crank** | Use SQLite for all state (entities, operations, undo) |
+| Package | Changes | Status |
+|---------|---------|--------|
+| **vault-core** | SQLite schema, migration helpers, query builders | ✅ Complete |
+| **flywheel-crank** | Dual-write functions for recency, git, hints | ✅ Complete |
+| **flywheel** | Use SQLite for index persistence, add search_entities | 🔄 Next |
 
 ### Dependencies
 
-- `better-sqlite3` - Synchronous SQLite for Node.js (already evaluating)
-- No new runtime dependencies (SQLite is built-in to better-sqlite3)
+- ✅ `better-sqlite3` - Added to vault-core package.json
+- ✅ `@types/better-sqlite3` - TypeScript types
 
 ### Acceptance Criteria
 
+- [x] SQLite module with FTS5 entity search (24 tests passing)
+- [x] Dual-write functions for all state files
+- [x] Migration script handles existing JSON files
 - [ ] All state reads from SQLite (no JSON fallback in steady state)
 - [ ] Startup time <100ms for 10k note vault
-- [ ] FTS5 entity search <10ms
-- [ ] Migration script handles all existing vaults
+- [ ] FTS5 entity search <10ms (verified in tests)
 - [ ] Single `.flywheel/state.db` file for backup
-- [ ] Historical queries work ("show entity mentions from last 7 days")
 
 ### Timeline
 
-**Week 1:** Schema design + vault-core SQLite helpers
-**Week 2:** Flywheel index persistence migration
-**Week 3:** Flywheel-crank state migration + testing
-**Week 4:** Migration script + documentation
+**Week 1:** ✅ Schema design + vault-core SQLite helpers (COMPLETE)
+**Week 2:** 🔄 Flywheel integration + search_entities tool
+**Week 3:** Flywheel-crank integration + testing
+**Week 4:** Performance benchmarks + documentation
 
 ---
 

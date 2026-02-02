@@ -9,8 +9,15 @@ import { registerMoveNoteTools } from './tools/move-notes.js';
 import { registerSystemTools } from './tools/system.js';
 import { registerPolicyTools } from './tools/policy.js';
 import { findVaultRoot } from './core/vaultRoot.js';
-import { initializeEntityIndex } from './core/wikilinks.js';
+import { initializeEntityIndex, setCrankStateDb } from './core/wikilinks.js';
 import { initializeLogger, flushLogs } from './core/logging.js';
+import {
+  openStateDb,
+  type StateDb,
+  migrateFromJsonToSqlite,
+  getLegacyPaths,
+} from '@velvetmonkey/vault-core';
+import { registerEntitySearchTools } from './tools/entity-search.js';
 
 const server = new McpServer({
   name: 'flywheel-crank',
@@ -18,6 +25,9 @@ const server = new McpServer({
 });
 
 const vaultPath = process.env.PROJECT_PATH || findVaultRoot();
+
+// State database (SQLite with FTS5)
+let stateDb: StateDb | null = null;
 
 console.error(`[Crank] Starting Flywheel Crank MCP server`);
 console.error(`[Crank] Vault path: ${vaultPath}`);
@@ -27,6 +37,34 @@ console.error(`[Crank] Vault path: ${vaultPath}`);
 initializeEntityIndex(vaultPath).catch(err => {
   console.error(`[Crank] Entity index initialization failed: ${err}`);
 });
+
+// Initialize StateDb (auto-creates if missing)
+try {
+  stateDb = openStateDb(vaultPath);
+  console.error('[Crank] StateDb initialized');
+
+  // Set StateDb for all core modules (git, hints, recency, wikilinks)
+  setCrankStateDb(stateDb);
+
+  // Auto-migrate from JSON on first run
+  const legacyPaths = getLegacyPaths(vaultPath);
+  migrateFromJsonToSqlite(stateDb, legacyPaths).then(migration => {
+    if (migration.entitiesMigrated > 0) {
+      console.error(`[Crank] Migrated ${migration.entitiesMigrated} entities from JSON`);
+    }
+    if (migration.recencyMigrated > 0) {
+      console.error(`[Crank] Migrated ${migration.recencyMigrated} recency records`);
+    }
+    if (migration.crankStateMigrated > 0) {
+      console.error(`[Crank] Migrated ${migration.crankStateMigrated} crank state entries`);
+    }
+  }).catch(err => {
+    console.error('[Crank] Migration failed:', err);
+  });
+} catch (err) {
+  console.error('[Crank] StateDb init failed:', err);
+  // Non-fatal - entity search will return error but other tools work
+}
 
 // Initialize logging (for operation metrics)
 initializeLogger(vaultPath).catch(err => {
@@ -41,6 +79,7 @@ registerNoteTools(server, vaultPath);
 registerMoveNoteTools(server, vaultPath);
 registerSystemTools(server, vaultPath);
 registerPolicyTools(server, vaultPath);
+registerEntitySearchTools(server, vaultPath, () => stateDb);
 
 // Start server
 const transport = new StdioServerTransport();

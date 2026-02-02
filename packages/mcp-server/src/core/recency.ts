@@ -7,11 +7,35 @@
  * Recency detection uses file modification time as a proxy for
  * "when entity was mentioned" - this is a lightweight approach
  * that doesn't require parsing every file on every update.
+ *
+ * When StateDb is available, recency data is also stored in SQLite
+ * for persistence across sessions.
  */
 
 import { readdir, readFile, stat, mkdir, writeFile } from 'fs/promises';
 import path from 'path';
-import { getEntityName, type Entity } from '@velvetmonkey/vault-core';
+import {
+  getEntityName,
+  type Entity,
+  recordEntityMention,
+  getAllRecency as getAllRecencyFromDb,
+  type StateDb,
+  type RecencyRow,
+} from '@velvetmonkey/vault-core';
+
+/**
+ * Module-level StateDb reference for recency storage
+ * Set via setRecencyStateDb() during initialization
+ */
+let moduleStateDb: StateDb | null = null;
+
+/**
+ * Set the StateDb instance for this module
+ * Called during MCP server initialization
+ */
+export function setRecencyStateDb(stateDb: StateDb | null): void {
+  moduleStateDb = stateDb;
+}
 
 /**
  * Recency index tracking last mention times for entities
@@ -178,12 +202,53 @@ export function getRecencyBoost(entityName: string, index: RecencyIndex): number
 }
 
 /**
+ * Load recency index from StateDb
+ *
+ * @returns RecencyIndex or null if StateDb unavailable or empty
+ */
+export function loadRecencyFromDb(): RecencyIndex | null {
+  if (!moduleStateDb) return null;
+
+  try {
+    const rows = getAllRecencyFromDb(moduleStateDb);
+    if (rows.length === 0) return null;
+
+    const lastMentioned = new Map<string, number>();
+    let maxTime = 0;
+
+    for (const row of rows) {
+      lastMentioned.set(row.entityNameLower, row.lastMentionedAt);
+      if (row.lastMentionedAt > maxTime) {
+        maxTime = row.lastMentionedAt;
+      }
+    }
+
+    return {
+      lastMentioned,
+      lastUpdated: maxTime,
+      version: RECENCY_CACHE_VERSION,
+    };
+  } catch {
+    return null;
+  }
+}
+
+/**
  * Load recency index from cache file
+ *
+ * Tries StateDb first, falls back to JSON file.
  *
  * @param cachePath - Path to cache file
  * @returns RecencyIndex or null if not found/invalid
  */
 export async function loadRecencyCache(cachePath: string): Promise<RecencyIndex | null> {
+  // Try StateDb first
+  const dbRecency = loadRecencyFromDb();
+  if (dbRecency) {
+    return dbRecency;
+  }
+
+  // Fallback to JSON file
   try {
     const content = await readFile(cachePath, 'utf-8');
     const json = JSON.parse(content) as RecencyIndexJSON;
@@ -207,7 +272,26 @@ export async function loadRecencyCache(cachePath: string): Promise<RecencyIndex 
 }
 
 /**
+ * Save recency index to StateDb
+ *
+ * @param index - RecencyIndex to save
+ */
+function saveRecencyToDb(index: RecencyIndex): void {
+  if (!moduleStateDb) return;
+
+  try {
+    for (const [entityNameLower, timestamp] of index.lastMentioned) {
+      recordEntityMention(moduleStateDb, entityNameLower, new Date(timestamp));
+    }
+  } catch (e) {
+    console.error('[Crank] Failed to save recency to StateDb:', e);
+  }
+}
+
+/**
  * Save recency index to cache file
+ *
+ * Also writes to StateDb if available.
  *
  * @param cachePath - Path to cache file
  * @param index - RecencyIndex to save
@@ -216,7 +300,10 @@ export async function saveRecencyCache(
   cachePath: string,
   index: RecencyIndex
 ): Promise<void> {
-  // Convert Map to object for JSON
+  // Save to StateDb if available
+  saveRecencyToDb(index);
+
+  // Also write to JSON file for backward compatibility
   const json: RecencyIndexJSON = {
     lastMentioned: Object.fromEntries(index.lastMentioned),
     lastUpdated: index.lastUpdated,

@@ -3,11 +3,33 @@
  *
  * Writes hints to .claude/crank-mutation-hints.json so Flywheel
  * can prioritize reindexing of recently mutated files.
+ *
+ * When StateDb is available, hints are also stored in SQLite
+ * for faster access and cross-server coordination.
  */
 
 import fs from 'fs/promises';
 import path from 'path';
 import crypto from 'crypto';
+import {
+  setCrankState,
+  getCrankState,
+  type StateDb,
+} from '@velvetmonkey/vault-core';
+
+/**
+ * Module-level StateDb reference for hints storage
+ * Set via setHintsStateDb() during initialization
+ */
+let moduleStateDb: StateDb | null = null;
+
+/**
+ * Set the StateDb instance for this module
+ * Called during MCP server initialization
+ */
+export function setHintsStateDb(stateDb: StateDb | null): void {
+  moduleStateDb = stateDb;
+}
 
 /** Maximum number of hints to keep in the file */
 const MAX_HINTS = 100;
@@ -55,8 +77,23 @@ export function getHintsPath(vaultPath: string): string {
 
 /**
  * Read the current hints file
+ *
+ * Uses StateDb if available, falls back to JSON file.
  */
 export async function readHints(vaultPath: string): Promise<HintsFile> {
+  // Try StateDb first
+  if (moduleStateDb) {
+    try {
+      const data = getCrankState<HintsFile>(moduleStateDb, 'mutation_hints');
+      if (data && data.version === HINT_VERSION) {
+        return data;
+      }
+    } catch {
+      // Fallback to JSON
+    }
+  }
+
+  // Fallback to JSON file
   const hintsPath = getHintsPath(vaultPath);
 
   try {
@@ -78,8 +115,20 @@ export async function readHints(vaultPath: string): Promise<HintsFile> {
 
 /**
  * Write hints file
+ *
+ * Uses StateDb if available, also writes JSON for backward compatibility.
  */
 export async function writeHints(vaultPath: string, hints: HintsFile): Promise<void> {
+  // Write to StateDb if available
+  if (moduleStateDb) {
+    try {
+      setCrankState(moduleStateDb, 'mutation_hints', hints);
+    } catch (e) {
+      console.error('[Crank] Failed to write hints to StateDb:', e);
+    }
+  }
+
+  // Also write to JSON file for backward compatibility
   const hintsPath = getHintsPath(vaultPath);
   const hintsDir = path.dirname(hintsPath);
 

@@ -5,8 +5,28 @@
 import { simpleGit, SimpleGit, CheckRepoActions } from 'simple-git';
 import path from 'path';
 import fs from 'fs/promises';
+import {
+  setCrankState,
+  getCrankState,
+  deleteCrankState,
+  type StateDb,
+} from '@velvetmonkey/vault-core';
 
 const LAST_COMMIT_FILE = '.claude/last-crank-commit.json';
+
+/**
+ * Module-level StateDb reference for crank state storage
+ * Set via setStateDb() during initialization
+ */
+let moduleStateDb: StateDb | null = null;
+
+/**
+ * Set the StateDb instance for this module
+ * Called during MCP server initialization
+ */
+export function setGitStateDb(stateDb: StateDb | null): void {
+  moduleStateDb = stateDb;
+}
 
 /**
  * Configuration for retry logic on lock contention
@@ -41,32 +61,58 @@ export interface LastCrankCommit {
 /**
  * Save tracking info for the last successful Crank commit.
  * This enables safe undo verification.
+ *
+ * Uses StateDb if available, falls back to JSON file.
  */
 export async function saveLastCrankCommit(
   vaultPath: string,
   hash: string,
   message: string
 ): Promise<void> {
-  const filePath = path.join(vaultPath, LAST_COMMIT_FILE);
-  const dirPath = path.dirname(filePath);
-
-  // Ensure .claude directory exists
-  await fs.mkdir(dirPath, { recursive: true });
-
   const data: LastCrankCommit = {
     hash,
     message,
     timestamp: new Date().toISOString(),
   };
+
+  // Try StateDb first
+  if (moduleStateDb) {
+    try {
+      setCrankState(moduleStateDb, 'last_commit', data);
+      return;
+    } catch (e) {
+      console.error('[Crank] StateDb save failed, falling back to JSON:', e);
+    }
+  }
+
+  // Fallback to JSON file
+  const filePath = path.join(vaultPath, LAST_COMMIT_FILE);
+  const dirPath = path.dirname(filePath);
+
+  // Ensure .claude directory exists
+  await fs.mkdir(dirPath, { recursive: true });
   await fs.writeFile(filePath, JSON.stringify(data, null, 2));
 }
 
 /**
  * Get the last tracked Crank commit, if any.
+ *
+ * Uses StateDb if available, falls back to JSON file.
  */
 export async function getLastCrankCommit(
   vaultPath: string
 ): Promise<LastCrankCommit | null> {
+  // Try StateDb first
+  if (moduleStateDb) {
+    try {
+      const data = getCrankState<LastCrankCommit>(moduleStateDb, 'last_commit');
+      if (data) return data;
+    } catch (e) {
+      console.error('[Crank] StateDb read failed, falling back to JSON:', e);
+    }
+  }
+
+  // Fallback to JSON file
   try {
     const filePath = path.join(vaultPath, LAST_COMMIT_FILE);
     const content = await fs.readFile(filePath, 'utf-8');
@@ -78,8 +124,20 @@ export async function getLastCrankCommit(
 
 /**
  * Clear the last Crank commit tracking (after successful undo).
+ *
+ * Uses StateDb if available, also clears JSON file for compatibility.
  */
 export async function clearLastCrankCommit(vaultPath: string): Promise<void> {
+  // Clear from StateDb if available
+  if (moduleStateDb) {
+    try {
+      deleteCrankState(moduleStateDb, 'last_commit');
+    } catch {
+      // Ignore errors
+    }
+  }
+
+  // Also clear JSON file for backward compatibility
   try {
     const filePath = path.join(vaultPath, LAST_COMMIT_FILE);
     await fs.unlink(filePath);
