@@ -101,7 +101,7 @@ utilization: 80
 
 | Concept | What It Means |
 |---------|---------------|
-| **Auto-Wikilinks** | Exact entity matches → `[[Entity]]` inline |
+| **Auto-Wikilinks** | Entity matches (stemming, aliases, case-insensitive) → `[[Entity]]` inline |
 | **Context Cloud** | Related entities → `→ [[...]]` suffix |
 | **Atomic Commits** | 4 files, 1 git commit, 1 undo |
 | **Deterministic** | Same input + same vault = same output |
@@ -664,6 +664,16 @@ cd ../flywheel-mcp && npm install && npm test
 |------|-------|--------|
 | **flywheel-crank** | 1,326 | Mutations at scale, format preservation, security |
 | **flywheel** | 395 | Graph queries, entity indexing, file watching |
+
+### Test Scripts
+
+| Script | Purpose |
+|--------|---------|
+| `npm test` | Run all tests |
+| `npm run test:policy` | Policy execution and atomicity tests |
+| `npm run test:coldstart` | Empty vault and cold start scenarios |
+| `npm run test:concurrency` | Race condition and LWW semantics tests |
+| `npm run test:undo` | Undo sequence and interference tests |
 
 ### Try a Demo
 

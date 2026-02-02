@@ -14,6 +14,8 @@
 
 | ID | Time | T | Title | Read |
 |----|------|---|-------|------|
+| #6435 | 1:39 PM | 🔵 | flywheel-crank mutation workflow follows 5-step pipeline: read, find, format, insert, write | ~576 |
+| #6419 | 1:05 PM | 🟣 | Documentation accuracy fixes committed to main branch | ~409 |
 | #6411 | 12:49 PM | ✅ | Documentation audit complete - 5 files modified with accuracy fixes | ~399 |
 | #6393 | 12:43 PM | 🔵 | Comprehensive Mutation Tool Tests Cover 1662 Lines of Integration Scenarios | ~658 |
 | #5981 | 2:29 AM | 🟣 | SQLite State Consolidation Completed with Full Test Coverage | ~638 |

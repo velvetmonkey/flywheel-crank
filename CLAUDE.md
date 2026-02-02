@@ -671,8 +671,43 @@ Match Obsidian conventions:
 - ✅ README updated with platform link and benchmark badge
 - ✅ Cross-references between flywheel and flywheel-crank docs
 
+### ✅ v1.27.31: Comprehensive Test Coverage (COMPLETED)
+
+**Cross-Product Integration Tests (vault-core):**
+- ✅ Full flywheel loop: scan → index → wikilinks → verify graph
+- ✅ Legacy JSON to SQLite StateDb migration tests
+
+**Demo Documentation Tests (flywheel):**
+- ✅ MCP tool verification against demo vaults (artemis-rocket, carter-strategy)
+- ✅ Demo vault structure and content validation
+
+**Policy Execution Tests (flywheel-crank):**
+- ✅ Fail-fast behavior, step order preservation
+- ✅ Git commit atomicity, file consistency
+- ✅ Multi-step workflow tests (10-step daily standup)
+
+**Undo Sequence Tests (flywheel-crank):**
+- ✅ Sequential undos, external commit detection
+- ✅ Dirty working tree handling
+
+**Cold Start Tests (flywheel-crank):**
+- ✅ Empty vault, first note creation
+- ✅ Auto-creation of .claude/.flywheel directories
+- ✅ Non-git vault handling, permission errors
+
+**Concurrent Mutation Tests (flywheel-crank):**
+- ✅ Same-file race condition safety
+- ✅ Last-write-wins semantics documentation
+
+**Performance Tests (vault-core/bench):**
+- ✅ 1k/5k vault benchmarks with time thresholds
+- ✅ Memory scaling and leak detection tests
+
+**CI Integration:**
+- ✅ New npm scripts: test:e2e, test:demos, test:policy, test:undo, test:coldstart, test:concurrency
+- ✅ CI workflows updated in all 3 repositories
+
 ### Current: Production Readiness
-- Edge case tests (empty content, special chars)
 - `.flywheelrc` config file support (if needed)
 - Architecture decision records
 

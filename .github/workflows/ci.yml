@@ -60,6 +60,10 @@ jobs:
           git config --global user.name "CI Test"
       - name: Run tests
         run: npm test
+      - name: Run cold start tests
+        run: npm run test:coldstart --workspace=@velvetmonkey/flywheel-crank
+      - name: Run policy tests
+        run: npm run test:policy --workspace=@velvetmonkey/flywheel-crank
       - name: Run battle-hardening tests
         run: npm run test:battle-hardening --workspace=@velvetmonkey/flywheel-crank
       - name: Run golden tests

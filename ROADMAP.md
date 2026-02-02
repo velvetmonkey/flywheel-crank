@@ -7,7 +7,8 @@
 - **Flywheel-Crank MCP:** Deterministic write operations (mutations) (v1.27.31)
 - **vault-core:** Shared package with SQLite StateDb + FTS5 search (v1.27.31)
 - **flywheel-bench:** Reliability testing & benchmarking infrastructure
-- **CI Status:** ✅ All tests passing (flywheel: 395+8, crank: 1326)
+- **CI Status:** ✅ All tests passing (flywheel: 395+, crank: 1326+, vault-core: 98+)
+- **New Test Coverage:** 16 new test files for E2E, demos, policies, undo, performance, cold start, concurrency
 
 Flywheel + Crank form a **self-maintaining knowledge graph**:
 
@@ -28,6 +29,98 @@ Flywheel + Crank form a **self-maintaining knowledge graph**:
 ```
 
 The more you write, the smarter the graph gets. No manual linking required.
+
+---
+
+## Progress Update: Feb 2, 2026 (2:15 PM)
+
+### Comprehensive Test Coverage Implementation Complete
+
+Major milestone: 16 new test files across all 3 repositories, adding systematic coverage for integration, documentation verification, policy execution, undo sequences, performance benchmarks, cold start scenarios, and concurrent mutations.
+
+#### New Test Files Created
+
+| Project | Test File | Coverage Area |
+|---------|-----------|---------------|
+| **vault-core** | `test/e2e/cross-product.test.ts` | Full flywheel loop: scan → index → wikilinks → verify graph |
+| **vault-core** | `test/e2e/migration.test.ts` | Legacy JSON to SQLite StateDb migration |
+| **vault-core** | `bench/test/performance-baseline.test.ts` | 1k/5k vault benchmarks (<30s/<120s) |
+| **vault-core** | `bench/test/memory-profile.test.ts` | Memory scaling, leak detection, 500MB threshold |
+| **flywheel** | `test/docs/readme-examples.test.ts` | MCP tool verification against demo vaults |
+| **flywheel** | `test/docs/demo-vault-assertions.test.ts` | Demo vault structure and content validation |
+| **flywheel-crank** | `test/core/policy/rollback.test.ts` | Fail-fast behavior, step order preservation |
+| **flywheel-crank** | `test/core/policy/transactions.test.ts` | Git commit atomicity, file consistency |
+| **flywheel-crank** | `test/core/policy/complex-policies.test.ts` | 10-step daily standup, ADR workflows |
+| **flywheel-crank** | `test/tools/undo-sequences.test.ts` | Sequential undos, external commit detection |
+| **flywheel-crank** | `test/coldstart/empty-vault.test.ts` | First note creation, directory setup |
+| **flywheel-crank** | `test/coldstart/missing-directories.test.ts` | Auto-creation of .claude/.flywheel |
+| **flywheel-crank** | `test/coldstart/git-init.test.ts` | Non-git vault handling, clear errors |
+| **flywheel-crank** | `test/coldstart/readonly-vault.test.ts` | EACCES errors, permission handling |
+| **flywheel-crank** | `test/stress/same-file-races.test.ts` | 5 concurrent writes, no corruption |
+| **flywheel-crank** | `test/stress/last-write-wins.test.ts` | LWW semantics documentation tests |
+
+#### New npm Scripts
+
+| Package | Script | Purpose |
+|---------|--------|---------|
+| vault-core/core | `test:e2e` | Cross-product integration tests |
+| vault-core/bench | `test:perf` | Performance baseline tests |
+| vault-core/bench | `test:memory` | Memory profiling tests |
+| flywheel/mcp-server | `test:demos` | Demo vault documentation tests |
+| flywheel-crank/mcp-server | `test:policy` | Policy execution tests |
+| flywheel-crank/mcp-server | `test:undo` | Undo sequence tests |
+| flywheel-crank/mcp-server | `test:coldstart` | Cold start/unboxing tests |
+| flywheel-crank/mcp-server | `test:concurrency` | Concurrent mutation tests |
+
+#### CI Workflow Updates
+
+All three repositories' CI workflows updated to run new test suites:
+- **vault-core**: E2E tests after main test run
+- **flywheel**: Demo tests after main test run
+- **flywheel-crank**: Cold start and policy tests after main test run
+
+#### Test Coverage Gaps Addressed
+
+| Gap | Solution |
+|-----|----------|
+| No cross-product E2E tests | vault-core/test/e2e/ validates full flywheel loop |
+| README examples not verified | flywheel/test/docs/ validates tools against demo vaults |
+| Policy rollback untested | flywheel-crank/test/core/policy/ tests fail-fast + atomicity |
+| Undo edge cases | flywheel-crank/test/tools/ tests interference, dirty tree |
+| No performance baselines | vault-core/bench/test/ establishes timing/memory thresholds |
+| Cold start scenarios | flywheel-crank/test/coldstart/ tests empty vault, no git |
+| Concurrent writes undocumented | flywheel-crank/test/stress/ formalizes LWW semantics |
+
+---
+
+## Progress Update: Feb 2, 2026 (2:40 PM)
+
+### Documentation & Showcasing Complete (v1.27.31)
+
+Final documentation updates to showcase the comprehensive test coverage implementation.
+
+#### README Updates
+
+| File | Changes |
+|------|---------|
+| **vault-core/README.md** | Added test suite table with test:e2e, test:perf, test:memory scripts |
+| **flywheel/README.md** | Added test:demos to "Prove It Yourself" section |
+| **flywheel-crank/README.md** | Added test scripts table (test:policy, test:coldstart, test:concurrency, test:undo) |
+| **flywheel-crank/README.md** | Fixed auto-wikilinks description: "Exact entity matches" → "Entity matches (stemming, aliases, case-insensitive)" |
+
+#### Testing Documentation Updates
+
+| File | New Content |
+|------|-------------|
+| **vault-core/docs/TESTING.md** | E2E Tests section (cross-product, migration), Performance Baseline Tests section |
+| **flywheel-crank/docs/testing.md** | Cold Start, Policy Execution, Undo Sequence, Concurrent Mutation test sections |
+
+**v1.27.31 Test Coverage Initiative Complete:**
+- 16 new test files across 3 repositories
+- 8 new npm scripts for targeted test runs
+- CI workflows updated in all repos
+- README and TESTING.md documentation complete
+- Auto-wikilinks description accuracy fixed
 
 ---
 

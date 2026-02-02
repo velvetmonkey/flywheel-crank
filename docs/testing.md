@@ -107,6 +107,81 @@ Tests run across Ubuntu, Windows, macOS with Node 18, 20, 22.
 
 ---
 
+## Additional Test Suites
+
+### Cold Start Tests
+
+**Location:** `test/coldstart/`
+
+Tests for initialization and edge-case vault states:
+
+| File | Tests | Purpose |
+|------|-------|---------|
+| `empty-vault.test.ts` | 4 | Empty vault, first note creation |
+| `missing-directories.test.ts` | 3 | Auto-creation of .claude/.flywheel directories |
+| `git-init.test.ts` | 4 | Non-git vault handling, graceful commit failures |
+| `readonly-vault.test.ts` | 3 | Permission errors, descriptive EACCES messages |
+
+```bash
+npm run test:coldstart
+```
+
+### Policy Execution Tests
+
+**Location:** `test/core/policy/`
+
+Tests for multi-step workflow execution:
+
+| File | Tests | Purpose |
+|------|-------|---------|
+| `rollback.test.ts` | 5 | Fail-fast behavior, partial execution cleanup |
+| `transactions.test.ts` | 4 | Git commit atomicity, file consistency |
+| `complex-policies.test.ts` | 3 | Multi-step workflows (10-step daily standup) |
+
+```bash
+npm run test:policy
+```
+
+### Undo Sequence Tests
+
+**Location:** `test/tools/undo-sequences.test.ts`
+
+Tests for undo edge cases:
+
+| Scenario | Coverage |
+|----------|----------|
+| Sequential undos | 3 crank commits → undo → undo → undo |
+| External commit interference | undo → external commit → undo warns/fails safely |
+| Stash preservation | Undo with stashed changes preserves stash |
+| Dirty working tree | Fails gracefully with clear message |
+
+```bash
+npm run test:undo
+```
+
+### Concurrent Mutation Tests
+
+**Location:** `test/stress/`
+
+Tests for race conditions and last-write-wins semantics:
+
+| File | Tests | Purpose |
+|------|-------|---------|
+| `same-file-races.test.ts` | 4 | Parallel writes: 5 concurrent → no corruption |
+| `last-write-wins.test.ts` | 4 | LWW semantics documented and validated |
+
+```bash
+npm run test:concurrency
+```
+
+**Behaviors tested:**
+- **Parallel writes**: 5 concurrent writes → no corruption, at least 1 write present
+- **Sequential writes**: 20 rapid sequential → all entries preserved
+- **LWW documented**: Agent 2 overwrites Agent 1's unseen change
+- **Atomic write**: Large content write is complete, not partial
+
+---
+
 ## Related Documentation
 
 - [testing.md](./testing.md) - Manual MCP testing procedures
