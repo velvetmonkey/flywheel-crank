@@ -32,17 +32,6 @@ let stateDb: StateDb | null = null;
 console.error(`[Crank] Starting Flywheel Crank MCP server`);
 console.error(`[Crank] Vault path: ${vaultPath}`);
 
-// Initialize entity index in background (for wikilink suggestions)
-// This runs asynchronously - server starts immediately
-initializeEntityIndex(vaultPath).catch(err => {
-  console.error(`[Crank] Entity index initialization failed: ${err}`);
-});
-
-// Initialize logging in background (for operation metrics)
-initializeLogger(vaultPath).catch(err => {
-  console.error(`[Crank] Logger initialization failed: ${err}`);
-});
-
 // Register all tool modules (uses lazy getter for stateDb)
 registerMutationTools(server, vaultPath);
 registerTaskTools(server, vaultPath);
@@ -53,15 +42,21 @@ registerSystemTools(server, vaultPath);
 registerPolicyTools(server, vaultPath);
 registerEntitySearchTools(server, vaultPath, () => stateDb);
 
-// Start server FIRST (fast startup - don't wait for StateDb)
+// Start server FIRST (fast startup - don't wait for StateDb or entity index)
 const transport = new StdioServerTransport();
 await server.connect(transport);
 console.error(`[Crank] Flywheel Crank MCP server started successfully`);
 
-// Initialize StateDb in background AFTER server is ready
-// This defers the blocking SQLite open/prepare operations
-Promise.resolve().then(() => {
+// Initialize logging in background (for operation metrics)
+initializeLogger(vaultPath).catch(err => {
+  console.error(`[Crank] Logger initialization failed: ${err}`);
+});
+
+// Initialize StateDb and entity index in background AFTER server is ready
+// Use setImmediate to yield to event loop and allow MCP handshake to complete
+setImmediate(async () => {
   try {
+    // Initialize StateDb first (needed for entity cache)
     stateDb = openStateDb(vaultPath);
     console.error('[Crank] StateDb initialized');
 
@@ -70,22 +65,22 @@ Promise.resolve().then(() => {
 
     // Auto-migrate from JSON on first run
     const legacyPaths = getLegacyPaths(vaultPath);
-    migrateFromJsonToSqlite(stateDb, legacyPaths).then(migration => {
-      if (migration.entitiesMigrated > 0) {
-        console.error(`[Crank] Migrated ${migration.entitiesMigrated} entities from JSON`);
-      }
-      if (migration.recencyMigrated > 0) {
-        console.error(`[Crank] Migrated ${migration.recencyMigrated} recency records`);
-      }
-      if (migration.crankStateMigrated > 0) {
-        console.error(`[Crank] Migrated ${migration.crankStateMigrated} crank state entries`);
-      }
-    }).catch(err => {
-      console.error('[Crank] Migration failed:', err);
-    });
+    const migration = await migrateFromJsonToSqlite(stateDb, legacyPaths);
+    if (migration.entitiesMigrated > 0) {
+      console.error(`[Crank] Migrated ${migration.entitiesMigrated} entities from JSON`);
+    }
+    if (migration.recencyMigrated > 0) {
+      console.error(`[Crank] Migrated ${migration.recencyMigrated} recency records`);
+    }
+    if (migration.crankStateMigrated > 0) {
+      console.error(`[Crank] Migrated ${migration.crankStateMigrated} crank state entries`);
+    }
+
+    // Now initialize entity index (can use StateDb cache)
+    await initializeEntityIndex(vaultPath);
   } catch (err) {
-    console.error('[Crank] StateDb init failed:', err);
-    // Non-fatal - entity search will return error but other tools work
+    console.error('[Crank] Background initialization failed:', err);
+    // Non-fatal - entity features will be disabled but other tools work
   }
 });
 
