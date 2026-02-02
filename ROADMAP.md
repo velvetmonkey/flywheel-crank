@@ -2519,7 +2519,20 @@ This turns "we test a lot" into **visible proof** that builds trust. The 100k no
 
 **Priority:** HIGH - Critical for adoption, reduces support burden
 
-**Status:** 🔴 NOT STARTED
+**Status:** 🟡 PARTIAL - Documentation complete, auto-tooling pending
+
+**Completed (2026-02-01):**
+- ✅ Created `docs/INSTALL.md` in both Flywheel and Flywheel-Crank repos
+- ✅ Platform-specific guides for Windows, macOS, Linux, WSL
+- ✅ Windows native polling requirement documented (critical fix)
+- ✅ "Both Packages Required" callout added to both READMEs
+- ✅ Installation verification steps (claude mcp list, health_check)
+- ✅ Combined .mcp.json examples showing both servers
+
+**Remaining:**
+- [ ] Auto-tooling scripts (install-*.sh, install-*.ps1)
+- [ ] flywheel_validate_config MCP tool
+- [ ] Test on fresh machines across all platforms
 
 **Context:** [[Claude Code]] Desktop app on [[Windows]] attempted to install [[Flywheel]]/[[Flywheel-Crank]] but encountered multiple issues requiring documentation/tooling fixes.
 
@@ -2627,11 +2640,11 @@ scripts/
 
 #### Deliverables
 
-- [ ] `docs/INSTALLATION.md` - Comprehensive cross-[[platform]] [[installation]] guide
+- [x] `docs/INSTALL.md` - Comprehensive cross-[[platform]] [[installation]] guide ✅ (2026-02-01)
 - [ ] `scripts/install-*.{sh,ps1}` - [[Auto-tooling]] scripts per [[platform]]
 - [ ] `flywheel_validate_config` tool - [[Configuration]] validation [[MCP]] tool
-- [ ] Update README quick-start section with [[platform]]-specific tabs
-- [ ] Add [[installation]] troubleshooting FAQ
+- [x] Update README quick-start section with [[platform]]-specific callout ✅ (2026-02-01)
+- [x] Add [[installation]] troubleshooting in INSTALL.md ✅ (2026-02-01)
 - [ ] Test [[Claude Code]] Desktop [[auto-installation]] on all [[platform]]s
 
 #### Success Criteria
@@ -5007,51 +5020,25 @@ Without understanding the mechanism, users can't:
 
 **Priority:** HIGH (critical for onboarding experience)
 
-**Issue:** Flywheel-Crank documentation doesn't explicitly guide users to install BOTH Flywheel and Flywheel-Crank together.
+**Status:** ✅ COMPLETE (2026-02-01)
 
-**Current state:**
-- Each package documents its own installation
-- Users might install just Crank without Flywheel (or vice versa)
-- No clear "getting started" that shows both working together
-- README doesn't emphasize they're meant to be used as a pair
+**Completed:**
+- ✅ Both READMEs updated with "Both Packages Required" callout at top
+- ✅ Tool count messaging: Flywheel (51 read-only) + Flywheel-Crank (11 mutation)
+- ✅ Link to platform-specific INSTALL.md guide in both READMEs
+- ✅ Combined .mcp.json examples in both INSTALL.md files
+- ✅ Workflow explanation: Read (Flywheel) → Write (Crank) → Verify (Flywheel)
+- ✅ Installation verification steps documented
 
-**Impact:**
-- Users miss out on full experience (Eyes + Hands working together)
-- Confusion about relationship between packages
-- Suboptimal workflows (write without read intelligence, or read without write capability)
+**Files created/modified:**
+- `/home/ben/src/flywheel/docs/INSTALL.md` - Created (~230 lines)
+- `/home/ben/src/flywheel-crank/docs/INSTALL.md` - Created (~220 lines)
+- `/home/ben/src/flywheel/README.md` - Updated callout + docs link
+- `/home/ben/src/flywheel-crank/README.md` - Updated callout + docs link
 
-**What's needed:**
+~~**Issue:** Flywheel-Crank documentation doesn't explicitly guide users to install BOTH Flywheel and Flywheel-Crank together.~~
 
-**1. In both READMEs:**
-- Clear section: "Flywheel + Crank Work Together"
-- Explain Eyes + Hands architecture
-- Show both in .mcp.json example
-- Emphasize: "Install both for full experience"
-
-**2. Quick Start guide:**
-```json
-{
-  "mcpServers": {
-    "flywheel": {
-      "command": "npx",
-      "args": ["-y", "@velvetmonkey/flywheel-mcp"]
-    },
-    "flywheel-crank": {
-      "command": "npx",
-      "args": ["-y", "@velvetmonkey/flywheel-crank"]
-    }
-  }
-}
-```
-
-**3. Workflow examples showing both:**
-- Read (Flywheel) → Write (Crank) → Verify (Flywheel)
-- Query backlinks → Add content with auto-wikilinks → Check new connections
-- Demonstrate the loop in action
-
-**Priority:** HIGH (critical for onboarding experience)
-
-**Fix:** REQUIRED before public announcement - Update both package READMEs to include joint installation guide
+~~**Fix:** REQUIRED before public announcement - Update both package READMEs to include joint installation guide~~
 
 ---
 
@@ -5515,6 +5502,509 @@ Recent indentation bugs (v0.7.3 fix for prepending with multi-level nesting) rev
 - Jan 30, 2026 09:09 GMT: Daily note section insertion broke bullet list formatting
 - Jan 30, 2026: Prepending with multi-level indentation fixed in v0.7.3
 - Pattern: We find bugs reactively when users hit them, not proactively in testing
+
+---
+
+## Priority 0.5: Complex Policy Test Suite (Business Process Automation) 🏭
+
+**Status:** HIGH PRIORITY - Required to prove enterprise-readiness
+
+**Context (Feb 2, 2026):**
+Current policy tests cover simple CRUD workflows (add to section, update frontmatter, create note). Real business automation requires complex multi-step policies with branching, approvals, and state management. We need comprehensive tests that model actual enterprise scenarios to validate the policy engine can handle real-world complexity.
+
+**The Gap:**
+- ✅ Simple policies work (single-step mutations, variable interpolation)
+- ✅ Conditional execution works (`when` guards on steps)
+- ❌ No tests for multi-entity state machines
+- ❌ No tests for approval chains with escalation
+- ❌ No tests for time-based triggers
+- ❌ No tests for rollback/compensation patterns
+- ❌ No tests for complex conditional branching
+
+**Why This Matters:**
+Enterprise customers need confidence that Flywheel can automate real business processes - not just "add a log entry". These tests prove the policy engine is production-ready for serious automation.
+
+---
+
+### Test Category 1: Approval Chain Workflows
+
+**Scenario: Document Review Pipeline**
+```yaml
+name: document-review-pipeline
+description: Multi-stage document approval with escalation
+variables:
+  document_path: { type: string, required: true }
+  urgency: { type: string, default: 'normal', enum: [low, normal, high, critical] }
+
+conditions:
+  - id: is_critical
+    check: equals
+    value: '{{urgency}}'
+    target: 'critical'
+  - id: reviewer_approved
+    check: frontmatter_equals
+    path: '{{document_path}}'
+    field: 'review_status'
+    value: 'approved'
+  - id: needs_legal
+    check: frontmatter_contains
+    path: '{{document_path}}'
+    field: 'tags'
+    value: 'legal-sensitive'
+
+steps:
+  - id: assign_reviewer
+    tool: vault_update_frontmatter
+    params:
+      path: '{{document_path}}'
+      frontmatter:
+        status: pending_review
+        assigned_to: '{{auto_assign_reviewer}}'
+        assigned_at: '{{now}}'
+
+  - id: escalate_if_critical
+    when: '{{conditions.is_critical}}'
+    tool: vault_add_to_section
+    params:
+      path: 'urgent-queue.md'
+      section: 'Critical Items'
+      content: '[[{{document_path}}]] - Needs immediate attention'
+
+  - id: route_to_legal
+    when: '{{conditions.needs_legal}}'
+    tool: vault_add_to_section
+    params:
+      path: 'legal-review-queue.md'
+      section: 'Pending'
+      content: '[[{{document_path}}]] - Added {{now}}'
+```
+
+**Tests Required:**
+- [ ] Single-level approval (reviewer → approved)
+- [ ] Two-level approval (reviewer → manager → approved)
+- [ ] Three-level approval with bypass conditions
+- [ ] Approval with rejection and re-submission loop
+- [ ] Escalation after timeout (48h no response → escalate)
+- [ ] Parallel approval (multiple reviewers must all approve)
+- [ ] Quorum approval (3 of 5 reviewers must approve)
+- [ ] Conditional routing based on document properties
+- [ ] Approval chain with external webhook notification step
+
+---
+
+### Test Category 2: Multi-Entity State Machines
+
+**Scenario: Customer Onboarding Workflow**
+```yaml
+name: customer-onboarding
+description: Track customer through multi-stage onboarding
+variables:
+  customer_name: { type: string, required: true }
+  plan_tier: { type: string, required: true, enum: [starter, professional, enterprise] }
+
+entities:
+  customer:
+    path: 'customers/{{customer_name | slug}}.md'
+    states: [prospect, signed, onboarding, active, churned]
+  account:
+    path: 'accounts/{{customer_name | slug}}-account.md'
+    states: [pending, provisioned, configured, verified]
+  training:
+    path: 'training/{{customer_name | slug}}-training.md'
+    states: [not_started, scheduled, in_progress, completed, certified]
+
+transitions:
+  - name: start_onboarding
+    from: { customer: signed }
+    to: { customer: onboarding, account: pending, training: not_started }
+    actions:
+      - tool: vault_create_note
+        params: { path: '{{entities.account.path}}', template: 'account-template' }
+      - tool: vault_create_note
+        params: { path: '{{entities.training.path}}', template: 'training-template' }
+
+  - name: complete_provisioning
+    from: { account: pending }
+    to: { account: provisioned }
+    guard: '{{plan_tier != "enterprise" || security_review_passed}}'
+
+  - name: activate_customer
+    from: { customer: onboarding, account: verified, training: completed }
+    to: { customer: active }
+    actions:
+      - tool: vault_add_to_section
+        params:
+          path: 'metrics/active-customers.md'
+          section: 'Recently Activated'
+          content: '- [[{{entities.customer.path}}]] - Activated {{now}}'
+```
+
+**Tests Required:**
+- [ ] Simple 3-state linear machine (A → B → C)
+- [ ] State machine with guards (can't transition if condition fails)
+- [ ] State machine with parallel tracks (multiple entities progress independently)
+- [ ] State machine with sync points (wait for all entities to reach state)
+- [ ] State machine with timeout transitions (auto-transition after N days)
+- [ ] State machine with rollback on failure (atomic multi-entity transition)
+- [ ] State machine with history (track all state changes with timestamps)
+- [ ] State machine with sub-machines (nested state machines for complex entities)
+- [ ] Invalid transition rejection (can't go from A → C directly)
+- [ ] Re-entrant state handling (entity returns to previous state)
+
+---
+
+### Test Category 3: Conditional Branching Policies
+
+**Scenario: Expense Report Processing**
+```yaml
+name: expense-report-processing
+description: Route expense reports based on amount and category
+
+conditions:
+  - id: under_100
+    check: frontmatter_less_than
+    field: amount
+    value: 100
+  - id: under_500
+    check: frontmatter_less_than
+    field: amount
+    value: 500
+  - id: is_travel
+    check: frontmatter_equals
+    field: category
+    value: 'travel'
+  - id: is_software
+    check: frontmatter_equals
+    field: category
+    value: 'software'
+  - id: needs_receipt
+    check: frontmatter_greater_than
+    field: amount
+    value: 25
+
+branches:
+  - name: auto_approve_small
+    when: '{{conditions.under_100 && !conditions.is_travel}}'
+    steps:
+      - { tool: vault_update_frontmatter, params: { status: approved, approved_by: auto } }
+
+  - name: manager_review
+    when: '{{conditions.under_500 && !conditions.under_100}}'
+    steps:
+      - { tool: vault_update_frontmatter, params: { status: pending_manager } }
+      - { tool: vault_add_to_section, params: { path: 'expense-queue.md', section: 'Manager Review' } }
+
+  - name: finance_review
+    when: '{{!conditions.under_500}}'
+    steps:
+      - { tool: vault_update_frontmatter, params: { status: pending_finance } }
+      - { tool: vault_add_to_section, params: { path: 'expense-queue.md', section: 'Finance Review' } }
+
+  - name: travel_special_handling
+    when: '{{conditions.is_travel}}'
+    steps:
+      - { tool: vault_add_to_section, params: { path: 'travel-expenses.md', section: 'Pending' } }
+```
+
+**Tests Required:**
+- [ ] If-else branching (two mutually exclusive paths)
+- [ ] If-elif-else branching (multiple conditions in priority order)
+- [ ] Switch/case style branching (N discrete options)
+- [ ] Nested conditionals (if inside if)
+- [ ] Compound conditions with AND/OR/NOT
+- [ ] Condition evaluation with missing data (graceful handling)
+- [ ] Condition with computed values (e.g., amount > budget * 0.5)
+- [ ] Branch with fallthrough (execute multiple branches)
+- [ ] Default/catch-all branch
+- [ ] Early exit conditions (stop processing if condition met)
+
+---
+
+### Test Category 4: Time-Based Triggers
+
+**Scenario: Follow-up Automation**
+```yaml
+name: customer-followup-automation
+description: Automatically create follow-up tasks based on time
+
+triggers:
+  - id: quote_followup
+    schedule: 'daily 09:00'
+    query:
+      type: frontmatter_query
+      conditions:
+        - field: type
+          equals: quote
+        - field: status
+          equals: sent
+        - field: sent_date
+          older_than: 3d
+        - field: followup_count
+          less_than: 3
+    action:
+      tool: vault_add_task
+      params:
+        path: 'daily-notes/{{today}}.md'
+        section: 'Follow-ups'
+        task: 'Follow up on quote: [[{{matched_note}}]]'
+
+  - id: stale_project_alert
+    schedule: 'weekly monday 08:00'
+    query:
+      type: modified_date_query
+      conditions:
+        - path_glob: 'projects/**/*.md'
+        - not_modified_in: 14d
+        - frontmatter_not_equals: { status: completed }
+    action:
+      tool: vault_add_to_section
+      params:
+        path: 'weekly-review.md'
+        section: 'Stale Projects'
+        content: '- [[{{matched_note}}]] - Last modified {{last_modified}}'
+```
+
+**Tests Required:**
+- [ ] Daily scheduled trigger at specific time
+- [ ] Weekly scheduled trigger on specific day
+- [ ] Monthly scheduled trigger (first Monday, last Friday, etc.)
+- [ ] Trigger with date math (3 days after field value)
+- [ ] Trigger with recurrence (every 2 weeks)
+- [ ] Trigger with exclusions (not on weekends)
+- [ ] Query-based trigger (find notes matching criteria)
+- [ ] Batch processing trigger (process all matching notes)
+- [ ] Rate-limited trigger (max N actions per run)
+- [ ] Trigger with jitter (random offset to avoid thundering herd)
+- [ ] Trigger dependency (run after other trigger completes)
+- [ ] Failed trigger retry with backoff
+
+---
+
+### Test Category 5: Rollback & Compensation Patterns
+
+**Scenario: Multi-File Transaction with Rollback**
+```yaml
+name: invoice-processing
+description: Process invoice with full rollback on failure
+
+transaction:
+  mode: atomic  # All or nothing
+
+steps:
+  - id: create_invoice_record
+    tool: vault_create_note
+    params:
+      path: 'invoices/INV-{{invoice_number}}.md'
+      template: invoice-template
+    on_failure: abort
+
+  - id: update_customer_record
+    tool: vault_add_to_section
+    params:
+      path: 'customers/{{customer}}.md'
+      section: 'Invoice History'
+      content: '- [[invoices/INV-{{invoice_number}}]] - {{amount}} - {{today}}'
+    compensation:
+      tool: vault_remove_from_section
+      params:
+        path: 'customers/{{customer}}.md'
+        section: 'Invoice History'
+        pattern: 'INV-{{invoice_number}}'
+
+  - id: update_revenue_tracking
+    tool: vault_add_to_section
+    params:
+      path: 'metrics/revenue-{{year}}-{{month}}.md'
+      section: 'Invoices'
+      content: '- {{amount}} - [[invoices/INV-{{invoice_number}}]]'
+    compensation:
+      tool: vault_remove_from_section
+      params:
+        path: 'metrics/revenue-{{year}}-{{month}}.md'
+        section: 'Invoices'
+        pattern: 'INV-{{invoice_number}}'
+
+  - id: send_notification
+    tool: webhook_notify  # External action
+    params:
+      url: '{{notification_webhook}}'
+      payload: { invoice: '{{invoice_number}}', amount: '{{amount}}' }
+    on_failure: warn  # Don't rollback entire transaction for notification failure
+```
+
+**Tests Required:**
+- [ ] Successful multi-step transaction (all steps complete)
+- [ ] Rollback on step 2 failure (step 1 compensated)
+- [ ] Rollback on step 3 failure (steps 1 & 2 compensated)
+- [ ] Partial rollback (non-critical step fails, transaction continues)
+- [ ] Compensation failure handling (what if rollback fails?)
+- [ ] Idempotent compensation (running twice is safe)
+- [ ] Saga pattern (long-running transaction with checkpoints)
+- [ ] Nested transaction rollback
+- [ ] External action compensation (webhook with undo endpoint)
+- [ ] File lock during transaction (prevent concurrent modification)
+- [ ] Transaction timeout with automatic rollback
+
+---
+
+### Test Category 6: Complex Real-World Scenarios
+
+**Scenario A: Legal Contract Lifecycle**
+```yaml
+name: contract-lifecycle
+description: Full contract management from draft to execution
+
+phases:
+  drafting:
+    states: [outline, first_draft, internal_review, revised]
+    transitions:
+      - { from: outline, to: first_draft, action: generate_from_template }
+      - { from: first_draft, to: internal_review, action: assign_reviewers }
+      - { from: internal_review, to: revised, guard: all_comments_resolved }
+
+  negotiation:
+    states: [sent_to_counterparty, under_negotiation, agreed_in_principle]
+    requires: { drafting: revised }
+
+  execution:
+    states: [pending_signatures, partially_signed, fully_executed]
+    requires: { negotiation: agreed_in_principle }
+
+  active:
+    states: [in_force, amendment_pending, renewal_pending, expired, terminated]
+    requires: { execution: fully_executed }
+```
+
+**Scenario B: Software Release Pipeline**
+```yaml
+name: release-pipeline
+description: Coordinate release across docs, changelog, npm, GitHub
+
+gates:
+  - id: tests_pass
+    check: external_api
+    url: '{{ci_api}}/status'
+    expect: success
+
+  - id: docs_updated
+    check: file_modified_since
+    path: 'docs/**/*.md'
+    since: '{{release_branch_created}}'
+
+  - id: changelog_entry
+    check: section_contains
+    path: 'CHANGELOG.md'
+    section: 'Unreleased'
+    pattern: '## \[{{version}}\]'
+
+steps:
+  - id: bump_version
+    tool: vault_replace_in_section
+    params: { path: 'package.json', pattern: '"version": ".*"', replacement: '"version": "{{version}}"' }
+
+  - id: update_changelog
+    tool: vault_replace_in_section
+    params: { path: 'CHANGELOG.md', section: 'Unreleased', pattern: '## \[Unreleased\]', replacement: '## [{{version}}] - {{today}}' }
+
+  - id: create_release_note
+    tool: vault_create_note
+    params: { path: 'releases/{{version}}.md', template: release-template }
+
+  - id: publish_npm
+    gate: [tests_pass, docs_updated, changelog_entry]
+    tool: external_command
+    params: { command: 'npm publish' }
+```
+
+**Scenario C: HR Onboarding Checklist**
+```yaml
+name: employee-onboarding
+description: 30-day onboarding with multiple stakeholders
+
+stakeholders:
+  hr: { assignee_field: hr_contact }
+  manager: { assignee_field: manager }
+  it: { assignee_field: it_contact }
+  employee: { assignee_field: employee }
+
+checklists:
+  day_0:
+    owner: hr
+    tasks:
+      - Create employee profile note
+      - Generate credentials request
+      - Schedule orientation
+
+  day_1:
+    owner: it
+    requires: { day_0: credentials_request }
+    tasks:
+      - Provision laptop
+      - Create accounts (email, slack, github)
+      - Grant repository access
+
+  week_1:
+    owner: manager
+    requires: { day_1: complete }
+    tasks:
+      - Assign onboarding buddy
+      - Schedule 1:1 meetings
+      - Share team documentation
+
+  day_30:
+    owner: hr
+    requires: { week_1: complete }
+    tasks:
+      - Conduct 30-day check-in
+      - Update probation status
+      - Close onboarding project
+```
+
+**Tests Required:**
+- [ ] Full contract lifecycle (10+ state transitions)
+- [ ] Release pipeline with external gate checks
+- [ ] Multi-stakeholder workflow with handoffs
+- [ ] Long-running process spanning days (with persistence)
+- [ ] Process with parallel workstreams that reconverge
+- [ ] Process with optional steps based on context
+- [ ] Process with loops (revise and resubmit)
+- [ ] Process with SLA tracking (overdue alerts)
+- [ ] Process template instantiation (create from playbook)
+- [ ] Process metrics collection (time in state, bottleneck detection)
+
+---
+
+### Implementation Plan
+
+**Phase 1: Test Infrastructure (1 week)**
+- [ ] Create `test/policies/complex/` directory structure
+- [ ] Build policy scenario generator for permutation testing
+- [ ] Create mock external services (webhooks, APIs)
+- [ ] Build state machine visualization for debugging
+
+**Phase 2: Core Pattern Tests (2 weeks)**
+- [ ] Approval chain tests (Category 1)
+- [ ] State machine tests (Category 2)
+- [ ] Conditional branching tests (Category 3)
+
+**Phase 3: Advanced Pattern Tests (2 weeks)**
+- [ ] Time-based trigger tests (Category 4)
+- [ ] Rollback/compensation tests (Category 5)
+- [ ] Real-world scenario tests (Category 6)
+
+**Phase 4: Stress & Chaos Testing (1 week)**
+- [ ] 100+ entity state machines
+- [ ] 1000+ step policies
+- [ ] Concurrent policy execution
+- [ ] Failure injection testing
+- [ ] Performance benchmarks for complex policies
+
+**Acceptance Criteria:**
+- All 6 test categories have 10+ passing test cases each
+- Real-world scenarios complete without errors
+- Rollback patterns verified with deliberate failure injection
+- State machines handle 100+ entities without performance degradation
+- Documentation includes complex policy examples
 
 ---
 
