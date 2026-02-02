@@ -284,6 +284,100 @@ for when it unblocks.
 
 ---
 
+## Demo Reproducibility - Zero-Friction Examples
+
+**Priority:** HIGH - Critical for user adoption and onboarding
+
+### Problem
+
+[[Demo|Demos]] need to be instantly cloneable and runnable with minimal setup friction. Users should go from "git clone" to working [[example]] in under 60 seconds.
+
+### Requirements
+
+**1. Standard Demo Structure:**
+
+Every [[demo]] repository must include:
+- `.mcp.json` with [[Flywheel]] + [[Flywheel-Crank]] base [[install]]
+- Clear [[README]] with copy-paste commands
+- Sample [[vault]] data pre-configured
+- Expected output examples
+
+**2. .mcp.json Configuration:**
+
+```json
+{
+  "mcpServers": {
+    "flywheel": {
+      "command": "npx",
+      "args": ["-y", "@bencassie/flywheel-mcp"],
+      "env": {
+        "VAULT_PATH": "."
+      }
+    },
+    "flywheel-crank": {
+      "command": "npx",
+      "args": ["-y", "@bencassie/flywheel-crank-mcp"],
+      "env": {
+        "VAULT_PATH": "."
+      }
+    }
+  }
+}
+```
+
+**3. README Template:**
+
+Every [[demo]] [[README]] must follow this structure:
+
+```markdown
+## Quick Start
+
+**1. Clone this demo:**
+\`\`\`bash
+git clone https://github.com/velvetmonkey/demo-name
+cd demo-name
+\`\`\`
+
+**2. Start Claude Code in this folder:**
+\`\`\`bash
+claude
+\`\`\`
+
+**3. Run the demo command:**
+\`\`\`
+[exact command here]
+\`\`\`
+
+**Expected output:** [show what success looks like]
+```
+
+**4. Demo Checklist:**
+
+Each [[demo]] must:
+- [ ] Clone and run in <60 seconds
+- [ ] Include `.mcp.json` with [[Flywheel]] + [[Flywheel-Crank]]
+- [ ] Have copy-paste [[commands]] in [[README]]
+- [ ] Show expected [[output]]
+- [ ] Work on [[Windows]], [[macOS]], [[Linux]]
+- [ ] No manual [[config]] required
+
+### Implementation Notes
+
+- Create [[demo]] [[template]] repository
+- [[CI]] [[test]] that verifies demos are runnable
+- Include [[troubleshooting]] section in each [[README]]
+- Consider [[video]] walkthroughs for complex demos
+
+### Success Criteria
+
+- [ ] All existing [[demos]] updated to new structure
+- [ ] [[Template]] repository available
+- [ ] [[Documentation]] includes demo creation guide
+- [ ] [[CI]] validates demo reproducibility
+- [ ] User feedback: "just worked first try"
+
+---
+
 ## Architecture: Gears and Flywheel
 
 **The metaphor that explains everything:**
