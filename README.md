@@ -74,11 +74,25 @@ status: active
 # Acme Website Redesign
 ```
 
+`clients/Acme Corp.md` *(updated)*:
+```markdown
+## Active Engagement
+- [[Acme Website Redesign]] - $45000, Q2 2026
+```
+
 `daily-notes/2026-02-02.md` *(updated)*:
 ```markdown
 ## Log
 - 14:32 Onboarded [[Acme Website Redesign]] project
-  → [[TechStart Inc]] [[Q2 Delivery]] [[Website Projects]]
+  → [[Acme Corp]] [[Stacy Thompson]] [[Q2 Projects]]
+```
+
+`team/Stacy Thompson.md` *(updated)*:
+```markdown
+---
+current_project: "[[Acme Website Redesign]]"
+utilization: 80
+---
 ```
 
 **4 files. 1 commit. 1 undo.**
@@ -276,6 +290,12 @@ status: active
 ---
 ```
 
+`clients/TechStart Inc.md` *(updated)*:
+```markdown
+## Active Projects
+- [[TechStart Mobile App]] - $28000
+```
+
 `daily-notes/2026-02-02.md` *(updated)*:
 ```markdown
 - 14:45 Onboarded [[TechStart Mobile App]]
@@ -302,6 +322,12 @@ budget: 65000
 timeline: Q3 2026
 status: active
 ---
+```
+
+`clients/DataFlow Systems.md` *(updated)*:
+```markdown
+## Active Projects
+- [[DataFlow Analytics Dashboard]] - $65000
 ```
 
 `daily-notes/2026-02-02.md` *(updated)*:
@@ -415,6 +441,13 @@ Switch to redundant pump configuration...
 ## Activity Log
 - Created [[ADR-006 Turbopump Mitigation]]
   → [[Propulsion System]] [[Test 4]]
+```
+
+`projects/Artemis.md` *(updated)*:
+```markdown
+---
+last_decision: "[[ADR-006 Turbopump Mitigation]]"
+---
 ```
 
 **3 files. 1 commit. 1 undo.**

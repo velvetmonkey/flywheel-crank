@@ -203,7 +203,7 @@ tracking with [[Acme Aerospace]].
   → [[Sarah Chen]] [[Turbopump]] [[Test 4]]
 ```
 
-**3 files created/updated. 1 commit. 1 undo.**
+**2 files created/updated. 1 commit. 1 undo.**
 
 **Why artifact-first?**
 - The **artifact** (ADR-006) captures full context, rationale, consequences
@@ -270,7 +270,7 @@ project: "[[Acme Data Migration]]"
 ## Summary
 Discussed data migration validation status - 85% complete. [[Sarah Thompson|Sarah]]
 mentioned potential Q2 project. Invoice [[INV-2025-047]] due Feb 15.
-→ [[TechStart Inc]] [[GlobalBank]] [[Acme Corp]]
+→ [[TechStart Inc]] [[GlobalBank]] [[Q1 Projects]]
 
 ## Action Items
 
