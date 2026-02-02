@@ -26,7 +26,7 @@ const server = new McpServer({
 
 const vaultPath = process.env.PROJECT_PATH || findVaultRoot();
 
-// State database (SQLite with FTS5)
+// State database (SQLite with FTS5) - initialized after server starts
 let stateDb: StateDb | null = null;
 
 console.error(`[Crank] Starting Flywheel Crank MCP server`);
@@ -38,40 +38,12 @@ initializeEntityIndex(vaultPath).catch(err => {
   console.error(`[Crank] Entity index initialization failed: ${err}`);
 });
 
-// Initialize StateDb (auto-creates if missing)
-try {
-  stateDb = openStateDb(vaultPath);
-  console.error('[Crank] StateDb initialized');
-
-  // Set StateDb for all core modules (git, hints, recency, wikilinks)
-  setCrankStateDb(stateDb);
-
-  // Auto-migrate from JSON on first run
-  const legacyPaths = getLegacyPaths(vaultPath);
-  migrateFromJsonToSqlite(stateDb, legacyPaths).then(migration => {
-    if (migration.entitiesMigrated > 0) {
-      console.error(`[Crank] Migrated ${migration.entitiesMigrated} entities from JSON`);
-    }
-    if (migration.recencyMigrated > 0) {
-      console.error(`[Crank] Migrated ${migration.recencyMigrated} recency records`);
-    }
-    if (migration.crankStateMigrated > 0) {
-      console.error(`[Crank] Migrated ${migration.crankStateMigrated} crank state entries`);
-    }
-  }).catch(err => {
-    console.error('[Crank] Migration failed:', err);
-  });
-} catch (err) {
-  console.error('[Crank] StateDb init failed:', err);
-  // Non-fatal - entity search will return error but other tools work
-}
-
-// Initialize logging (for operation metrics)
+// Initialize logging in background (for operation metrics)
 initializeLogger(vaultPath).catch(err => {
   console.error(`[Crank] Logger initialization failed: ${err}`);
 });
 
-// Register all tool modules
+// Register all tool modules (uses lazy getter for stateDb)
 registerMutationTools(server, vaultPath);
 registerTaskTools(server, vaultPath);
 registerFrontmatterTools(server, vaultPath);
@@ -81,10 +53,41 @@ registerSystemTools(server, vaultPath);
 registerPolicyTools(server, vaultPath);
 registerEntitySearchTools(server, vaultPath, () => stateDb);
 
-// Start server
+// Start server FIRST (fast startup - don't wait for StateDb)
 const transport = new StdioServerTransport();
 await server.connect(transport);
 console.error(`[Crank] Flywheel Crank MCP server started successfully`);
+
+// Initialize StateDb in background AFTER server is ready
+// This defers the blocking SQLite open/prepare operations
+Promise.resolve().then(() => {
+  try {
+    stateDb = openStateDb(vaultPath);
+    console.error('[Crank] StateDb initialized');
+
+    // Set StateDb for all core modules (git, hints, recency, wikilinks)
+    setCrankStateDb(stateDb);
+
+    // Auto-migrate from JSON on first run
+    const legacyPaths = getLegacyPaths(vaultPath);
+    migrateFromJsonToSqlite(stateDb, legacyPaths).then(migration => {
+      if (migration.entitiesMigrated > 0) {
+        console.error(`[Crank] Migrated ${migration.entitiesMigrated} entities from JSON`);
+      }
+      if (migration.recencyMigrated > 0) {
+        console.error(`[Crank] Migrated ${migration.recencyMigrated} recency records`);
+      }
+      if (migration.crankStateMigrated > 0) {
+        console.error(`[Crank] Migrated ${migration.crankStateMigrated} crank state entries`);
+      }
+    }).catch(err => {
+      console.error('[Crank] Migration failed:', err);
+    });
+  } catch (err) {
+    console.error('[Crank] StateDb init failed:', err);
+    // Non-fatal - entity search will return error but other tools work
+  }
+});
 
 // Flush logs on exit
 process.on('beforeExit', async () => {
