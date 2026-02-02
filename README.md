@@ -27,6 +27,96 @@
 
 ---
 
+## See It In Action
+
+### Carter Consultancy: Onboard a Project in One Prompt
+
+Carter just finished a call with Acme Corp. They want a website redesign—$45K budget, Q2 delivery, Stacy Thompson as lead. Time to onboard.
+
+**The Prompt:**
+```
+You: Onboard new project: Acme Corp website redesign,
+     Q2 delivery, $45K budget, Stacy as lead
+```
+
+**Claude Crafts the Policy:**
+```yaml
+name: onboard-project
+actions:
+  - tool: vault_create_note
+    target: projects/Acme Website Redesign.md
+    frontmatter:
+      type: project
+      client: "[[Acme Corp]]"
+      budget: 45000
+      timeline: Q2 2026
+      lead: "[[Stacy Thompson]]"
+      status: active
+
+  - tool: vault_add_to_section
+    target: clients/Acme Corp.md
+    section: "## Active Engagement"
+    content: "- [[Acme Website Redesign]] - $45K, Q2 2026"
+
+  - tool: vault_add_to_section
+    target: daily-notes/2026-02-02.md
+    section: "## Log"
+    content: "Onboarded [[Acme Website Redesign]] project"
+    format: timestamp-bullet
+    wikilinks: auto
+
+  - tool: vault_update_frontmatter
+    target: team/Stacy Thompson.md
+    fields:
+      current_project: "[[Acme Website Redesign]]"
+      utilization: 80
+```
+
+**Before → After:**
+
+| File | Before | After |
+|------|--------|-------|
+| `projects/Acme Website Redesign.md` | *(new)* | Project with frontmatter, linked to client |
+| `clients/Acme Corp.md` | `## Active Engagement` | + `[[Acme Website Redesign]]` entry |
+| `daily-notes/2026-02-02.md` | `## Log` | + `14:32 Onboarded [[Acme Website...]]` |
+| `team/Stacy Thompson.md` | `current_project: null` | `current_project: [[Acme Website...]]` |
+
+**The Output (Auto-Wikilinks + Context Cloud):**
+```
+- 14:32 Onboarded [[Acme Website Redesign]] - $45K, [[Stacy Thompson]] leading
+  → [[TechStart Inc]] [[Q2 Delivery]] [[Website Projects]]
+```
+
+**The Git Commit:**
+```
+[Crank:onboard-project] Acme Website Redesign
+  + projects/Acme Website Redesign.md (created)
+  ~ clients/Acme Corp.md (updated)
+  ~ daily-notes/2026-02-02.md (updated)
+  ~ team/Stacy Thompson.md (updated)
+```
+
+### Key Concepts
+
+| Concept | What It Means |
+|---------|---------------|
+| **Auto-Wikilinks** | Exact entity matches → `[[Entity]]` inline |
+| **Context Cloud** | Related entities → `→ [[...]]` suffix |
+| **Atomic Commits** | 4 files, 1 git commit, 1 undo |
+| **Deterministic** | Same input + same vault = same output |
+
+### The Complete Picture
+
+Flywheel-Crank gives you **hands**: 11 mutation tools for deterministic vault automation.
+
+But writing isn't enough. Before Carter onboards that project, she needs to query client history, check team availability, and understand project context—that's **reading**.
+
+For graph intelligence, see **[Flywheel](https://github.com/velvetmonkey/flywheel)**: 51 read-only tools for querying your knowledge graph.
+
+**Hands + Eyes = Complete vault intelligence.**
+
+---
+
 ## Quick Start
 
 Configure **both** Flywheel (read) and Flywheel-Crank (write) for the complete experience.
