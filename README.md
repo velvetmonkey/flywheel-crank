@@ -98,19 +98,29 @@ Claude: Running onboard-project...
 
 ---
 
-#### Results
+#### The Output
 
-| File | Before | After |
-|------|--------|-------|
-| `projects/Acme Website Redesign.md` | *(new)* | Project with frontmatter |
-| `clients/Acme Corp.md` | `## Active Engagement` | + project entry |
-| `daily-notes/2026-02-02.md` | `## Log` | + timestamped entry |
-| `team/Stacy Thompson.md` | `utilization: 50` | `utilization: 80` |
+`projects/Acme Website Redesign.md` *(created)*:
+```markdown
+---
+type: project
+client: "[[Acme Corp]]"
+budget: 45000
+timeline: Q2 2026
+lead: "[[Stacy Thompson]]"
+status: active
+---
+# Acme Website Redesign
+```
 
-**Git Commit:**
+`daily-notes/2026-02-02.md` *(updated)*:
+```markdown
+## Log
+- 14:32 Onboarded [[Acme Website Redesign]] project
+  → [[TechStart Inc]] [[Q2 Delivery]] [[Website Projects]]
 ```
-[Crank:onboard-project] Acme Website Redesign (4 files)
-```
+
+**4 files. 1 commit. 1 undo.**
 
 ### Key Concepts
 
@@ -248,13 +258,18 @@ actions:
     state: complete
 ```
 
-**Execution:**
+**Before:**
+```markdown
+## Tasks
+- [ ] Review PR
+- [ ] Deploy staging
 ```
-You: Complete the "Review PR" task in Project Alpha
-Claude: [executes complete-task policy]
 
-Toggled task in projects/Project Alpha.md:
-  - [x] Review PR  (was: [ ])
+**After:**
+```markdown
+## Tasks
+- [x] Review PR
+- [ ] Deploy staging
 ```
 
 ### Complex: Decision Record (Multi-file Atomic)
@@ -293,17 +308,32 @@ actions:
       last_decision: "[[ADR-{next_id} {title}]]"
 ```
 
-**What happens:**
-- 3 files changed atomically
-- 1 git commit captures everything
-- 1 undo reverts all 3 files
+**Output:**
 
+`decisions/ADR-006 Turbopump Mitigation.md` *(created)*:
+```markdown
+---
+type: decision
+status: proposed
+owner: "[[Sarah Chen]]"
+---
+# ADR-006: Turbopump Mitigation
+
+## Context
+Turbopump showing 15% efficiency loss...
+
+## Decision
+Switch to redundant pump configuration...
 ```
-Committed: [Policy:capture-decision] Update 3 file(s)
-  - decisions/ADR-006 Turbopump Mitigation.md (created)
-  - daily-notes/2026-02-01.md (updated)
-  - projects/Propulsion.md (updated)
+
+`daily-notes/2026-02-01.md` *(updated)*:
+```markdown
+## Activity Log
+- Created [[ADR-006 Turbopump Mitigation]]
+  → [[Propulsion System]] [[Test 4]]
 ```
+
+**3 files. 1 commit. 1 undo.**
 
 ---
 
