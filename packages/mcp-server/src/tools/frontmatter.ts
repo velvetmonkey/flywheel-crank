@@ -182,6 +182,4 @@ export function registerFrontmatterTools(
       }
     }
   );
-
-  console.error('[Crank] Frontmatter tools registered (vault_update_frontmatter, vault_add_frontmatter_field)');
 }

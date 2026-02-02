@@ -388,6 +388,4 @@ export function registerTaskTools(
       }
     }
   );
-
-  console.error('[Crank] Task tools registered (vault_toggle_task, vault_add_task)');
 }

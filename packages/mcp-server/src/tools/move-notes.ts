@@ -522,6 +522,4 @@ export function registerMoveNoteTools(
       }
     }
   );
-
-  console.error('[Crank] Move tools registered (vault_move_note, vault_rename_note)');
 }

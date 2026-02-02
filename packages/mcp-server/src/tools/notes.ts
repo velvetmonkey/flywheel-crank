@@ -222,6 +222,4 @@ export function registerNoteTools(
       }
     }
   );
-
-  console.error('[Crank] Note tools registered (vault_create_note, vault_delete_note)');
 }

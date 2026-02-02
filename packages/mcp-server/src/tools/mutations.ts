@@ -506,6 +506,4 @@ export function registerMutationTools(
       }
     }
   );
-
-  console.error('[Crank] Mutation tools registered (vault_add_to_section, vault_remove_from_section, vault_replace_in_section)');
 }

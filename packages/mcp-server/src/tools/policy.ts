@@ -815,6 +815,4 @@ export function registerPolicyTools(
       }
     }
   );
-
-  console.error('[Crank] Policy tools registered (policy_validate, policy_preview, policy_execute, policy_author, policy_revise, policy_list, policy_diff, policy_export, policy_import)');
 }

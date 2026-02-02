@@ -227,6 +227,4 @@ export function registerSystemTools(
       }
     }
   );
-
-  console.error('[Crank] System tools registered (vault_list_sections, vault_undo_last_mutation)');
 }
