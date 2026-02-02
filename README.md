@@ -34,61 +34,9 @@
 
 ### Carter Consultancy: Onboard a Project in One Prompt
 
----
+> **How was this policy created?** See [The Determinism Story](#the-determinism-story) for Carter's iterative authoring session with Claude.
 
-#### The Policy (authored once, reused forever)
-
-```yaml
-# .crank/policies/onboard-project.yaml
-name: onboard-project
-description: Standard workflow for new client projects
-actions:
-  # 1. Create the project file with structured frontmatter
-  - tool: vault_create_note
-    target: projects/{project_name}.md      # Template variable → "Acme Website Redesign"
-    frontmatter:
-      type: project
-      client: "[[{client}]]"                # Wikilink in frontmatter → queryable relationship
-      budget: {budget}
-      timeline: {timeline}
-      lead: "[[{lead}]]"                    # Links to team member's note
-      status: active
-
-  # 2. Update the client's file with new engagement
-  - tool: vault_add_to_section
-    target: clients/{client}.md
-    section: "## Active Engagement"
-    content: "- [[{project_name}]] - ${budget}, {timeline}"
-
-  # 3. Log to daily note with automatic timestamp
-  - tool: vault_add_to_section
-    target: daily-notes/{today}.md          # {today} → "2026-02-02"
-    section: "## Log"
-    content: "Onboarded [[{project_name}]] project"
-    format: timestamp-bullet                # Adds "- 14:32 " prefix automatically
-
-  # 4. Update team member's availability
-  - tool: vault_update_frontmatter
-    target: team/{lead}.md
-    fields:
-      current_project: "[[{project_name}]]"
-      utilization: 80
-```
-
-**What makes this powerful:**
-
-| Element | Example | Why It Matters |
-|---------|---------|----------------|
-| Template variables | `{project_name}` → `Acme Website Redesign` | One policy, infinite projects |
-| Wikilinks in YAML | `client: "[[{client}]]"` | Frontmatter becomes queryable graph |
-| Built-in variables | `{today}` → `2026-02-02` | No date math needed |
-| Format options | `timestamp-bullet` | Consistent log formatting |
-
-> **Authored once.** Reviewed. Committed to git. This is how Carter onboards every project.
-
----
-
-#### The Prompt (runtime)
+#### The Prompt
 
 ```
 You: Onboard new project: Acme Corp website redesign,
@@ -144,6 +92,20 @@ status: active
 | **Atomic Commits** | 4 files, 1 git commit, 1 undo |
 | **Deterministic** | Same input + same vault = same output |
 
+### Beyond Policies: Direct Tool Usage
+
+Policies are great for repeatable workflows. But Crank's tools work just as well ad-hoc:
+
+| Use Case | Example | Tools |
+|----------|---------|-------|
+| **One-off edits** | "Add a note to my daily log" | `vault_add_to_section` |
+| **Migrations** | "Add `status: active` to all project files" | `vault_update_frontmatter` |
+| **Reorganization** | "Move all ADRs to decisions/ folder" | `vault_move_note` |
+| **Batch cleanup** | "Toggle all completed tasks in Q1 notes" | `vault_toggle_task` |
+| **Quick capture** | "Create a meeting note for tomorrow" | `vault_create_note` |
+
+No policy required. Just ask Claude.
+
 ### The Complete Picture
 
 Flywheel-Crank gives you **hands**: 11 mutation tools for deterministic vault automation.
@@ -180,61 +142,6 @@ Add to your Claude Code MCP config (`.mcp.json`):
 > **Windows:** Use `"command": "cmd", "args": ["/c", "npx", "-y", "@velvetmonkey/flywheel-crank"]`
 
 See [Configuration](./docs/configuration.md) for full options.
-
----
-
-## How It Works
-
-### The Policy
-
-```yaml
-# .crank/policies/daily-log.yaml
-name: daily-log
-trigger: "Log *"
-description: Add timestamped entry to daily note with auto-wikilinks
-actions:
-  - tool: vault_add_to_section
-    target: daily-notes/{today}.md
-    section: "## Log"
-    content: "- {time} {input}"
-    format: timestamp-bullet
-    wikilinks: auto
-```
-
-### Input → Policy → Output
-
-**BEFORE** (vault state):
-```markdown
-# 2026-02-01
-
-## Log
-- 09:00 Morning standup with team
-```
-
-**AGENT EXECUTES:**
-```
-You: Log discussed turbopump testing with Marcus
-Claude: [executes daily-log policy]
-```
-
-**AFTER** (vault state):
-```markdown
-# 2026-02-01
-
-## Log
-- 09:00 Morning standup with team
-- 14:32 discussed [[Turbopump]] testing with [[Marcus Johnson]]
-  → [[Propulsion System]] [[Test 4]]
-```
-
-### Why This Matters
-
-| Property | What It Means |
-|----------|---------------|
-| **Repeatable** | Same input → Same output. Every time. |
-| **Auditable** | Policy checked into git. Review before deploy. |
-| **Deterministic** | No AI hallucination in the mutation logic. |
-| **Marked up** | Auto-wikilinks + contextual suggestions. |
 
 ---
 
