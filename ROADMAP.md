@@ -3,11 +3,11 @@
 ## Vision: The Self-Building Knowledge Graph
 
 **Current State (Feb 2026):**
-- **Flywheel MCP:** 51 read-only tools + search_entities (v1.27.30)
-- **Flywheel-Crank MCP:** Deterministic write operations (mutations) (v1.27.30)
-- **vault-core:** Shared package with SQLite StateDb + FTS5 search (v1.27.30)
+- **Flywheel MCP:** 51 read-only tools + search_entities (v1.27.31)
+- **Flywheel-Crank MCP:** Deterministic write operations (mutations) (v1.27.31)
+- **vault-core:** Shared package with SQLite StateDb + FTS5 search (v1.27.31)
 - **flywheel-bench:** Reliability testing & benchmarking infrastructure
-- **CI Status:** ✅ All tests passing (flywheel: 395, crank: 1326)
+- **CI Status:** ✅ All tests passing (flywheel: 395+8, crank: 1326)
 
 Flywheel + Crank form a **self-maintaining knowledge graph**:
 
@@ -28,6 +28,32 @@ Flywheel + Crank form a **self-maintaining knowledge graph**:
 ```
 
 The more you write, the smarter the graph gets. No manual linking required.
+
+---
+
+## Progress Update: Feb 2, 2026 (4:30 AM)
+
+### Front Page Redesign Complete (v1.27.31)
+
+Completed the "See it in Action" demo for both READMEs:
+
+| Deliverable | Status |
+|-------------|--------|
+| Flywheel README: Carter query demo | ✅ Complete |
+| Flywheel-Crank README: Carter mutation demo | ✅ Complete |
+| MCP badges added to both READMEs | ✅ Complete |
+| Demo vault: team/Stacy Thompson.md | ✅ Complete |
+| Demo vault: projects/Beta Corp Dashboard.md | ✅ Complete |
+| Graph benchmark tests (validates <2s claim) | ✅ Complete |
+| docs/README_CLAIMS.md (claims audit) | ✅ Complete |
+| Fixed proof-of-work badge URLs | ✅ Complete |
+| Cross-references between repos | ✅ Complete |
+
+**Key highlights:**
+- Flywheel shows "Eyes" (query intelligence): meeting prep in 2 seconds, ~200 tokens
+- Flywheel-Crank shows "Hands" (mutations): project onboarding with atomic commits
+- Carter Consultancy narrative ties both products together
+- All quantitative claims now backed by benchmarks or documentation
 
 ---
 
@@ -193,9 +219,9 @@ All packages released at same version for ecosystem consistency:
 
 ---
 
-## 🔴 HIGH PRIORITY: Front Page Redesign - "See it in Action" Demo
+## ✅ COMPLETE: Front Page Redesign - "See it in Action" Demo
 
-> **Priority:** CRITICAL - This is the key [[marketing]] asset for [[launch]] success
+> **Status:** ✅ Completed Feb 2, 2026 (v1.27.31) - See Progress Update above
 
 ### Overview
 
