@@ -166,6 +166,16 @@ async function rebuildIndex(vaultPath: string): Promise<void> {
   const entityDuration = Date.now() - startTime;
   console.error(`[Crank] Entity index built: ${entityIndex._metadata.total_entities} entities in ${entityDuration}ms`);
 
+  // Save to StateDb for fast subsequent loads
+  if (moduleStateDb) {
+    try {
+      moduleStateDb.replaceAllEntities(entityIndex);
+      console.error(`[Crank] Saved entities to StateDb`);
+    } catch (e) {
+      console.error(`[Crank] Failed to save entities to StateDb: ${e}`);
+    }
+  }
+
   // Get entities for secondary indexes
   const entities = getAllEntities(entityIndex);
   const entityNames = entities.map(e => typeof e === 'string' ? e : getEntityName(e));

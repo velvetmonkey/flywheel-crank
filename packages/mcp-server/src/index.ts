@@ -11,12 +11,7 @@ import { registerPolicyTools } from './tools/policy.js';
 import { findVaultRoot } from './core/vaultRoot.js';
 import { initializeEntityIndex, setCrankStateDb } from './core/wikilinks.js';
 import { initializeLogger, flushLogs } from './core/logging.js';
-import {
-  openStateDb,
-  type StateDb,
-  migrateFromJsonToSqlite,
-  getLegacyPaths,
-} from '@velvetmonkey/vault-core';
+import { openStateDb, type StateDb } from '@velvetmonkey/vault-core';
 import { registerEntitySearchTools } from './tools/entity-search.js';
 
 const server = new McpServer({
@@ -63,20 +58,7 @@ setImmediate(async () => {
     // Set StateDb for all core modules (git, hints, recency, wikilinks)
     setCrankStateDb(stateDb);
 
-    // Auto-migrate from JSON on first run
-    const legacyPaths = getLegacyPaths(vaultPath);
-    const migration = await migrateFromJsonToSqlite(stateDb, legacyPaths);
-    if (migration.entitiesMigrated > 0) {
-      console.error(`[Crank] Migrated ${migration.entitiesMigrated} entities from JSON`);
-    }
-    if (migration.recencyMigrated > 0) {
-      console.error(`[Crank] Migrated ${migration.recencyMigrated} recency records`);
-    }
-    if (migration.crankStateMigrated > 0) {
-      console.error(`[Crank] Migrated ${migration.crankStateMigrated} crank state entries`);
-    }
-
-    // Now initialize entity index (can use StateDb cache)
+    // Initialize entity index (will scan vault if no cache, or load from SQLite)
     await initializeEntityIndex(vaultPath);
   } catch (err) {
     console.error('[Crank] Background initialization failed:', err);
