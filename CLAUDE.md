@@ -735,6 +735,23 @@ Mutation tools now support automatic wikilink suggestions:
 - Opt-in, doesn't change existing behavior
 - Leverages existing vault intelligence
 
+### Future: Aggregation Helper Tools (Investigation)
+
+**Context:** Weekly rollup workflows require complex aggregation that current policy tools don't handle well. Need to investigate whether to add aggregation primitives or rely on hybrid agent approach.
+
+**Potential Tools to Investigate:**
+- `aggregate_section` - Combine same-named sections across multiple files
+- `extract_pattern` - Regex extraction with statistics (e.g., weight tracking)
+- `group_by_category` - Parse and categorize wikilink entries
+- `extract_incomplete_tasks` - Pull uncompleted tasks from date range
+
+**Questions to Answer:**
+- Should these live in Flywheel (read) or Flywheel-Crank (write)?
+- Can we keep them deterministic, or do they require LLM interpretation?
+- Is the hybrid approach (policy orchestrates, agent aggregates) better?
+
+**See Also:** Weekly rollup skill design discussion (Feb 2026)
+
 ### Future: Hybrid Orchestration
 
 **Multi-Agent Convergence:**
