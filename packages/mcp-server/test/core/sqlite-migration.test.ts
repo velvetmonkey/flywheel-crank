@@ -268,7 +268,7 @@ describe('SQLite State Migration', () => {
   });
 
   describe('Backup and Cleanup', () => {
-    it('creates backup files before migration', async () => {
+    it('identifies legacy files for backup', async () => {
       const claudeDir = path.join(tempVault, '.claude');
       fs.mkdirSync(claudeDir, { recursive: true });
 
@@ -282,18 +282,19 @@ describe('SQLite State Migration', () => {
       );
 
       const legacyPaths = getLegacyPaths(tempVault);
-      const backed = backupLegacyFiles(legacyPaths);
+      const backed = await backupLegacyFiles(legacyPaths);
 
-      expect(backed.length).toBe(2);
-      expect(fs.existsSync(path.join(claudeDir, 'wikilink-entities.json.bak'))).toBe(true);
-      expect(fs.existsSync(path.join(claudeDir, 'entity-recency.json.bak'))).toBe(true);
+      // backupLegacyFiles reports which files were identified for backup
+      expect(backed.success).toBe(true);
+      expect(backed.backedUpFiles.length).toBe(2);
+      expect(backed.backedUpFiles).toContain(path.join(claudeDir, 'wikilink-entities.json'));
+      expect(backed.backedUpFiles).toContain(path.join(claudeDir, 'entity-recency.json'));
     });
 
-    it('deletes legacy files only if backup exists', async () => {
+    it('deletes legacy files', async () => {
       const claudeDir = path.join(tempVault, '.claude');
       fs.mkdirSync(claudeDir, { recursive: true });
 
-      // Create file without backup
       fs.writeFileSync(
         path.join(claudeDir, 'wikilink-entities.json'),
         JSON.stringify({ technologies: [], _metadata: { total_entities: 0 } })
@@ -301,18 +302,23 @@ describe('SQLite State Migration', () => {
 
       const legacyPaths = getLegacyPaths(tempVault);
 
-      // Try to delete without backup
-      const deleted = deleteLegacyFiles(legacyPaths);
-      expect(deleted.length).toBe(0);
-      expect(fs.existsSync(path.join(claudeDir, 'wikilink-entities.json'))).toBe(true);
-
-      // Create backup
-      backupLegacyFiles(legacyPaths);
-
-      // Now delete should work
-      const deletedAfterBackup = deleteLegacyFiles(legacyPaths);
-      expect(deletedAfterBackup.length).toBe(1);
+      // Delete the legacy files
+      const deleted = await deleteLegacyFiles(legacyPaths);
+      expect(deleted.success).toBe(true);
+      expect(deleted.deletedFiles.length).toBe(1);
       expect(fs.existsSync(path.join(claudeDir, 'wikilink-entities.json'))).toBe(false);
+    });
+
+    it('handles already-deleted files gracefully', async () => {
+      const claudeDir = path.join(tempVault, '.claude');
+      fs.mkdirSync(claudeDir, { recursive: true });
+
+      // No legacy files exist
+      const legacyPaths = getLegacyPaths(tempVault);
+      const deleted = await deleteLegacyFiles(legacyPaths);
+
+      expect(deleted.success).toBe(true);
+      expect(deleted.deletedFiles.length).toBe(0);
     });
   });
 

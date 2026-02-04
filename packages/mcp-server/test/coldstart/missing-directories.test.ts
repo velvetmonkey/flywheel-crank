@@ -37,21 +37,21 @@ describe('Missing .claude Directory', () => {
     await cleanupTempVault(tempVault);
   });
 
-  it('should auto-create .claude when saving entity cache', async () => {
-    const claudeDir = path.join(tempVault, '.claude');
+  it('should auto-create .flywheel when opening StateDb', async () => {
+    const flywheelDir = path.join(tempVault, '.flywheel');
 
     // Verify doesn't exist
-    const beforeExists = await fs.access(claudeDir).then(() => true).catch(() => false);
+    const beforeExists = await fs.access(flywheelDir).then(() => true).catch(() => false);
     expect(beforeExists).toBe(false);
 
-    // Open StateDb (should auto-create .claude)
+    // Open StateDb (should auto-create .flywheel)
     const stateDb = openStateDb(tempVault);
     setCrankStateDb(stateDb);
 
     // Create entity cache in StateDb
     createEntityCacheInStateDb(stateDb, tempVault, { people: ['Test Person'] });
 
-    const afterExists = await fs.access(claudeDir).then(() => true).catch(() => false);
+    const afterExists = await fs.access(flywheelDir).then(() => true).catch(() => false);
     expect(afterExists).toBe(true);
 
     // Cleanup
@@ -180,13 +180,13 @@ describe('Path Validation', () => {
   });
 
   it('should validate paths stay within vault', async () => {
-    // Valid paths
-    expect(() => validatePath(tempVault, 'notes/test.md')).not.toThrow();
-    expect(() => validatePath(tempVault, 'deep/nested/path/file.md')).not.toThrow();
+    // Valid paths return true
+    expect(validatePath(tempVault, 'notes/test.md')).toBe(true);
+    expect(validatePath(tempVault, 'deep/nested/path/file.md')).toBe(true);
 
-    // Invalid paths (path traversal attempts)
-    expect(() => validatePath(tempVault, '../outside.md')).toThrow();
-    expect(() => validatePath(tempVault, 'notes/../../outside.md')).toThrow();
+    // Invalid paths (path traversal attempts) return false
+    expect(validatePath(tempVault, '../outside.md')).toBe(false);
+    expect(validatePath(tempVault, 'notes/../../outside.md')).toBe(false);
   });
 
   it('should handle absolute paths within vault', async () => {

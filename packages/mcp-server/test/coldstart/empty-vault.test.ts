@@ -144,10 +144,11 @@ Content for section two.
 
       const { content: readContent } = await readVaultFile(tempVault, 'new.md');
       const headings = extractHeadings(readContent);
+      const headingTexts = headings.map(h => h.text);
 
-      expect(headings).toContain('Note Title');
-      expect(headings).toContain('Section One');
-      expect(headings).toContain('Section Two');
+      expect(headingTexts).toContain('Note Title');
+      expect(headingTexts).toContain('Section One');
+      expect(headingTexts).toContain('Section Two');
     });
 
     it('should handle note without any sections', async () => {
@@ -179,8 +180,8 @@ Some content but no sections.
       const { content: readContent } = await readVaultFile(tempVault, 'title-only.md');
       const headings = extractHeadings(readContent);
 
-      expect(headings).toContain('Only Title');
       expect(headings).toHaveLength(1);
+      expect(headings[0].text).toBe('Only Title');
     });
   });
 
@@ -222,7 +223,7 @@ tags:
   - important
   - urgent
 metadata:
-  created: 2026-01-01
+  created: "2026-01-01"
   author: Test
 ---
 # Project Note

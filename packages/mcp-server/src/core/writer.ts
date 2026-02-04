@@ -417,9 +417,13 @@ export function detectSectionBaseIndentation(
   sectionStartLine: number,
   sectionEndLine: number
 ): string {
+  // Clamp endLine to array bounds (array may have been modified by splicing)
+  const maxEndLine = Math.min(sectionEndLine, lines.length - 1);
+
   // Look forward to find the first list item in the section
-  for (let i = sectionStartLine; i <= sectionEndLine; i++) {
+  for (let i = sectionStartLine; i <= maxEndLine; i++) {
     const line = lines[i];
+    if (line === undefined) continue; // Safety check
     const trimmed = line.trim();
 
     // Skip empty lines

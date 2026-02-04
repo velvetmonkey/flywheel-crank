@@ -602,6 +602,22 @@ export async function executePolicy(
   variables: Record<string, unknown>,
   commit: boolean = false
 ): Promise<PolicyExecutionResult> {
+  // Validate required variables before execution
+  const { validateVariables } = await import('./schema.js');
+  const varValidation = validateVariables(policy, variables);
+  if (!varValidation.valid) {
+    const executionResult: PolicyExecutionResult = {
+      success: false,
+      policyName: policy.name,
+      message: `Variable validation failed: ${varValidation.errors.join(', ')}`,
+      stepResults: [],
+      filesModified: [],
+      retryable: false,
+    };
+    executionResult.tokensEstimate = estimateTokens(executionResult);
+    return executionResult;
+  }
+
   // Pre-flight: Check for git lock contention if commit is requested
   if (commit) {
     const isRepo = await isGitRepo(vaultPath);

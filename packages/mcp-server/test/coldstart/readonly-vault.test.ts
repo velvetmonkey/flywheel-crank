@@ -272,10 +272,10 @@ describe('Cross-Platform Considerations', () => {
   });
 
   it('should validate paths before attempting operations', async () => {
-    // Path validation should catch issues before permission errors
-    expect(() => validatePath(tempVault, '../outside-vault.md')).toThrow();
+    // Path validation returns false for invalid paths (path traversal)
+    expect(validatePath(tempVault, '../outside-vault.md')).toBe(false);
 
-    // Valid paths should not throw during validation
-    expect(() => validatePath(tempVault, 'inside-vault.md')).not.toThrow();
+    // Valid paths should return true
+    expect(validatePath(tempVault, 'inside-vault.md')).toBe(true);
   });
 });

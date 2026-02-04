@@ -70,7 +70,7 @@ describe('Policy Transaction Behavior', () => {
   });
 
   describe('Git Commit Integration', () => {
-    it('should commit all changes as single commit with commit: true', async () => {
+    it('should commit all changes as single atomic commit with policy-level commit', async () => {
       await createTestNote(tempVault, 'a.md', '# Log\n');
       await createTestNote(tempVault, 'b.md', '# Log\n');
       await git.add(['a.md', 'b.md']);
@@ -81,20 +81,22 @@ describe('Policy Transaction Behavior', () => {
       const policy: PolicyDefinition = {
         version: '1.0',
         name: 'multi-file-commit',
-        description: 'Commits multiple file changes',
+        description: 'Commits multiple file changes atomically',
         steps: [
-          { id: 's1', tool: 'vault_add_to_section', params: { path: 'a.md', section: 'Log', content: 'Entry A', commit: true } },
-          { id: 's2', tool: 'vault_add_to_section', params: { path: 'b.md', section: 'Log', content: 'Entry B', commit: true } },
+          { id: 's1', tool: 'vault_add_to_section', params: { path: 'a.md', section: 'Log', content: 'Entry A' } },
+          { id: 's2', tool: 'vault_add_to_section', params: { path: 'b.md', section: 'Log', content: 'Entry B' } },
         ],
       };
 
-      const result = await executePolicy(policy, tempVault, {});
+      // Pass commit=true at policy level for atomic commit
+      const result = await executePolicy(policy, tempVault, {}, true);
 
       expect(result.success).toBe(true);
 
-      // Should have made 2 commits (one per step with commit: true)
+      // Should have made 1 atomic commit (all steps together)
       const finalCommits = await getCommitCount();
-      expect(finalCommits).toBe(initialCommits + 2);
+      expect(finalCommits).toBe(initialCommits + 1);
+      expect(result.gitCommit).toBeDefined();
     });
 
     it('should not commit without commit: true flag', async () => {
