@@ -42,6 +42,8 @@ async function initGitRepo(dir: string): Promise<void> {
   await git.init();
   await git.addConfig('user.email', 'test@flywheel.test');
   await git.addConfig('user.name', 'Flywheel Test');
+  // Disable autocrlf to prevent Windows line ending normalization from showing false uncommitted changes
+  await git.addConfig('core.autocrlf', 'false');
 
   // Create initial commit
   await fs.writeFile(path.join(dir, '.gitkeep'), '', 'utf-8');
