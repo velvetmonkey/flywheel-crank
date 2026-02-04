@@ -355,20 +355,6 @@ status: active
 
 ## More Examples
 
-**Before:**
-```markdown
-## Tasks
-- [ ] Review PR
-- [ ] Deploy staging
-```
-
-**After:**
-```markdown
-## Tasks
-- [x] Review PR
-- [ ] Deploy staging
-```
-
 ### Complex: Decision Record (Multi-file Atomic)
 
 **Policy:**
