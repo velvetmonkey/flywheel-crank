@@ -355,19 +355,6 @@ status: active
 
 ## More Examples
 
-### Simple: Task Toggle
-
-**Policy:**
-```yaml
-name: complete-task
-description: Toggle task in project file
-actions:
-  - tool: vault_toggle_task
-    target: "{file}"
-    task: "{task_text}"
-    state: complete
-```
-
 **Before:**
 ```markdown
 ## Tasks
