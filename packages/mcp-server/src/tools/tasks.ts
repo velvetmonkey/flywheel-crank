@@ -12,16 +12,20 @@ import {
   insertInSection,
   type SectionBoundary,
 } from '../core/writer.js';
-import type { MutationResult, Position } from '../core/types.js';
-import { commitChange } from '../core/git.js';
+import type { Position } from '../core/types.js';
 import { maybeApplyWikilinks, suggestRelatedLinks } from '../core/wikilinks.js';
 import {
   runValidationPipeline,
   type GuardrailMode,
 } from '../core/validator.js';
-import { estimateTokens } from '../core/constants.js';
-import fs from 'fs/promises';
-import path from 'path';
+import {
+  withVaultFile,
+  ensureFileExists,
+  handleGitCommit,
+  formatMcpResult,
+  errorResult,
+  successResult,
+} from '../core/mutation-helpers.js';
 
 // Task regex patterns
 const TASK_REGEX = /^(\s*)-\s*\[([ xX])\]\s*(.*)$/;
@@ -116,18 +120,9 @@ export function registerTaskTools(
     async ({ path: notePath, task, section, commit }) => {
       try {
         // 1. Check if file exists
-        const fullPath = path.join(vaultPath, notePath);
-        try {
-          await fs.access(fullPath);
-        } catch {
-          const result: MutationResult = {
-            success: false,
-            message: `File not found: ${notePath}`,
-            path: notePath,
-            tokensEstimate: 0,
-          };
-          result.tokensEstimate = estimateTokens(result);
-          return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
+        const existsError = await ensureFileExists(vaultPath, notePath);
+        if (existsError) {
+          return formatMcpResult(existsError);
         }
 
         // 2. Read file
@@ -138,14 +133,7 @@ export function registerTaskTools(
         if (section) {
           const found = findSection(fileContent, section);
           if (!found) {
-            const result: MutationResult = {
-              success: false,
-              message: `Section not found: ${section}`,
-              path: notePath,
-              tokensEstimate: 0,
-            };
-            result.tokensEstimate = estimateTokens(result);
-            return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
+            return formatMcpResult(errorResult(notePath, `Section not found: ${section}`));
           }
           sectionBoundary = found;
         }
@@ -160,75 +148,35 @@ export function registerTaskTools(
         );
 
         if (!matchingTask) {
-          const result: MutationResult = {
-            success: false,
-            message: `No task found matching "${task}"${section ? ` in section "${section}"` : ''}`,
-            path: notePath,
-            tokensEstimate: 0,
-          };
-          result.tokensEstimate = estimateTokens(result);
-          return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
+          return formatMcpResult(
+            errorResult(notePath, `No task found matching "${task}"${section ? ` in section "${section}"` : ''}`)
+          );
         }
 
         // 6. Toggle the task
         const toggleResult = toggleTask(fileContent, matchingTask.line);
         if (!toggleResult) {
-          const result: MutationResult = {
-            success: false,
-            message: 'Failed to toggle task',
-            path: notePath,
-            tokensEstimate: 0,
-          };
-          result.tokensEstimate = estimateTokens(result);
-          return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
+          return formatMcpResult(errorResult(notePath, 'Failed to toggle task'));
         }
 
         // 7. Write file
         await writeVaultFile(vaultPath, notePath, toggleResult.content, frontmatter);
 
-        // 8. Commit if requested
-        let gitCommit: string | undefined;
-        let undoAvailable: boolean | undefined;
-        let staleLockDetected: boolean | undefined;
-        let lockAgeMs: number | undefined;
-        if (commit) {
-          const gitResult = await commitChange(vaultPath, notePath, '[Crank:Task]');
-          if (gitResult.success && gitResult.hash) {
-            gitCommit = gitResult.hash;
-            undoAvailable = gitResult.undoAvailable;
-          }
-          if (gitResult.staleLockDetected) {
-            staleLockDetected = gitResult.staleLockDetected;
-            lockAgeMs = gitResult.lockAgeMs;
-          }
-        }
+        // 8. Handle git commit
+        const gitInfo = await handleGitCommit(vaultPath, notePath, commit, '[Crank:Task]');
 
         const newStatus = toggleResult.newState ? 'completed' : 'incomplete';
         const checkbox = toggleResult.newState ? '[x]' : '[ ]';
 
-        const result: MutationResult = {
-          success: true,
-          message: `Toggled task to ${newStatus} in ${notePath}`,
-          path: notePath,
-          preview: `${checkbox} ${matchingTask.text}`,
-          gitCommit,
-          undoAvailable,
-          staleLockDetected,
-          lockAgeMs,
-          tokensEstimate: 0,
-        };
-        result.tokensEstimate = estimateTokens(result);
-
-        return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
+        return formatMcpResult(
+          successResult(notePath, `Toggled task to ${newStatus} in ${notePath}`, gitInfo, {
+            preview: `${checkbox} ${matchingTask.text}`,
+          })
+        );
       } catch (error) {
-        const result: MutationResult = {
-          success: false,
-          message: `Failed to toggle task: ${error instanceof Error ? error.message : String(error)}`,
-          path: notePath,
-          tokensEstimate: 0,
-        };
-        result.tokensEstimate = estimateTokens(result);
-        return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
+        return formatMcpResult(
+          errorResult(notePath, `Failed to toggle task: ${error instanceof Error ? error.message : String(error)}`)
+        );
       }
     }
   );
@@ -255,137 +203,69 @@ export function registerTaskTools(
       guardrails: z.enum(['warn', 'strict', 'off']).default('warn').describe('Output validation mode'),
     },
     async ({ path: notePath, section, task, position, completed, commit, skipWikilinks, suggestOutgoingLinks, maxSuggestions, preserveListNesting, validate, normalize, guardrails }) => {
-      try {
-        // 1. Check if file exists
-        const fullPath = path.join(vaultPath, notePath);
-        try {
-          await fs.access(fullPath);
-        } catch {
-          const result: MutationResult = {
-            success: false,
-            message: `File not found: ${notePath}`,
-            path: notePath,
-            tokensEstimate: 0,
-          };
-          result.tokensEstimate = estimateTokens(result);
-          return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
-        }
+      return withVaultFile(
+        {
+          vaultPath,
+          notePath,
+          commit,
+          commitPrefix: '[Crank:Task]',
+          section,
+          actionDescription: 'add task',
+        },
+        async (ctx) => {
+          // 1. Run validation pipeline on task text
+          const validationResult = runValidationPipeline(task.trim(), 'task', {
+            validate,
+            normalize,
+            guardrails: guardrails as GuardrailMode,
+          });
 
-        // 2. Read file
-        const { content: fileContent, frontmatter } = await readVaultFile(vaultPath, notePath);
-
-        // 3. Find section
-        const sectionBoundary = findSection(fileContent, section);
-        if (!sectionBoundary) {
-          const result: MutationResult = {
-            success: false,
-            message: `Section not found: ${section}`,
-            path: notePath,
-            tokensEstimate: 0,
-          };
-          result.tokensEstimate = estimateTokens(result);
-          return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
-        }
-
-        // 4. Run validation pipeline on task text
-        const validationResult = runValidationPipeline(task.trim(), 'task', {
-          validate,
-          normalize,
-          guardrails: guardrails as GuardrailMode,
-        });
-
-        // If guardrails=strict and validation failed, abort
-        if (validationResult.blocked) {
-          const result: MutationResult = {
-            success: false,
-            message: validationResult.blockReason || 'Output validation failed',
-            path: notePath,
-            warnings: validationResult.inputWarnings,
-            outputIssues: validationResult.outputIssues,
-            tokensEstimate: 0,
-          };
-          result.tokensEstimate = estimateTokens(result);
-          return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
-        }
-
-        // Use normalized task text
-        let workingTask = validationResult.content;
-
-        // 4b. Apply wikilinks to task text (unless skipped)
-        let { content: processedTask, wikilinkInfo } = maybeApplyWikilinks(workingTask, skipWikilinks, notePath);
-
-        // 4c. Suggest outgoing links (enabled by default)
-        let suggestInfo: string | undefined;
-        if (suggestOutgoingLinks && !skipWikilinks) {
-          const result = suggestRelatedLinks(processedTask, { maxSuggestions, notePath });
-          if (result.suffix) {
-            processedTask = processedTask + ' ' + result.suffix;
-            suggestInfo = `Suggested: ${result.suggestions.join(', ')}`;
+          // If guardrails=strict and validation failed, abort
+          if (validationResult.blocked) {
+            throw new Error(validationResult.blockReason || 'Output validation failed');
           }
-        }
 
-        // 5. Format the task
-        const checkbox = completed ? '[x]' : '[ ]';
-        const taskLine = `- ${checkbox} ${processedTask}`;
+          // Use normalized task text
+          let workingTask = validationResult.content;
 
-        // 6. Insert into section
-        const updatedContent = insertInSection(
-          fileContent,
-          sectionBoundary,
-          taskLine,
-          position as Position,
-          { preserveListNesting }
-        );
+          // 2. Apply wikilinks to task text (unless skipped)
+          let { content: processedTask, wikilinkInfo } = maybeApplyWikilinks(workingTask, skipWikilinks, notePath);
 
-        // 7. Write file
-        await writeVaultFile(vaultPath, notePath, updatedContent, frontmatter);
-
-        // 8. Commit if requested
-        let gitCommit: string | undefined;
-        let undoAvailable: boolean | undefined;
-        let staleLockDetected: boolean | undefined;
-        let lockAgeMs: number | undefined;
-        if (commit) {
-          const gitResult = await commitChange(vaultPath, notePath, '[Crank:Task]');
-          if (gitResult.success && gitResult.hash) {
-            gitCommit = gitResult.hash;
-            undoAvailable = gitResult.undoAvailable;
+          // 3. Suggest outgoing links (enabled by default)
+          let suggestInfo: string | undefined;
+          if (suggestOutgoingLinks && !skipWikilinks) {
+            const result = suggestRelatedLinks(processedTask, { maxSuggestions, notePath });
+            if (result.suffix) {
+              processedTask = processedTask + ' ' + result.suffix;
+              suggestInfo = `Suggested: ${result.suggestions.join(', ')}`;
+            }
           }
-          if (gitResult.staleLockDetected) {
-            staleLockDetected = gitResult.staleLockDetected;
-            lockAgeMs = gitResult.lockAgeMs;
-          }
+
+          // 4. Format the task
+          const checkbox = completed ? '[x]' : '[ ]';
+          const taskLine = `- ${checkbox} ${processedTask}`;
+
+          // 5. Insert into section
+          const updatedContent = insertInSection(
+            ctx.content,
+            ctx.sectionBoundary!,
+            taskLine,
+            position as Position,
+            { preserveListNesting }
+          );
+
+          const infoLines = [wikilinkInfo, suggestInfo].filter(Boolean);
+
+          return {
+            updatedContent,
+            message: `Added task to section "${ctx.sectionBoundary!.name}" in ${notePath}`,
+            preview: taskLine + (infoLines.length > 0 ? `\n(${infoLines.join('; ')})` : ''),
+            warnings: validationResult.inputWarnings.length > 0 ? validationResult.inputWarnings : undefined,
+            outputIssues: validationResult.outputIssues.length > 0 ? validationResult.outputIssues : undefined,
+            normalizationChanges: validationResult.normalizationChanges.length > 0 ? validationResult.normalizationChanges : undefined,
+          };
         }
-
-        const infoLines = [wikilinkInfo, suggestInfo].filter(Boolean);
-        const result: MutationResult = {
-          success: true,
-          message: `Added task to section "${sectionBoundary.name}" in ${notePath}`,
-          path: notePath,
-          preview: taskLine + (infoLines.length > 0 ? `\n(${infoLines.join('; ')})` : ''),
-          gitCommit,
-          undoAvailable,
-          staleLockDetected,
-          lockAgeMs,
-          tokensEstimate: 0,
-          // Include validation info if present
-          ...(validationResult.inputWarnings.length > 0 && { warnings: validationResult.inputWarnings }),
-          ...(validationResult.outputIssues.length > 0 && { outputIssues: validationResult.outputIssues }),
-          ...(validationResult.normalizationChanges.length > 0 && { normalizationChanges: validationResult.normalizationChanges }),
-        };
-        result.tokensEstimate = estimateTokens(result);
-
-        return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
-      } catch (error) {
-        const result: MutationResult = {
-          success: false,
-          message: `Failed to add task: ${error instanceof Error ? error.message : String(error)}`,
-          path: notePath,
-          tokensEstimate: 0,
-        };
-        result.tokensEstimate = estimateTokens(result);
-        return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
-      }
+      );
     }
   );
 }

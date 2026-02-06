@@ -6,26 +6,23 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
 import {
-  readVaultFile,
-  writeVaultFile,
-  findSection,
   formatContent,
   insertInSection,
   removeFromSection,
   replaceInSection,
-  extractHeadings,
   type MatchMode,
 } from '../core/writer.js';
-import type { MutationResult, FormatType, Position } from '../core/types.js';
+import type { FormatType, Position } from '../core/types.js';
 import {
   runValidationPipeline,
   type GuardrailMode,
 } from '../core/validator.js';
-import { commitChange } from '../core/git.js';
 import { maybeApplyWikilinks, suggestRelatedLinks } from '../core/wikilinks.js';
-import { estimateTokens } from '../core/constants.js';
-import fs from 'fs/promises';
-import path from 'path';
+import {
+  withVaultFile,
+  formatMcpResult,
+  errorResult,
+} from '../core/mutation-helpers.js';
 
 /**
  * Register mutation tools with the MCP server
@@ -59,151 +56,70 @@ export function registerMutationTools(
       guardrails: z.enum(['warn', 'strict', 'off']).default('warn').describe('Output validation mode: "warn" returns issues but proceeds, "strict" blocks on errors, "off" disables'),
     },
     async ({ path: notePath, section, content, position, format, commit, skipWikilinks, preserveListNesting, suggestOutgoingLinks, maxSuggestions, validate, normalize, guardrails }) => {
-      try {
-        // 1. Validate path (security check)
-        const fullPath = path.join(vaultPath, notePath);
+      return withVaultFile(
+        {
+          vaultPath,
+          notePath,
+          commit,
+          commitPrefix: '[Crank:Add]',
+          section,
+          actionDescription: 'add content',
+        },
+        async (ctx) => {
+          // 1. Run validation pipeline on input
+          const validationResult = runValidationPipeline(content, format as FormatType, {
+            validate,
+            normalize,
+            guardrails: guardrails as GuardrailMode,
+          });
 
-        // 2. Check if file exists
-        try {
-          await fs.access(fullPath);
-        } catch {
-          const result: MutationResult = {
-            success: false,
-            message: `File not found: ${notePath}`,
-            path: notePath,
-            tokensEstimate: 0,
+          // If guardrails=strict and validation failed, abort
+          if (validationResult.blocked) {
+            throw new Error(validationResult.blockReason || 'Output validation failed');
+          }
+
+          // Use normalized content
+          let workingContent = validationResult.content;
+
+          // 2. Apply wikilinks to content (unless skipped)
+          let { content: processedContent, wikilinkInfo } = maybeApplyWikilinks(workingContent, skipWikilinks, notePath);
+
+          // 3. Suggest outgoing links (enabled by default)
+          let suggestInfo: string | undefined;
+          if (suggestOutgoingLinks && !skipWikilinks) {
+            const result = suggestRelatedLinks(processedContent, { maxSuggestions, notePath });
+            if (result.suffix) {
+              processedContent = processedContent + ' ' + result.suffix;
+              suggestInfo = `Suggested: ${result.suggestions.join(', ')}`;
+            }
+          }
+
+          // 4. Format the content
+          const formattedContent = formatContent(processedContent, format as FormatType);
+
+          // 5. Insert at position
+          const updatedContent = insertInSection(
+            ctx.content,
+            ctx.sectionBoundary!,
+            formattedContent,
+            position as Position,
+            { preserveListNesting }
+          );
+
+          // 6. Generate preview
+          const infoLines = [wikilinkInfo, suggestInfo].filter(Boolean);
+          const preview = formattedContent + (infoLines.length > 0 ? `\n(${infoLines.join('; ')})` : '');
+
+          return {
+            updatedContent,
+            message: `Added content to section "${ctx.sectionBoundary!.name}" in ${notePath}`,
+            preview,
+            warnings: validationResult.inputWarnings.length > 0 ? validationResult.inputWarnings : undefined,
+            outputIssues: validationResult.outputIssues.length > 0 ? validationResult.outputIssues : undefined,
+            normalizationChanges: validationResult.normalizationChanges.length > 0 ? validationResult.normalizationChanges : undefined,
           };
-          result.tokensEstimate = estimateTokens(result);
-          return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
         }
-
-        // 3. Read file with frontmatter (preserve line ending style)
-        const { content: fileContent, frontmatter, lineEnding } = await readVaultFile(vaultPath, notePath);
-
-        // 4. Find the section
-        const sectionBoundary = findSection(fileContent, section);
-        if (!sectionBoundary) {
-          // Provide context-aware error message
-          const headings = extractHeadings(fileContent);
-          let message: string;
-          if (headings.length === 0) {
-            message = `Section '${section}' not found. This file has no headings. Use vault_append_to_note for files without section structure.`;
-          } else {
-            const availableSections = headings.map(h => h.text).join(', ');
-            message = `Section '${section}' not found. Available sections: ${availableSections}`;
-          }
-          const result: MutationResult = {
-            success: false,
-            message,
-            path: notePath,
-            tokensEstimate: 0,
-          };
-          result.tokensEstimate = estimateTokens(result);
-          return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
-        }
-
-        // 5. Run validation pipeline on input
-        const validationResult = runValidationPipeline(content, format as FormatType, {
-          validate,
-          normalize,
-          guardrails: guardrails as GuardrailMode,
-        });
-
-        // If guardrails=strict and validation failed, abort
-        if (validationResult.blocked) {
-          const result: MutationResult = {
-            success: false,
-            message: validationResult.blockReason || 'Output validation failed',
-            path: notePath,
-            warnings: validationResult.inputWarnings,
-            outputIssues: validationResult.outputIssues,
-            tokensEstimate: 0,
-          };
-          result.tokensEstimate = estimateTokens(result);
-          return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
-        }
-
-        // Use normalized content
-        let workingContent = validationResult.content;
-
-        // 5b. Apply wikilinks to content (unless skipped)
-        let { content: processedContent, wikilinkInfo } = maybeApplyWikilinks(workingContent, skipWikilinks, notePath);
-
-        // 5c. Suggest outgoing links (enabled by default)
-        let suggestInfo: string | undefined;
-        if (suggestOutgoingLinks && !skipWikilinks) {
-          const result = suggestRelatedLinks(processedContent, { maxSuggestions, notePath });
-          if (result.suffix) {
-            processedContent = processedContent + ' ' + result.suffix;
-            suggestInfo = `Suggested: ${result.suggestions.join(', ')}`;
-          }
-        }
-
-        // 6. Format the content
-        const formattedContent = formatContent(processedContent, format as FormatType);
-
-        // 7. Insert at position
-        const updatedContent = insertInSection(
-          fileContent,
-          sectionBoundary,
-          formattedContent,
-          position as Position,
-          { preserveListNesting }
-        );
-
-        // 8. Write file (preserving frontmatter and line endings)
-        await writeVaultFile(vaultPath, notePath, updatedContent, frontmatter, lineEnding);
-
-        // 9. Commit if requested
-        let gitCommit: string | undefined;
-        let undoAvailable: boolean | undefined;
-        let staleLockDetected: boolean | undefined;
-        let lockAgeMs: number | undefined;
-        if (commit) {
-          const gitResult = await commitChange(vaultPath, notePath, '[Crank:Add]');
-          if (gitResult.success && gitResult.hash) {
-            gitCommit = gitResult.hash;
-            undoAvailable = gitResult.undoAvailable;
-          }
-          // Pass through stale lock info regardless of success
-          if (gitResult.staleLockDetected) {
-            staleLockDetected = gitResult.staleLockDetected;
-            lockAgeMs = gitResult.lockAgeMs;
-          }
-        }
-
-        // 10. Generate preview (show the added line)
-        const infoLines = [wikilinkInfo, suggestInfo].filter(Boolean);
-        const preview = formattedContent + (infoLines.length > 0 ? `\n(${infoLines.join('; ')})` : '');
-
-        const result: MutationResult = {
-          success: true,
-          message: `Added content to section "${sectionBoundary.name}" in ${notePath}`,
-          path: notePath,
-          preview,
-          gitCommit,
-          undoAvailable,
-          staleLockDetected,
-          lockAgeMs,
-          tokensEstimate: 0, // Will be set below
-          // Include validation info if present
-          ...(validationResult.inputWarnings.length > 0 && { warnings: validationResult.inputWarnings }),
-          ...(validationResult.outputIssues.length > 0 && { outputIssues: validationResult.outputIssues }),
-          ...(validationResult.normalizationChanges.length > 0 && { normalizationChanges: validationResult.normalizationChanges }),
-        };
-        result.tokensEstimate = estimateTokens(result);
-
-        return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
-      } catch (error) {
-        const result: MutationResult = {
-          success: false,
-          message: `Failed to add content: ${error instanceof Error ? error.message : String(error)}`,
-          path: notePath,
-          tokensEstimate: 0,
-        };
-        result.tokensEstimate = estimateTokens(result);
-        return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
-      }
+      );
     }
   );
 
@@ -222,111 +138,37 @@ export function registerMutationTools(
       commit: z.boolean().default(false).describe('If true, commit this change to git (creates undo point)'),
     },
     async ({ path: notePath, section, pattern, mode, useRegex, commit }) => {
-      try {
-        // 1. Check if file exists
-        const fullPath = path.join(vaultPath, notePath);
-        try {
-          await fs.access(fullPath);
-        } catch {
-          const result: MutationResult = {
-            success: false,
-            message: `File not found: ${notePath}`,
-            path: notePath,
-            tokensEstimate: 0,
-          };
-          result.tokensEstimate = estimateTokens(result);
-          return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
-        }
+      return withVaultFile(
+        {
+          vaultPath,
+          notePath,
+          commit,
+          commitPrefix: '[Crank:Remove]',
+          section,
+          actionDescription: 'remove content',
+        },
+        async (ctx) => {
+          // Remove matching content
+          const removeResult = removeFromSection(
+            ctx.content,
+            ctx.sectionBoundary!,
+            pattern,
+            mode as MatchMode,
+            useRegex
+          );
 
-        // 2. Read file with frontmatter (preserve line ending style)
-        const { content: fileContent, frontmatter, lineEnding } = await readVaultFile(vaultPath, notePath);
-
-        // 3. Find the section
-        const sectionBoundary = findSection(fileContent, section);
-        if (!sectionBoundary) {
-          // Provide context-aware error message
-          const headings = extractHeadings(fileContent);
-          let message: string;
-          if (headings.length === 0) {
-            message = `Section '${section}' not found. This file has no headings. Use vault_append_to_note for files without section structure.`;
-          } else {
-            const availableSections = headings.map(h => h.text).join(', ');
-            message = `Section '${section}' not found. Available sections: ${availableSections}`;
+          if (removeResult.removedCount === 0) {
+            // Return early with error via formatMcpResult (throw won't give us the right message)
+            throw new Error(`No content matching "${pattern}" found in section "${ctx.sectionBoundary!.name}"`);
           }
-          const result: MutationResult = {
-            success: false,
-            message,
-            path: notePath,
-            tokensEstimate: 0,
+
+          return {
+            updatedContent: removeResult.content,
+            message: `Removed ${removeResult.removedCount} line(s) from section "${ctx.sectionBoundary!.name}" in ${notePath}`,
+            preview: removeResult.removedLines.join('\n'),
           };
-          result.tokensEstimate = estimateTokens(result);
-          return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
         }
-
-        // 4. Remove matching content
-        const removeResult = removeFromSection(
-          fileContent,
-          sectionBoundary,
-          pattern,
-          mode as MatchMode,
-          useRegex
-        );
-
-        if (removeResult.removedCount === 0) {
-          const result: MutationResult = {
-            success: false,
-            message: `No content matching "${pattern}" found in section "${sectionBoundary.name}"`,
-            path: notePath,
-            tokensEstimate: 0,
-          };
-          result.tokensEstimate = estimateTokens(result);
-          return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
-        }
-
-        // 5. Write file (preserving line endings)
-        await writeVaultFile(vaultPath, notePath, removeResult.content, frontmatter, lineEnding);
-
-        // 6. Commit if requested
-        let gitCommit: string | undefined;
-        let undoAvailable: boolean | undefined;
-        let staleLockDetected: boolean | undefined;
-        let lockAgeMs: number | undefined;
-        if (commit) {
-          const gitResult = await commitChange(vaultPath, notePath, '[Crank:Remove]');
-          if (gitResult.success && gitResult.hash) {
-            gitCommit = gitResult.hash;
-            undoAvailable = gitResult.undoAvailable;
-          }
-          if (gitResult.staleLockDetected) {
-            staleLockDetected = gitResult.staleLockDetected;
-            lockAgeMs = gitResult.lockAgeMs;
-          }
-        }
-
-        const result: MutationResult = {
-          success: true,
-          message: `Removed ${removeResult.removedCount} line(s) from section "${sectionBoundary.name}" in ${notePath}`,
-          path: notePath,
-          preview: removeResult.removedLines.join('\n'),
-          gitCommit,
-          undoAvailable,
-          staleLockDetected,
-          lockAgeMs,
-          tokensEstimate: 0,
-        };
-        result.tokensEstimate = estimateTokens(result);
-
-        return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
-      } catch (error) {
-        const result: MutationResult = {
-          success: false,
-          message: `Failed to remove content: ${error instanceof Error ? error.message : String(error)}`,
-          path: notePath,
-          tokensEstimate: 0,
-        };
-        result.tokensEstimate = estimateTokens(result);
-        return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
-      }
+      );
     }
   );
 
@@ -352,158 +194,71 @@ export function registerMutationTools(
       guardrails: z.enum(['warn', 'strict', 'off']).default('warn').describe('Output validation mode: "warn" returns issues but proceeds, "strict" blocks on errors, "off" disables'),
     },
     async ({ path: notePath, section, search, replacement, mode, useRegex, commit, skipWikilinks, suggestOutgoingLinks, maxSuggestions, validate, normalize, guardrails }) => {
-      try {
-        // 1. Check if file exists
-        const fullPath = path.join(vaultPath, notePath);
-        try {
-          await fs.access(fullPath);
-        } catch {
-          const result: MutationResult = {
-            success: false,
-            message: `File not found: ${notePath}`,
-            path: notePath,
-            tokensEstimate: 0,
-          };
-          result.tokensEstimate = estimateTokens(result);
-          return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
-        }
+      return withVaultFile(
+        {
+          vaultPath,
+          notePath,
+          commit,
+          commitPrefix: '[Crank:Replace]',
+          section,
+          actionDescription: 'replace content',
+        },
+        async (ctx) => {
+          // 1. Run validation pipeline on replacement text
+          const validationResult = runValidationPipeline(replacement, 'plain', {
+            validate,
+            normalize,
+            guardrails: guardrails as GuardrailMode,
+          });
 
-        // 2. Read file with frontmatter (preserve line ending style)
-        const { content: fileContent, frontmatter, lineEnding } = await readVaultFile(vaultPath, notePath);
-
-        // 3. Find the section
-        const sectionBoundary = findSection(fileContent, section);
-        if (!sectionBoundary) {
-          // Provide context-aware error message
-          const headings = extractHeadings(fileContent);
-          let message: string;
-          if (headings.length === 0) {
-            message = `Section '${section}' not found. This file has no headings. Use vault_append_to_note for files without section structure.`;
-          } else {
-            const availableSections = headings.map(h => h.text).join(', ');
-            message = `Section '${section}' not found. Available sections: ${availableSections}`;
+          // If guardrails=strict and validation failed, abort
+          if (validationResult.blocked) {
+            throw new Error(validationResult.blockReason || 'Output validation failed');
           }
-          const result: MutationResult = {
-            success: false,
-            message,
-            path: notePath,
-            tokensEstimate: 0,
-          };
-          result.tokensEstimate = estimateTokens(result);
-          return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
-        }
 
-        // 4. Run validation pipeline on replacement text
-        const validationResult = runValidationPipeline(replacement, 'plain', {
-          validate,
-          normalize,
-          guardrails: guardrails as GuardrailMode,
-        });
+          // Use normalized replacement
+          let workingReplacement = validationResult.content;
 
-        // If guardrails=strict and validation failed, abort
-        if (validationResult.blocked) {
-          const result: MutationResult = {
-            success: false,
-            message: validationResult.blockReason || 'Output validation failed',
-            path: notePath,
-            warnings: validationResult.inputWarnings,
-            outputIssues: validationResult.outputIssues,
-            tokensEstimate: 0,
-          };
-          result.tokensEstimate = estimateTokens(result);
-          return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
-        }
+          // 2. Apply wikilinks to replacement text (unless skipped)
+          let { content: processedReplacement } = maybeApplyWikilinks(workingReplacement, skipWikilinks, notePath);
 
-        // Use normalized replacement
-        let workingReplacement = validationResult.content;
-
-        // 4b. Apply wikilinks to replacement text (unless skipped)
-        let { content: processedReplacement, wikilinkInfo } = maybeApplyWikilinks(workingReplacement, skipWikilinks, notePath);
-
-        // 4c. Suggest outgoing links (enabled by default)
-        let suggestInfo: string | undefined;
-        if (suggestOutgoingLinks && !skipWikilinks) {
-          const result = suggestRelatedLinks(processedReplacement, { maxSuggestions, notePath });
-          if (result.suffix) {
-            processedReplacement = processedReplacement + ' ' + result.suffix;
-            suggestInfo = `Suggested: ${result.suggestions.join(', ')}`;
+          // 3. Suggest outgoing links (enabled by default)
+          if (suggestOutgoingLinks && !skipWikilinks) {
+            const result = suggestRelatedLinks(processedReplacement, { maxSuggestions, notePath });
+            if (result.suffix) {
+              processedReplacement = processedReplacement + ' ' + result.suffix;
+            }
           }
-        }
 
-        // 5. Replace matching content
-        const replaceResult = replaceInSection(
-          fileContent,
-          sectionBoundary,
-          search,
-          processedReplacement,
-          mode as MatchMode,
-          useRegex
-        );
+          // 4. Replace matching content
+          const replaceResult = replaceInSection(
+            ctx.content,
+            ctx.sectionBoundary!,
+            search,
+            processedReplacement,
+            mode as MatchMode,
+            useRegex
+          );
 
-        if (replaceResult.replacedCount === 0) {
-          const result: MutationResult = {
-            success: false,
-            message: `No content matching "${search}" found in section "${sectionBoundary.name}"`,
-            path: notePath,
-            tokensEstimate: 0,
+          if (replaceResult.replacedCount === 0) {
+            throw new Error(`No content matching "${search}" found in section "${ctx.sectionBoundary!.name}"`);
+          }
+
+          // Generate preview showing before/after
+          const previewLines = replaceResult.originalLines.map((orig, i) =>
+            `- ${orig}\n+ ${replaceResult.newLines[i]}`
+          );
+
+          return {
+            updatedContent: replaceResult.content,
+            message: `Replaced ${replaceResult.replacedCount} occurrence(s) in section "${ctx.sectionBoundary!.name}" in ${notePath}`,
+            preview: previewLines.join('\n'),
+            warnings: validationResult.inputWarnings.length > 0 ? validationResult.inputWarnings : undefined,
+            outputIssues: validationResult.outputIssues.length > 0 ? validationResult.outputIssues : undefined,
+            normalizationChanges: validationResult.normalizationChanges.length > 0 ? validationResult.normalizationChanges : undefined,
           };
-          result.tokensEstimate = estimateTokens(result);
-          return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
         }
-
-        // 5. Write file (preserving line endings)
-        await writeVaultFile(vaultPath, notePath, replaceResult.content, frontmatter, lineEnding);
-
-        // 6. Commit if requested
-        let gitCommit: string | undefined;
-        let undoAvailable: boolean | undefined;
-        let staleLockDetected: boolean | undefined;
-        let lockAgeMs: number | undefined;
-        if (commit) {
-          const gitResult = await commitChange(vaultPath, notePath, '[Crank:Replace]');
-          if (gitResult.success && gitResult.hash) {
-            gitCommit = gitResult.hash;
-            undoAvailable = gitResult.undoAvailable;
-          }
-          if (gitResult.staleLockDetected) {
-            staleLockDetected = gitResult.staleLockDetected;
-            lockAgeMs = gitResult.lockAgeMs;
-          }
-        }
-
-        // Generate preview showing before/after
-        const previewLines = replaceResult.originalLines.map((orig, i) =>
-          `- ${orig}\n+ ${replaceResult.newLines[i]}`
-        );
-
-        const result: MutationResult = {
-          success: true,
-          message: `Replaced ${replaceResult.replacedCount} occurrence(s) in section "${sectionBoundary.name}" in ${notePath}`,
-          path: notePath,
-          preview: previewLines.join('\n'),
-          gitCommit,
-          undoAvailable,
-          staleLockDetected,
-          lockAgeMs,
-          tokensEstimate: 0,
-          // Include validation info if present
-          ...(validationResult.inputWarnings.length > 0 && { warnings: validationResult.inputWarnings }),
-          ...(validationResult.outputIssues.length > 0 && { outputIssues: validationResult.outputIssues }),
-          ...(validationResult.normalizationChanges.length > 0 && { normalizationChanges: validationResult.normalizationChanges }),
-        };
-        result.tokensEstimate = estimateTokens(result);
-
-        return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
-      } catch (error) {
-        const result: MutationResult = {
-          success: false,
-          message: `Failed to replace content: ${error instanceof Error ? error.message : String(error)}`,
-          path: notePath,
-          tokensEstimate: 0,
-        };
-        result.tokensEstimate = estimateTokens(result);
-        return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
-      }
+      );
     }
   );
 }

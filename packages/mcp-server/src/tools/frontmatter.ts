@@ -5,11 +5,15 @@
 
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
+import {
+  withVaultFrontmatter,
+  ensureFileExists,
+  handleGitCommit,
+  formatMcpResult,
+  errorResult,
+  successResult,
+} from '../core/mutation-helpers.js';
 import { readVaultFile, writeVaultFile } from '../core/writer.js';
-import type { MutationResult } from '../core/types.js';
-import { commitChange } from '../core/git.js';
-import fs from 'fs/promises';
-import path from 'path';
 
 /**
  * Register frontmatter tools with the MCP server
@@ -30,70 +34,29 @@ export function registerFrontmatterTools(
       commit: z.boolean().default(false).describe('If true, commit this change to git (creates undo point)'),
     },
     async ({ path: notePath, frontmatter: updates, commit }) => {
-      try {
-        // 1. Check if file exists
-        const fullPath = path.join(vaultPath, notePath);
-        try {
-          await fs.access(fullPath);
-        } catch {
-          const result: MutationResult = {
-            success: false,
-            message: `File not found: ${notePath}`,
-            path: notePath,
+      return withVaultFrontmatter(
+        {
+          vaultPath,
+          notePath,
+          commit,
+          commitPrefix: '[Crank:FM]',
+          actionDescription: 'update frontmatter',
+        },
+        async (ctx) => {
+          // Merge frontmatter (updates override existing)
+          const updatedFrontmatter = { ...ctx.frontmatter, ...updates };
+
+          // Generate preview
+          const updatedKeys = Object.keys(updates);
+          const preview = updatedKeys.map(k => `${k}: ${JSON.stringify(updates[k])}`).join('\n');
+
+          return {
+            updatedFrontmatter,
+            message: `Updated ${updatedKeys.length} frontmatter field(s) in ${notePath}`,
+            preview,
           };
-          return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
         }
-
-        // 2. Read file with frontmatter
-        const { content, frontmatter } = await readVaultFile(vaultPath, notePath);
-
-        // 3. Merge frontmatter (updates override existing)
-        const updatedFrontmatter = { ...frontmatter, ...updates };
-
-        // 4. Write back
-        await writeVaultFile(vaultPath, notePath, content, updatedFrontmatter);
-
-        // 5. Commit if requested
-        let gitCommit: string | undefined;
-        let undoAvailable: boolean | undefined;
-        let staleLockDetected: boolean | undefined;
-        let lockAgeMs: number | undefined;
-        if (commit) {
-          const gitResult = await commitChange(vaultPath, notePath, '[Crank:FM]');
-          if (gitResult.success && gitResult.hash) {
-            gitCommit = gitResult.hash;
-            undoAvailable = gitResult.undoAvailable;
-          }
-          if (gitResult.staleLockDetected) {
-            staleLockDetected = gitResult.staleLockDetected;
-            lockAgeMs = gitResult.lockAgeMs;
-          }
-        }
-
-        // 6. Generate preview
-        const updatedKeys = Object.keys(updates);
-        const preview = updatedKeys.map(k => `${k}: ${JSON.stringify(updates[k])}`).join('\n');
-
-        const result: MutationResult = {
-          success: true,
-          message: `Updated ${updatedKeys.length} frontmatter field(s) in ${notePath}`,
-          path: notePath,
-          preview,
-          gitCommit,
-          undoAvailable,
-          staleLockDetected,
-          lockAgeMs,
-        };
-
-        return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
-      } catch (error) {
-        const result: MutationResult = {
-          success: false,
-          message: `Failed to update frontmatter: ${error instanceof Error ? error.message : String(error)}`,
-          path: notePath,
-        };
-        return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
-      }
+      );
     }
   );
 
@@ -112,73 +75,43 @@ export function registerFrontmatterTools(
     async ({ path: notePath, key, value, commit }) => {
       try {
         // 1. Check if file exists
-        const fullPath = path.join(vaultPath, notePath);
-        try {
-          await fs.access(fullPath);
-        } catch {
-          const result: MutationResult = {
-            success: false,
-            message: `File not found: ${notePath}`,
-            path: notePath,
-          };
-          return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
+        const existsError = await ensureFileExists(vaultPath, notePath);
+        if (existsError) {
+          return formatMcpResult(existsError);
         }
 
         // 2. Read file with frontmatter
-        const { content, frontmatter } = await readVaultFile(vaultPath, notePath);
+        const { content, frontmatter, lineEnding } = await readVaultFile(vaultPath, notePath);
 
-        // 3. Check if key already exists
+        // 3. Check if key already exists (custom validation for this tool)
         if (key in frontmatter) {
-          const result: MutationResult = {
-            success: false,
-            message: `Field "${key}" already exists. Use vault_update_frontmatter to modify existing fields.`,
-            path: notePath,
-          };
-          return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
+          return formatMcpResult(
+            errorResult(notePath, `Field "${key}" already exists. Use vault_update_frontmatter to modify existing fields.`)
+          );
         }
 
         // 4. Add new field
         const updatedFrontmatter = { ...frontmatter, [key]: value };
 
         // 5. Write back
-        await writeVaultFile(vaultPath, notePath, content, updatedFrontmatter);
+        await writeVaultFile(vaultPath, notePath, content, updatedFrontmatter, lineEnding);
 
-        // 6. Commit if requested
-        let gitCommit: string | undefined;
-        let undoAvailable: boolean | undefined;
-        let staleLockDetected: boolean | undefined;
-        let lockAgeMs: number | undefined;
-        if (commit) {
-          const gitResult = await commitChange(vaultPath, notePath, '[Crank:FM]');
-          if (gitResult.success && gitResult.hash) {
-            gitCommit = gitResult.hash;
-            undoAvailable = gitResult.undoAvailable;
-          }
-          if (gitResult.staleLockDetected) {
-            staleLockDetected = gitResult.staleLockDetected;
-            lockAgeMs = gitResult.lockAgeMs;
-          }
-        }
+        // 6. Handle git commit
+        const gitInfo = await handleGitCommit(vaultPath, notePath, commit, '[Crank:FM]');
 
-        const result: MutationResult = {
-          success: true,
-          message: `Added frontmatter field "${key}" to ${notePath}`,
-          path: notePath,
-          preview: `${key}: ${JSON.stringify(value)}`,
-          gitCommit,
-          undoAvailable,
-          staleLockDetected,
-          lockAgeMs,
-        };
-
-        return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
+        // 7. Build result
+        return formatMcpResult(
+          successResult(notePath, `Added frontmatter field "${key}" to ${notePath}`, gitInfo, {
+            preview: `${key}: ${JSON.stringify(value)}`,
+          })
+        );
       } catch (error) {
-        const result: MutationResult = {
-          success: false,
-          message: `Failed to add frontmatter field: ${error instanceof Error ? error.message : String(error)}`,
-          path: notePath,
-        };
-        return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
+        return formatMcpResult(
+          errorResult(
+            notePath,
+            `Failed to add frontmatter field: ${error instanceof Error ? error.message : String(error)}`
+          )
+        );
       }
     }
   );

@@ -6,9 +6,14 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
 import { writeVaultFile, validatePath } from '../core/writer.js';
-import type { MutationResult } from '../core/types.js';
-import { commitChange } from '../core/git.js';
 import { maybeApplyWikilinks, suggestRelatedLinks } from '../core/wikilinks.js';
+import {
+  handleGitCommit,
+  formatMcpResult,
+  errorResult,
+  successResult,
+  ensureFileExists,
+} from '../core/mutation-helpers.js';
 import fs from 'fs/promises';
 import path from 'path';
 
@@ -39,29 +44,16 @@ export function registerNoteTools(
       try {
         // 1. Validate path
         if (!validatePath(vaultPath, notePath)) {
-          const result: MutationResult = {
-            success: false,
-            message: 'Invalid path: path traversal not allowed',
-            path: notePath,
-          };
-          return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
+          return formatMcpResult(errorResult(notePath, 'Invalid path: path traversal not allowed'));
         }
 
         const fullPath = path.join(vaultPath, notePath);
 
         // 2. Check if file already exists
-        try {
-          await fs.access(fullPath);
-          if (!overwrite) {
-            const result: MutationResult = {
-              success: false,
-              message: `File already exists: ${notePath}. Use overwrite=true to replace.`,
-              path: notePath,
-            };
-            return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
-          }
-        } catch {
-          // File doesn't exist, which is what we want
+        const existsCheck = await ensureFileExists(vaultPath, notePath);
+        if (existsCheck === null && !overwrite) {
+          // File exists and overwrite is false
+          return formatMcpResult(errorResult(notePath, `File already exists: ${notePath}. Use overwrite=true to replace.`));
         }
 
         // 3. Ensure parent directories exist
@@ -84,22 +76,8 @@ export function registerNoteTools(
         // 6. Write the note
         await writeVaultFile(vaultPath, notePath, processedContent, frontmatter);
 
-        // 5. Commit if requested
-        let gitCommit: string | undefined;
-        let undoAvailable: boolean | undefined;
-        let staleLockDetected: boolean | undefined;
-        let lockAgeMs: number | undefined;
-        if (commit) {
-          const gitResult = await commitChange(vaultPath, notePath, '[Crank:Create]');
-          if (gitResult.success && gitResult.hash) {
-            gitCommit = gitResult.hash;
-            undoAvailable = gitResult.undoAvailable;
-          }
-          if (gitResult.staleLockDetected) {
-            staleLockDetected = gitResult.staleLockDetected;
-            lockAgeMs = gitResult.lockAgeMs;
-          }
-        }
+        // 7. Handle git commit
+        const gitInfo = await handleGitCommit(vaultPath, notePath, commit, '[Crank:Create]');
 
         // Build preview with wikilink info
         const infoLines = [wikilinkInfo, suggestInfo].filter(Boolean);
@@ -111,25 +89,15 @@ export function registerNoteTools(
           previewLines.push(`(${infoLines.join('; ')})`);
         }
 
-        const result: MutationResult = {
-          success: true,
-          message: `Created note: ${notePath}`,
-          path: notePath,
-          preview: previewLines.join('\n'),
-          gitCommit,
-          undoAvailable,
-          staleLockDetected,
-          lockAgeMs,
-        };
-
-        return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
+        return formatMcpResult(
+          successResult(notePath, `Created note: ${notePath}`, gitInfo, {
+            preview: previewLines.join('\n'),
+          })
+        );
       } catch (error) {
-        const result: MutationResult = {
-          success: false,
-          message: `Failed to create note: ${error instanceof Error ? error.message : String(error)}`,
-          path: notePath,
-        };
-        return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
+        return formatMcpResult(
+          errorResult(notePath, `Failed to create note: ${error instanceof Error ? error.message : String(error)}`)
+        );
       }
     }
   );
@@ -149,76 +117,32 @@ export function registerNoteTools(
       try {
         // 1. Require confirmation
         if (!confirm) {
-          const result: MutationResult = {
-            success: false,
-            message: 'Deletion requires explicit confirmation (confirm=true)',
-            path: notePath,
-          };
-          return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
+          return formatMcpResult(errorResult(notePath, 'Deletion requires explicit confirmation (confirm=true)'));
         }
 
         // 2. Validate path
         if (!validatePath(vaultPath, notePath)) {
-          const result: MutationResult = {
-            success: false,
-            message: 'Invalid path: path traversal not allowed',
-            path: notePath,
-          };
-          return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
+          return formatMcpResult(errorResult(notePath, 'Invalid path: path traversal not allowed'));
         }
 
-        const fullPath = path.join(vaultPath, notePath);
-
         // 3. Check if file exists
-        try {
-          await fs.access(fullPath);
-        } catch {
-          const result: MutationResult = {
-            success: false,
-            message: `File not found: ${notePath}`,
-            path: notePath,
-          };
-          return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
+        const existsError = await ensureFileExists(vaultPath, notePath);
+        if (existsError) {
+          return formatMcpResult(existsError);
         }
 
         // 4. Delete the file
+        const fullPath = path.join(vaultPath, notePath);
         await fs.unlink(fullPath);
 
-        // 5. Commit if requested
-        let gitCommit: string | undefined;
-        let undoAvailable: boolean | undefined;
-        let staleLockDetected: boolean | undefined;
-        let lockAgeMs: number | undefined;
-        if (commit) {
-          const gitResult = await commitChange(vaultPath, notePath, '[Crank:Delete]');
-          if (gitResult.success && gitResult.hash) {
-            gitCommit = gitResult.hash;
-            undoAvailable = gitResult.undoAvailable;
-          }
-          if (gitResult.staleLockDetected) {
-            staleLockDetected = gitResult.staleLockDetected;
-            lockAgeMs = gitResult.lockAgeMs;
-          }
-        }
+        // 5. Handle git commit
+        const gitInfo = await handleGitCommit(vaultPath, notePath, commit, '[Crank:Delete]');
 
-        const result: MutationResult = {
-          success: true,
-          message: `Deleted note: ${notePath}`,
-          path: notePath,
-          gitCommit,
-          undoAvailable,
-          staleLockDetected,
-          lockAgeMs,
-        };
-
-        return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
+        return formatMcpResult(successResult(notePath, `Deleted note: ${notePath}`, gitInfo));
       } catch (error) {
-        const result: MutationResult = {
-          success: false,
-          message: `Failed to delete note: ${error instanceof Error ? error.message : String(error)}`,
-          path: notePath,
-        };
-        return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
+        return formatMcpResult(
+          errorResult(notePath, `Failed to delete note: ${error instanceof Error ? error.message : String(error)}`)
+        );
       }
     }
   );
