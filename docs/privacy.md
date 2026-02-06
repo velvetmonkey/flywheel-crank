@@ -296,7 +296,7 @@ You can see what Flywheel returns in Claude Code's tool output. This shows exact
 |------|----------|----------------|
 | Vault files | Your disk | No |
 | Flywheel index | Memory | No |
-| Entity cache | `.claude/wikilink-entities.json` | No |
+| Entity cache | `.claude/flywheel.db` (SQLite) | No |
 | Tool responses | Claude API | Yes |
 
 ### MCP Protocol
@@ -425,25 +425,26 @@ Commit: "crank: add to clients/acme-corp-confidential.md"
 
 ---
 
-### Wikilink Entity Cache Privacy
+### State Database Privacy
 
-**File:** `.claude/wikilink-entities.json`
+**File:** `.claude/flywheel.db` (SQLite)
 
 **Contains:**
 - All note titles
 - All note aliases
 - File paths
+- Commit tracking for undo operations
 
 **Privacy impact:**
 - ⚠️ Reveals vault structure (note names, organization)
 - ⚠️ Written to disk unencrypted
 - ✅ Doesn't contain file contents
 
-**If vault is encrypted:** Entity cache inherits encryption.
+**If vault is encrypted:** State database inherits encryption.
 
 **If paranoid:** Delete after use:
 ```bash
-rm /vault/.claude/wikilink-entities.json
+rm /vault/.claude/flywheel.db
 ```
 (Regenerated on next use)
 

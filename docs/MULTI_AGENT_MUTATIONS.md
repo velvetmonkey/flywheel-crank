@@ -487,7 +487,7 @@ export interface LastCrankCommit {
   timestamp: string;
 }
 
-// Stored in: {vault}/.claude/last-crank-commit.json
+// Stored in: {vault}/.claude/flywheel.db (SQLite StateDb)
 ```
 
 When `vault_undo_last_mutation` is called:

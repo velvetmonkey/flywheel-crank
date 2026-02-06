@@ -554,13 +554,14 @@ The table is added without corrupting the pipe alignment.
 |----------|---------|---------|
 | `PROJECT_PATH` | Vault root path | Auto-detect via `.obsidian` |
 
-### Wikilink Entity Cache
+### State Storage (SQLite)
 
-Location: `{vault}/.claude/wikilink-entities.json`
+Location: `{vault}/.claude/flywheel.db`
 
 - Auto-generated at MCP server startup
-- Refreshes automatically if >1 hour old
-- Contains all known entities from vault
+- Contains entity index with FTS5 full-text search
+- Stores commit tracking for safe undo operations
+- Auto-migrates from legacy JSON on first run
 
 ### Excluded Folders (Wikilink Scanning)
 

@@ -164,10 +164,10 @@ You don't manually link everything. You just write naturally and Crank links for
 ### The Process
 
 1. **On Crank startup:** Entity index built from vault notes
-2. **Index cached:** Stored in `.claude/wikilink-entities.json`
+2. **Index stored:** Persisted in SQLite StateDb (`.claude/flywheel.db`) with FTS5 full-text search
 3. **On mutation:** Content scanned for known entities
 4. **Matches linked:** First occurrence of each entity gets `[[wikilink]]`
-5. **Cache refreshes:** Auto-refreshes if >1 hour old
+5. **Index refreshes:** Auto-refreshes on vault changes
 
 ### Example
 
@@ -214,7 +214,7 @@ The entity scanner (from `@velvetmonkey/vault-core`):
 2. **Extracts title** from filename (strips `.md`, preserves spaces)
 3. **Categorizes** based on folder path and title patterns
 4. **Builds index** with lowercase variants for matching
-5. **Caches index** in `.claude/wikilink-entities.json`
+5. **Stores index** in SQLite StateDb (`.claude/flywheel.db`) with FTS5 for fast search
 
 ### Category Detection
 
@@ -693,24 +693,33 @@ Content here → [[Entity1]] [[Entity2]]
 
 ---
 
-## Cache Management
+## State Storage
 
 ### Location
 
-`{vault}/.claude/wikilink-entities.json`
+`{vault}/.claude/flywheel.db` (SQLite with FTS5)
 
-### Refresh Behavior
+### What's Stored
 
-- Auto-refreshes if >1 hour old
-- Rebuilds on Crank MCP server restart
-- Can be deleted to force full rebuild
+| Table | Purpose |
+|-------|---------|
+| `entities` | Known vault entities with aliases |
+| `entities_fts` | FTS5 virtual table for fast search |
+| `crank_commits` | Commit tracking for safe undo |
 
-### Manual Refresh
+### Benefits
 
-Delete the cache file and restart the Crank MCP server:
+- **Porter stemming:** "running" matches "run"
+- **Prefix search:** Fast autocomplete
+- **Atomic updates:** Consistent state
+- **Auto-migration:** Legacy JSON files migrated on first run
+
+### Manual Reset
+
+Delete the database to force full rescan:
 
 ```bash
-rm .claude/wikilink-entities.json
+rm .claude/flywheel.db
 # Restart Claude Code or reload MCP servers
 ```
 

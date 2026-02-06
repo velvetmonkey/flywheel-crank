@@ -998,7 +998,7 @@ vault/
 ├── .obsidian/                    # Obsidian config (excluded from agent access)
 ├── .claude/
 │   ├── settings.local.json       # Agent permissions
-│   └── wikilink-entities.json    # Entity cache (auto-generated)
+│   └── flywheel.db               # SQLite StateDb (entities, commit tracking)
 │
 ├── agent-logs/                   # Append-only logging (Pattern: Append-Only)
 │   ├── 2026-02-01.md

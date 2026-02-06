@@ -423,27 +423,26 @@ For users comfortable with all Crank operations:
 
 ---
 
-## Wikilink Entity Cache
+## State Storage (SQLite)
 
-### `.claude/wikilink-entities.json`
+### `.claude/flywheel.db`
 
 **Created by:** Flywheel-Crank (auto-generated on startup)
-**Purpose:** Cache of known entities for auto-wikilinks
+**Purpose:** Persistent state for entities, commit tracking, and search
 
-- Auto-refreshes if >1 hour old
-- Contains all entities from vault (people, projects, technologies, acronyms)
-- Used by `mcp__flywheel-crank__vault_add_to_section`, `mcp__flywheel-crank__vault_replace_in_section`, `mcp__flywheel-crank__vault_add_task`
+**Tables:**
+| Table | Purpose |
+|-------|---------|
+| `entities` | Known vault entities with aliases, categories, paths |
+| `entities_fts` | FTS5 virtual table for fast full-text search |
+| `crank_commits` | Commit tracking for safe undo operations |
 
-**Example:**
-```json
-{
-  "people": ["Alex Rivera", "Jordan Lee"],
-  "projects": ["Project Alpha", "API Server"],
-  "technologies": ["TypeScript", "React"],
-  "acronyms": ["API", "MCP", "CLI"],
-  "other": ["Risk Register", "Roadmap"]
-}
-```
+**Features:**
+- Porter stemming ("running" matches "run")
+- Prefix search for autocomplete
+- Auto-migration from legacy JSON files on first run
+
+**Clear state:** Delete `.claude/flywheel.db` to force full rescan.
 
 See [wikilinks.md](./wikilinks.md) for entity inference rules.
 

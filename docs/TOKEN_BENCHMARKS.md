@@ -179,7 +179,7 @@ The entity index is pre-built and cached:
 ```typescript
 // From: wikilinks.ts
 let entityIndex: EntityIndex | null = null;  // ~20 tokens metadata
-// Cache file: .claude/wikilink-entities.json
+// Stored in: .claude/flywheel.db (SQLite with FTS5)
 ```
 
 | Component | Tokens |

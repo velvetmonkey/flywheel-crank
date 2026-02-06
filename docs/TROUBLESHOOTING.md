@@ -341,9 +341,9 @@ See [Wikilinks Guide](./wikilinks.md) for full details.
 1. **Use full name:**
    - "met with [[John Smith]]" instead of "[[John]]"
 
-2. **Check entity cache:**
+2. **Check entity database:**
    ```bash
-   cat /vault/.claude/wikilink-entities.json | grep -i john
+   sqlite3 /vault/.claude/flywheel.db "SELECT name FROM entities WHERE name LIKE '%john%'"
    ```
 
 3. **Remove ambiguous aliases:**

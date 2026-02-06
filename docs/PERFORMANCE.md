@@ -530,8 +530,8 @@ If a mutation takes >1s:
 1. **Check file size:** `ls -lh /vault/note.md`
    - If >500KB, file is too large
 
-2. **Check entity count:** `wc -l /vault/.claude/wikilink-entities.json`
-   - If >10,000, wikilink scan is slow
+2. **Check entity count:** `sqlite3 /vault/.claude/flywheel.db "SELECT COUNT(*) FROM entities"`
+   - If >10,000, wikilink scan may be slow
 
 3. **Check disk:** `df -h`
    - If network drive or HDD, slow I/O

@@ -371,7 +371,7 @@ When multiple processes compete for `.git/index.lock`:
 
 ### Undo Safety
 `vault_undo_last_mutation` tracks the last successful Crank commit:
-- Stores tracking in `.claude/last-crank-commit.json`
+- Stores tracking in SQLite StateDb (`.claude/flywheel.db`)
 - Only allows undo if HEAD matches the expected commit
 - Prevents accidental undo of unrelated commits
 - Warns if another process committed after your mutation

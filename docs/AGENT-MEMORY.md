@@ -405,7 +405,7 @@ When multiple agents (or multiple Claude Code sessions) access the same vault co
 }
 ```
 
-**Commit tracking for safe undo:** Crank tracks the last commit it created in `.claude/last-crank-commit.json`. When you call `vault_undo_last_mutation`:
+**Commit tracking for safe undo:** Crank tracks the last commit it created in the SQLite StateDb (`.claude/flywheel.db`). When you call `vault_undo_last_mutation`:
 - It checks if HEAD matches the expected commit
 - Warns if another process committed after your mutation
 - Prevents accidentally undoing external commits
