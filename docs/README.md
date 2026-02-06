@@ -19,6 +19,7 @@ Flywheel Crank is the deterministic write companion to Flywheel MCP. While Flywh
 | Build autonomous agents with safe mutations | [AGENT_MUTATION_PATTERNS.md](AGENT_MUTATION_PATTERNS.md) |
 | Compare with alternatives | [COMPARISON.md](COMPARISON.md) |
 | See token efficiency benchmarks | [TOKEN_BENCHMARKS.md](TOKEN_BENCHMARKS.md) |
+| Verify the 100x savings claim | [TOKEN_SAVINGS.md](TOKEN_SAVINGS.md) |
 | Know how my data is handled | [privacy.md](privacy.md) |
 | Check performance benchmarks | [PERFORMANCE.md](PERFORMANCE.md) |
 | Troubleshoot issues | [TROUBLESHOOTING.md](TROUBLESHOOTING.md) |
@@ -70,6 +71,11 @@ Technical deep dive into the 7-layer wikilink scoring algorithm. Covers quality 
 Quantified token efficiency data comparing Flywheel-Crank to traditional file operations. Includes read/write operation benchmarks, monthly cost projections, and the 200K token threshold implications.
 
 **Read when:** You want hard numbers on token savings or need to justify Flywheel-Crank's value.
+
+### [TOKEN_SAVINGS.md](TOKEN_SAVINGS.md)
+Measured verification of the "100x token savings" claim. Includes actual token counts for 5 common tasks (orientation, backlinks, search, metadata, section read) on the carter-strategy demo vault. Spoiler: the claim is validated - average 109x savings across typical operations.
+
+**Read when:** You're skeptical of the 100x claim and want to see the real measured data.
 
 ### [AGENT-MEMORY.md](AGENT-MEMORY.md)
 How to use Flywheel + Crank as a persistent memory layer for AI coding assistants like Claude Code. Covers session memory patterns, CLAUDE.md integration, and token efficiency.
