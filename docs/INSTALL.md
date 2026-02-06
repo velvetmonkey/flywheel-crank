@@ -14,7 +14,7 @@ Platform-specific installation instructions for Flywheel-Crank.
 
 ## Both Packages Required
 
-Flywheel-Crank provides **11 mutation tools** for writing to your vault:
+Flywheel-Crank provides **22 tools** for writing to your vault:
 - Content mutations (add, remove, replace)
 - Task management (toggle, add)
 - Frontmatter updates
@@ -26,7 +26,7 @@ Flywheel-Crank provides **11 mutation tools** for writing to your vault:
 | Package | Purpose | Tools |
 |---------|---------|-------|
 | [Flywheel](https://github.com/velvetmonkey/flywheel) | Read, search, graph queries | 51 tools |
-| Flywheel-Crank | Write, mutate, automate | 11 tools |
+| Flywheel-Crank | Write, mutate, automate | 22 tools |
 
 **Workflow:** Read (Flywheel) → Write (Crank) → Verify (Flywheel)
 
@@ -366,4 +366,4 @@ See [Troubleshooting](./TROUBLESHOOTING.md) for more solutions.
 - **[Configuration](./configuration.md)** — Full options reference
 - **[Examples](./EXAMPLES.md)** — Copy-paste tool examples
 - **[Policies](./POLICIES.md)** — Automate with YAML policies
-- **[Tools Reference](./tools-reference.md)** — All 11 mutation tools documented
+- **[Tools Reference](./tools-reference.md)** — All 22 tools documented

@@ -580,15 +580,21 @@ If good: git add -A && git commit
 
 ### 4. Exclude Sensitive Folders
 
-Even though Crank doesn't index, good practice:
+Use Claude Code's deny permissions to block access to sensitive folders:
+
 ```json
 {
-  "env": {
-    "CRANK_EXCLUDE_PATTERNS": "_private/,secrets/,work-confidential/"
+  "permissions": {
+    "deny": [
+      "Read(_private/**)",
+      "Read(secrets/**)",
+      "Read(work-confidential/**)"
+    ]
   }
 }
 ```
-(Not currently implemented - TODO feature request)
+
+This prevents both Flywheel and Flywheel-Crank from accessing these paths.
 
 ---
 

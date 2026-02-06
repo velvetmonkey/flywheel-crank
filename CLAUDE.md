@@ -84,11 +84,14 @@ Read this for deep context on product direction, market timing, and strategic pr
 ## Current State
 
 **Shipped:**
-- 11 surgical mutation tools (add/remove/replace/toggle/create/delete)
+- 22 MCP tools total:
+  - 11 core mutation tools (add/remove/replace/toggle/create/delete)
+  - 2 move/rename tools (with backlink updates)
+  - 9 policy tools (workflow orchestration)
 - Git integration (auto-commit + undo)
 - Section-scoped operations (safe, reversible)
 - Permission model (read-broad, write-narrow)
-- 930 automated tests (production hardened with edge cases, benchmarks, stress tests)
+- 1465 automated tests (production hardened with edge cases, benchmarks, stress tests)
 - Smart template handling (replace empty placeholders like `1. ` or `- `)
 - Wikilink integration (auto-wikilinks on by default, opt-out via `skipWikilinks`)
 - `@velvetmonkey/vault-core` shared package (entity scanning, protected zones, wikilink application)
@@ -416,7 +419,7 @@ test/
     └── workflows.test.ts    # 15 tests - end-to-end workflow scenarios
 ```
 
-**Total: 930 tests**
+**Total: 1465 tests**
 
 **See [docs/testing.md](./docs/testing.md) for:**
 - Manual MCP testing procedures

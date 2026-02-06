@@ -1,6 +1,6 @@
 # Flywheel-Crank Test Suite Documentation
 
-Comprehensive documentation of the 930+ tests validating Flywheel-Crank's deterministic mutation capabilities.
+Comprehensive documentation of the 1465+ tests validating Flywheel-Crank's deterministic mutation capabilities.
 
 ---
 
@@ -8,7 +8,7 @@ Comprehensive documentation of the 930+ tests validating Flywheel-Crank's determ
 
 | Metric | Value |
 |--------|-------|
-| Total Tests | 930+ |
+| Total Tests | 1465+ |
 | Test Files | 40+ |
 | Coverage Target | 60% statements, 50% branches |
 | Platforms | Ubuntu, Windows, macOS |

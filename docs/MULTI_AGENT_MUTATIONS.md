@@ -59,7 +59,7 @@ Modern AI workflows increasingly involve multiple agents working concurrently:
 Simple mutations (`vault_add_to_section`, etc.) use **best-effort** git semantics:
 - File mutation **always succeeds**
 - Git commit **may fail** (lock contention, etc.)
-- Result: `{ success: true, gitError: "lock error..." }`
+- Result: `{ success: true, staleLockDetected: true }` (no gitCommit field)
 
 This works for interactive human use but creates problems for automated agents that need clear success/failure semantics.
 

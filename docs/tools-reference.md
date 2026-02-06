@@ -40,7 +40,9 @@ Why this pattern?
 | **Tasks** | toggle/add | Checkbox operations |
 | **Frontmatter** | update/add | YAML field mutations |
 | **Notes** | create/delete | File operations |
+| **Move** | move/rename | File relocation with backlink updates |
 | **System** | list/undo | Discovery and rollback |
+| **Policy** | validate/preview/execute/author/revise/list/diff/export/import | Workflow orchestration |
 
 ---
 
@@ -370,6 +372,60 @@ Delete a note from the vault.
 
 ---
 
+## Move Tools
+
+### mcp__flywheel-crank__vault_move_note
+
+Move a note to a new vault location and update all backlinks across the vault.
+
+**Parameters:**
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `oldPath` | string | Yes | Vault-relative path to move from |
+| `newPath` | string | Yes | Vault-relative path to move to |
+| `updateBacklinks` | boolean | No | Update all backlinks (default: `true`) |
+| `commit` | boolean | No | Git commit after move |
+
+**Example:**
+
+```
+┌─ MUTATION: mcp__flywheel-crank__vault_move_note ────────────────────────┐
+│ oldPath:  inbox/meeting-notes.md                │
+│ newPath:  meetings/2026-02-06-standup.md        │
+├──────────────────────────────────────────────────┤
+│ Moved:    inbox/meeting-notes.md → meetings/... │
+│ Backlinks updated: 3 files                       │
+└──────────────────────────────────────────────────┘
+```
+
+---
+
+### mcp__flywheel-crank__vault_rename_note
+
+Rename a note in place and update all backlinks across the vault.
+
+**Parameters:**
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `path` | string | Yes | Vault-relative path to the note |
+| `newTitle` | string | Yes | New title (without .md extension) |
+| `updateBacklinks` | boolean | No | Update all backlinks (default: `true`) |
+| `commit` | boolean | No | Git commit after rename |
+
+**Example:**
+
+```
+┌─ MUTATION: mcp__flywheel-crank__vault_rename_note ──────────────────────┐
+│ path:     projects/alpha.md                     │
+│ newTitle: Project Alpha Launch                   │
+├──────────────────────────────────────────────────┤
+│ Renamed:  alpha.md → Project Alpha Launch.md    │
+│ Backlinks updated: 5 files                       │
+└──────────────────────────────────────────────────┘
+```
+
+---
+
 ## System Tools
 
 ### mcp__flywheel-crank__vault_list_sections
@@ -612,7 +668,9 @@ interface MutationResult {
   path: string;
   preview?: string;           // Content preview if applicable
   gitCommit?: string;         // Commit hash if committed
-  gitError?: string;          // Git error if commit failed
+  undoAvailable?: boolean;    // True only if commit succeeded
+  staleLockDetected?: boolean; // True if stale git lock detected
+  lockAgeMs?: number;         // Age of lock file in milliseconds
   warnings?: ValidationWarning[];      // Input validation warnings
   outputIssues?: OutputIssue[];        // Output guardrail issues
   normalizationChanges?: string[];     // Changes made by normalizer
@@ -921,7 +979,6 @@ When multiple processes compete for `.git/index.lock`:
   "success": true,
   "message": "Added content to ## Log",
   "path": "daily-notes/2026-01-28.md",
-  "gitError": "fatal: Unable to create '.git/index.lock': File exists",
   "staleLockDetected": true,
   "lockAgeMs": 125000
 }

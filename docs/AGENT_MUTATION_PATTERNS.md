@@ -616,7 +616,7 @@ async function mutateWithRetry(operation, maxRetries = 3) {
     }
 
     // Retry on transient failures (git lock, etc.)
-    if (result.gitError || result.message.includes("lock")) {
+    if (result.staleLockDetected || result.message.includes("lock")) {
       const delay = Math.pow(2, attempt) * 100;  // 100ms, 200ms, 400ms
       await sleep(delay);
       continue;

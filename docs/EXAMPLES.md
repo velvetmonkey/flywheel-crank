@@ -1,6 +1,6 @@
 # Flywheel Crank - Usage Examples
 
-This guide demonstrates all 11 Flywheel Crank tools using real examples from the [Flywheel demo vaults](https://github.com/velvetmonkey/flywheel).
+This guide demonstrates Flywheel Crank's core mutation tools using real examples from the [Flywheel demo vaults](https://github.com/velvetmonkey/flywheel).
 
 ---
 
@@ -75,7 +75,7 @@ You: Mark "Complete Test 3 analysis report" as done in Sprint Planning
 ```javascript
 vault_toggle_task({
   path: "meetings/2026-01-02 Sprint Planning.md",
-  taskText: "Complete Test 3 analysis report"
+  task: "Complete Test 3 analysis report"
 })
 ```
 
@@ -489,7 +489,7 @@ Toggle a task checkbox (checked/unchecked).
 // Mark action item complete
 vault_toggle_task({
   path: "meetings/2026-01-02 Sprint Planning.md",
-  taskText: "Review Test 3 data, approve Test 4 proceed decision"
+  task: "Review Test 3 data, approve Test 4 proceed decision"
 })
 ```
 
@@ -703,7 +703,7 @@ vault_add_to_section({
 // 3. WRITE: Toggle completed tasks
 vault_toggle_task({
   path: "daily-notes/2026-01-02.md",
-  taskText: "Schedule Test 4 contingency planning",
+  task: "Schedule Test 4 contingency planning",
   commit: true
 });
 

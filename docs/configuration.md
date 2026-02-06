@@ -251,7 +251,7 @@ Flywheel and Flywheel-Crank implement a **read-broad, write-narrow** permission 
 │                      → Cannot modify vault                      │
 │                                                                 │
 │  Flywheel-Crank (write):  Approved per-tool                     │
-│                           → 11 mutation tools                   │
+│                           → 22 tools (mutations, moves, policy) │
 │                           → Requires conscious consent          │
 │                                                                 │
 └─────────────────────────────────────────────────────────────────┘

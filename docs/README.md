@@ -31,12 +31,12 @@ Flywheel Crank is the deterministic write companion to Flywheel MCP. While Flywh
 ## Documentation Guide
 
 ### [EXAMPLES.md](EXAMPLES.md)
-Quick start guide with copy-paste examples for all 11 tools. Includes 3 workflow scenarios (Daily Standup, Meeting Notes, Project Update) using the Flywheel demo vaults.
+Quick start guide with copy-paste examples for core mutation tools. Includes 3 workflow scenarios (Daily Standup, Meeting Notes, Project Update) using the Flywheel demo vaults.
 
 **Read when:** You want to get started quickly or see real-world usage patterns.
 
 ### [tools-reference.md](tools-reference.md)
-Complete reference for all 11 MCP tools with visual examples, decision guides, and parameter documentation. Covers mutation tools, task operations, frontmatter management, and note lifecycle operations.
+Complete reference for all 22 MCP tools with visual examples, decision guides, and parameter documentation. Covers mutation tools, task operations, frontmatter management, note lifecycle operations, move/rename tools, and policy orchestration.
 
 **Read when:** You want to know what Crank can do or need syntax examples.
 
@@ -111,7 +111,7 @@ Comprehensive documentation of what Crank cannot do, including architectural lim
 **Read when:** Understanding Crank's boundaries or deciding whether Crank is the right tool for a task.
 
 ### [testing.md](testing.md)
-Automated test suite overview (930 tests), manual MCP testing procedures, and git integration behavior. Includes common development workflows.
+Automated test suite overview (1465 tests), manual MCP testing procedures, and git integration behavior. Includes common development workflows.
 
 **Read when:** Contributing to Flywheel Crank or debugging tool behavior.
 
@@ -143,7 +143,7 @@ Automated test suite overview (930 tests), manual MCP testing procedures, and gi
 5. [wikilinks.md](wikilinks.md) - Leverage auto-linking
 
 **Contributors:**
-1. [testing.md](testing.md) - Understand the test suite (930 tests)
+1. [testing.md](testing.md) - Understand the test suite (1465 tests)
 2. [tools-reference.md](tools-reference.md) - Learn tool patterns
 3. [PERFORMANCE.md](PERFORMANCE.md) - Understand benchmarks
 

@@ -393,15 +393,16 @@ When multiple agents (or multiple Claude Code sessions) access the same vault co
 | **Git lock contention** | Mutation succeeds, git commit fails gracefully | Safe (file written) |
 | **Rapid sequential writes** | All succeed, no file corruption | Safe |
 
-**Best-effort commits:** If git is locked by another process, the file mutation still succeeds. The `gitError` field in the response indicates the commit failed.
+**Best-effort commits:** If git is locked by another process, the file mutation still succeeds. Check for the absence of `gitCommit` and presence of `staleLockDetected` to detect lock contention.
 
 ```javascript
 // Response when git lock is held
 {
-  success: true,        // File was mutated
+  success: true,           // File was mutated
   message: "Added to Log section",
-  gitCommit: undefined, // No commit created
-  gitError: "Could not obtain lock on .git/index.lock"
+  gitCommit: undefined,    // No commit created
+  staleLockDetected: true, // Lock contention detected
+  lockAgeMs: 5000          // Lock age in milliseconds
 }
 ```
 

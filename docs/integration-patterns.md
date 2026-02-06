@@ -34,7 +34,7 @@ This document describes how Flywheel and Flywheel-Crank integrate with various s
 │   ┌──────────────────────┐    ┌───────────────────────────┐   ║ │
 │   │  Flywheel (Eyes)     │    │  Flywheel-Crank (Hands)   │   ║ │
 │   │  ═══════════════════ │    │  ═════════════════════════ │   ║ │
-│   │  51 read-only tools  │    │  11 mutation tools        │   ║ │
+│   │  51 read-only tools  │    │  22 write tools           │   ║ │
 │   │  Graph intelligence  │    │  Deterministic writes     │   ║ │
 │   │  Safe exploration    │    │  Git integration          │   ║ │
 │   └──────────────────────┘    └───────────────────────────┘   ║ │

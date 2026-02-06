@@ -848,7 +848,7 @@ vault/
 ├── tests/                # Test campaigns
 │   ├── Test 3.md
 │   └── Test 4.md
-└── .policies/            # Workflow policies (future)
+└── .claude/policies/     # Workflow policies (YAML definitions)
 ```
 
 **Why this structure?**
