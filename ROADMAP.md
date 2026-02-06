@@ -6196,19 +6196,29 @@ Recent indentation bugs (v0.7.3 fix for prepending with multi-level nesting) rev
 
 ## Priority 3: Complex Policy Test Suite (Business Process Automation) 🏭
 
-**Status:** HIGH PRIORITY - Required to prove enterprise-readiness
+**Status:** ✅ COMPLETE - Implemented Feb 6, 2026 (v1.27.46+)
 
 **Context (Feb 2, 2026):**
 Current policy tests cover simple CRUD workflows (add to section, update frontmatter, create note). Real business automation requires complex multi-step policies with branching, approvals, and state management. We need comprehensive tests that model actual enterprise scenarios to validate the policy engine can handle real-world complexity.
 
-**The Gap:**
+**Implementation (Feb 6, 2026):**
+Added 4 enterprise workflow test suites to `test/core/policy/complex-policies.test.ts`:
+
+| Test Suite | Description |
+|------------|-------------|
+| **State Machine Workflows** | Document state transitions (draft → review → approved) with validation and rollback |
+| **Approval Chain Workflows** | 3-tier approval (manager → finance → executive) with prerequisite checking |
+| **Complex Conditional Branching** | Multiple independent conditions with Boolean logic and fallback paths |
+| **Multi-Entity Updates** | Atomic updates across person, team, HR tracker with cross-reference verification |
+
+**Coverage:**
 - ✅ Simple policies work (single-step mutations, variable interpolation)
 - ✅ Conditional execution works (`when` guards on steps)
-- ❌ No tests for multi-entity state machines
-- ❌ No tests for approval chains with escalation
-- ❌ No tests for time-based triggers
-- ❌ No tests for rollback/compensation patterns
-- ❌ No tests for complex conditional branching
+- ✅ Multi-entity state machines (person → team → HR tracker sync)
+- ✅ Approval chains with prerequisite checking (3-tier approval)
+- ⏸️ Time-based triggers (not applicable - triggers are agent-driven)
+- ✅ Rollback/compensation patterns (via `onFailure: rollback`)
+- ✅ Complex conditional branching (multiple independent conditions)
 
 **Why This Matters:**
 Enterprise customers need confidence that Flywheel can automate real business processes - not just "add a log entry". These tests prove the policy engine is production-ready for serious automation.
