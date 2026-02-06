@@ -11,6 +11,7 @@ Flywheel Crank is the deterministic write companion to Flywheel MCP. While Flywh
 | See examples and quick start | [EXAMPLES.md](EXAMPLES.md) |
 | Get started with Flywheel Crank | [configuration.md](configuration.md) |
 | Learn what tools are available | [tools-reference.md](tools-reference.md) |
+| Understand how content is targeted | [CONTENT_TARGETING.md](CONTENT_TARGETING.md) |
 | Guide Claude to better tool choices | [guiding-claude.md](guiding-claude.md) |
 | Understand auto-wikilinks | [wikilinks.md](wikilinks.md) |
 | Deep dive into wikilink scoring | [WIKILINK_INFERENCE.md](WIKILINK_INFERENCE.md) |
@@ -39,6 +40,11 @@ Quick start guide with copy-paste examples for core mutation tools. Includes 3 w
 Complete reference for all 22 MCP tools with visual examples, decision guides, and parameter documentation. Covers mutation tools, task operations, frontmatter management, note lifecycle operations, move/rename tools, and policy orchestration.
 
 **Read when:** You want to know what Crank can do or need syntax examples.
+
+### [CONTENT_TARGETING.md](CONTENT_TARGETING.md)
+How Flywheel-Crank determines where mutations place content. Covers note selection (path parameter), section targeting (case-insensitive matching, boundaries), position and placement (append/prepend, list nesting), format types, and frontmatter targeting.
+
+**Read when:** You want to understand exactly where your content will be placed, or troubleshoot targeting issues.
 
 ### [configuration.md](configuration.md)
 MCP server setup for Claude Code, environment variables, tool parameters, git commit prefixes, and permission models. Includes examples for Unix, Windows native, and WSL environments.
@@ -123,8 +129,9 @@ Automated test suite overview (1465 tests), manual MCP testing procedures, and g
 1. [EXAMPLES.md](EXAMPLES.md) - Quick start with copy-paste examples
 2. [configuration.md](configuration.md) - Get set up
 3. [tools-reference.md](tools-reference.md) - Learn the tools
-4. [guiding-claude.md](guiding-claude.md) - Master the feedback loop
-5. [wikilinks.md](wikilinks.md) - Understand auto-linking
+4. [CONTENT_TARGETING.md](CONTENT_TARGETING.md) - Understand where content goes
+5. [guiding-claude.md](guiding-claude.md) - Master the feedback loop
+6. [wikilinks.md](wikilinks.md) - Understand auto-linking
 
 **Migrating from raw editing:**
 1. [MIGRATION.md](MIGRATION.md) - Step-by-step migration guide

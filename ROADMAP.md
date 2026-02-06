@@ -5488,75 +5488,20 @@ Real vaults have plugins. If you conflict with Dataview, you've lost 50% of powe
 
 ---
 
-### 5. Documentation: Content Targeting
+### ~~5. Documentation: Content Targeting~~ COMPLETED v1.27.46
 
-**Priority:** HIGH - Users need to understand how Flywheel-Crank targets where to place content
+**Status:** ✅ COMPLETED in v1.27.46 (Feb 6, 2026)
 
-**Status:** Missing - critical gap for user understanding
+**Documentation delivered:** `docs/CONTENT_TARGETING.md`
 
-**Context:**
-- Users need to understand how to specify target locations for mutations
-- Documentation should cover: note selection, section targeting, bullet/task placement
-- Examples of different targeting patterns
-
-**What needs documenting:**
-- How `vault_add_to_section` selects target notes and sections
-- How `vault_add_task` determines placement
-- Note creation path patterns (`vault_create_note`)
-- Frontmatter targeting strategies
-- Daily note vs arbitrary note targeting
-- Section creation vs appending to existing sections
-
-**Why it matters:**
-Without clear targeting documentation, users struggle with:
-- Understanding where their content will actually end up
-- Predicting mutation behavior
-- Troubleshooting when content goes to unexpected locations
-- Making effective use of path and section parameters
-
-**Documentation needed:**
-- [ ] `docs/CONTENT_TARGETING.md` - Comprehensive targeting guide
-- [ ] **Note Selection:**
-  - Path parameter formats (relative, absolute, daily note shortcuts)
-  - How Flywheel-Crank resolves note paths
-  - Daily note patterns and detection
-  - Fallback behavior when target note doesn't exist
-- [ ] **Section Targeting:**
-  - How section names are matched (exact, case-sensitive, normalized)
-  - Behavior with duplicate section names
-  - What happens when section doesn't exist
-  - Creating vs appending to sections
-- [ ] **Placement Strategies:**
-  - Bullet list placement (prepend, append, indentation preservation)
-  - Task placement patterns
-  - Timestamp-bullet positioning
-  - Content ordering within sections
-- [ ] **Frontmatter Targeting:**
-  - How frontmatter fields are selected for updates
-  - Array vs scalar field behavior
-  - Merging strategies for existing values
-- [ ] **Examples for Each Pattern:**
-  - Daily log entries → today's note, Log section, timestamp-bullet
-  - Task management → daily note or project note, Tasks section
-  - Meeting notes → dedicated note creation with frontmatter
-  - Project updates → project-specific note, Status section
-  - Client work → client folder, appropriate note and section
-
-**Deliverables:**
-- Clear "Content Targeting" section in main docs
-- Examples for each mutation tool showing different targeting patterns
-- Best practices for target specification
-- Common patterns (daily logs, task lists, project notes)
-- Troubleshooting guide for targeting issues
-- Decision tree: how to choose the right targeting parameters
-
-**Acceptance criteria:**
-- Users can predict where content will be placed based on parameters
-- Clear examples for all common use cases
-- Troubleshooting section addresses typical targeting problems
-- Integration with existing tool reference documentation
-
-**Timeline:** Target v0.9.0 - foundational knowledge for effective tool usage
+- [x] Note Selection - vault-relative paths, resolution, file existence behavior
+- [x] Section Targeting - case-insensitive matching, boundaries, duplicate handling
+- [x] Position and Placement - append/prepend, list nesting preservation
+- [x] Format Types - plain, bullet, task, numbered, timestamp-bullet
+- [x] Frontmatter Targeting - merge behavior, add vs update
+- [x] Common Patterns - daily logs, tasks, meetings, project updates
+- [x] Troubleshooting - section not found, wrong location, path issues
+- [x] Decision Tree - complete targeting flow diagram
 
 ---
 
