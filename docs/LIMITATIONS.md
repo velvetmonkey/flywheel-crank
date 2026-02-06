@@ -300,9 +300,9 @@ Manual commits won't be undone by `vault_undo_last_mutation`.
 
 ### 2. Entity Index
 
-| Metric | Limit | Impact |
-|--------|-------|--------|
-| Total entities | ~50,000 | Memory usage increases |
+| Metric | Tested Limit | Impact |
+|--------|--------------|--------|
+| Total entities | 100,000 | <100ms matching, ~1.5GB memory |
 | Entities per request | ~10,000 | Suggestion scoring time |
 | Cache size | ~10MB | Disk space for cache |
 

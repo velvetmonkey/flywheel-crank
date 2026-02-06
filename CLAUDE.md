@@ -91,7 +91,7 @@ Read this for deep context on product direction, market timing, and strategic pr
 - Git integration (auto-commit + undo)
 - Section-scoped operations (safe, reversible)
 - Permission model (read-broad, write-narrow)
-- 1465 automated tests (production hardened with edge cases, benchmarks, stress tests)
+- 1472 automated tests (production hardened with edge cases, benchmarks, stress tests)
 - Smart template handling (replace empty placeholders like `1. ` or `- `)
 - Wikilink integration (auto-wikilinks on by default, opt-out via `skipWikilinks`)
 - `@velvetmonkey/vault-core` shared package (entity scanning, protected zones, wikilink application)
@@ -419,7 +419,7 @@ test/
     └── workflows.test.ts    # 15 tests - end-to-end workflow scenarios
 ```
 
-**Total: 1465 tests**
+**Total: 1472 tests**
 
 **See [docs/testing.md](./docs/testing.md) for:**
 - Manual MCP testing procedures

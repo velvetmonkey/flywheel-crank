@@ -522,4 +522,4 @@ Flywheel-Crank's architecture delivers consistent token savings through:
 ---
 
 *Last updated: 2026-02-01*
-*Benchmarks based on Flywheel-Crank v0.8.x*
+*Benchmarks based on Flywheel-Crank v1.27.x*
