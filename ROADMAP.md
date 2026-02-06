@@ -6749,17 +6749,28 @@ Current behavior surfaces `gitError` in tool responses when vault mutations succ
 
 ## Priority 9: Marketing & Positioning Review
 
-**Status:** Planning Phase  
-**Target:** Pre-Launch (Critical)  
+**Status:** ✅ COMPLETE (Feb 6, 2026)
+**Target:** Pre-Launch (Critical)
 **Owner:** Master
 
-### GitHub Repository Taglines - Needs Rethink
+### ✅ GitHub Repository Taglines - UPDATED
 
-**Current Problem:**
-Repository taglines undersell the graph intelligence. They position Flywheel/Flywheel-Crank as "read/write tools for Obsidian vaults" - this misses the core value proposition.
+**Completed Feb 6, 2026:**
+- **Flywheel:** "Graph intelligence for markdown vaults"
+- **Flywheel-Crank:** "Deterministic writes that build connections"
+- **vault-core:** "Shared utilities for Flywheel ecosystem" (kept technical - it's a library)
 
-**Current taglines to review:**
-- **Flywheel:** [current tagline]
+**Previous taglines (replaced):**
+- Flywheel: "Bounded autonomy for markdown vaults..."
+- Flywheel-Crank: "The orchestration layer..."
+
+### GitHub Repository Taglines - ~~Needs Rethink~~ DONE
+
+~~**Current Problem:**
+Repository taglines undersell the graph intelligence. They position Flywheel/Flywheel-Crank as "read/write tools for Obsidian vaults" - this misses the core value proposition.~~
+
+**Updated taglines:**
+- **Flywheel:** Graph intelligence for markdown vaults
 - **Flywheel-Crank:** [current tagline]
 - **Vault-Core:** [current tagline]
 
