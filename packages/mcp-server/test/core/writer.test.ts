@@ -19,6 +19,10 @@ import {
   isStructuredLine,
   isCodeFenceLine,
   isPreformattedList,
+  checkRegexSafety,
+  createSafeRegex,
+  safeRegexTest,
+  safeRegexReplace,
 } from '../../src/core/writer.js';
 import fs from 'fs/promises';
 import path from 'path';
@@ -1780,6 +1784,93 @@ Existing content`;
       const result = insertInSection(content, section, multiline, 'append');
       expect(result).toContain('- Child item 1');
       expect(result).toContain('    - Grandchild');
+    });
+  });
+});
+
+describe('ReDoS Protection', () => {
+  describe('checkRegexSafety', () => {
+    it('should allow safe patterns', () => {
+      expect(checkRegexSafety('hello')).toBeNull();
+      expect(checkRegexSafety('\\d+')).toBeNull();
+      expect(checkRegexSafety('[a-z]+')).toBeNull();
+      expect(checkRegexSafety('foo|bar|baz')).toBeNull();
+      expect(checkRegexSafety('^start.*end$')).toBeNull();
+    });
+
+    it('should reject patterns that are too long', () => {
+      const longPattern = 'a'.repeat(600);
+      const result = checkRegexSafety(longPattern);
+      expect(result).toContain('too long');
+    });
+
+    it('should detect nested quantifiers', () => {
+      // Classic ReDoS patterns
+      expect(checkRegexSafety('(a+)+')).not.toBeNull();
+      expect(checkRegexSafety('(a*)*')).not.toBeNull();
+      expect(checkRegexSafety('(.*)*')).not.toBeNull();
+    });
+
+    it('should detect adjacent quantifiers', () => {
+      expect(checkRegexSafety('a++')).not.toBeNull();
+      expect(checkRegexSafety('a**')).not.toBeNull();
+    });
+  });
+
+  describe('createSafeRegex', () => {
+    it('should create regex for safe patterns', () => {
+      const regex = createSafeRegex('hello');
+      expect(regex).toBeInstanceOf(RegExp);
+      expect(regex.test('hello world')).toBe(true);
+    });
+
+    it('should throw for dangerous patterns', () => {
+      expect(() => createSafeRegex('(a+)+')).toThrow();
+    });
+
+    it('should throw for invalid regex syntax', () => {
+      expect(() => createSafeRegex('[invalid')).toThrow('Invalid regex');
+    });
+
+    it('should support flags', () => {
+      const regex = createSafeRegex('hello', 'gi');
+      expect(regex.flags).toContain('g');
+      expect(regex.flags).toContain('i');
+    });
+  });
+
+  describe('safeRegexTest', () => {
+    it('should perform literal matching when useRegex is false', () => {
+      expect(safeRegexTest('hello', 'hello world', false)).toBe(true);
+      expect(safeRegexTest('bye', 'hello world', false)).toBe(false);
+    });
+
+    it('should perform regex matching when useRegex is true', () => {
+      expect(safeRegexTest('\\d+', 'item 123', true)).toBe(true);
+      expect(safeRegexTest('\\d+', 'no numbers', true)).toBe(false);
+    });
+
+    it('should throw for dangerous regex patterns', () => {
+      expect(() => safeRegexTest('(a+)+', 'aaa', true)).toThrow();
+    });
+  });
+
+  describe('safeRegexReplace', () => {
+    it('should perform literal replacement when useRegex is false', () => {
+      expect(safeRegexReplace('hello world', 'world', 'universe', false)).toBe('hello universe');
+    });
+
+    it('should perform regex replacement when useRegex is true', () => {
+      expect(safeRegexReplace('item 123', '\\d+', 'XXX', true)).toBe('item XXX');
+    });
+
+    it('should support global replacement', () => {
+      expect(safeRegexReplace('a b a b', 'a', 'x', false, true)).toBe('x b x b');
+      expect(safeRegexReplace('1 2 3', '\\d', 'X', true, true)).toBe('X X X');
+    });
+
+    it('should throw for dangerous regex patterns', () => {
+      expect(() => safeRegexReplace('aaa', '(a+)+', 'x', true)).toThrow();
     });
   });
 });
