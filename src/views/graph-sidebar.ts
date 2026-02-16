@@ -1,16 +1,14 @@
 /**
  * Graph Sidebar View — powered by flywheel-memory MCP
  *
- * Shows backlinks, forward links, related notes, and hub score
- * for the currently active note. All data comes from MCP tool calls.
+ * Collapsible sections: Vault Info (always), Backlinks, Forward Links,
+ * Related Notes (when a note is active). All data from MCP tool calls.
  */
 
 import { ItemView, WorkspaceLeaf, TFile, setIcon } from 'obsidian';
 import type {
   FlywheelMcpClient,
-  McpBacklink,
-  McpForwardLink,
-  McpSimilarNote,
+  McpHealthCheckResponse,
 } from '../mcp/client';
 
 export const GRAPH_VIEW_TYPE = 'flywheel-graph';
@@ -42,51 +40,122 @@ export class GraphSidebarView extends ItemView {
     container.addClass('flywheel-graph-sidebar');
 
     this.contentContainer = container.createDiv('flywheel-graph-content');
-    this.renderEmpty();
+    this.refresh();
   }
 
   refresh(): void {
-    const activeFile = this.app.workspace.getActiveFile();
-    if (activeFile && this.mcpClient.connected) {
-      this.renderForNote(activeFile);
-    } else {
-      this.renderEmpty();
-    }
-  }
-
-  private renderEmpty(): void {
     this.contentContainer.empty();
-    const empty = this.contentContainer.createDiv('flywheel-graph-empty');
-    const icon = empty.createDiv('flywheel-graph-empty-icon');
-    setIcon(icon, 'file-text');
 
     if (!this.mcpClient.connected) {
+      const empty = this.contentContainer.createDiv('flywheel-graph-empty');
+      const icon = empty.createDiv('flywheel-graph-empty-icon');
+      setIcon(icon, 'file-text');
       empty.createDiv('flywheel-graph-empty-text').setText('MCP server not connected');
-    } else {
-      empty.createDiv('flywheel-graph-empty-text').setText('Open a note to see its graph data');
-    }
-  }
-
-  private async renderForNote(file: TFile): Promise<void> {
-    if (!this.mcpClient.connected) {
-      this.renderEmpty();
       return;
     }
 
-    this.contentContainer.empty();
-    const notePath = file.path;
+    // Always render vault info
+    this.renderVaultInfo();
 
-    // Header with loading state
+    // Render note sections if a note is active
+    const activeFile = this.app.workspace.getActiveFile();
+    if (activeFile) {
+      this.renderNoteHeader(activeFile);
+      this.renderNoteSections(activeFile);
+    }
+  }
+
+  // ---------------------------------------------------------------------------
+  // Vault Info section
+  // ---------------------------------------------------------------------------
+
+  private async renderVaultInfo(): Promise<void> {
+    const section = this.renderSection('Vault Info', 'info', undefined, (container) => {
+      // Show loading state
+      const loadingEl = container.createDiv('flywheel-graph-info-row');
+      loadingEl.createSpan('flywheel-graph-info-label').setText('Status');
+      loadingEl.createSpan('flywheel-graph-info-value').setText('loading...');
+    });
+
+    // Fetch health data and replace section content
+    try {
+      const health = await this.mcpClient.healthCheck();
+      const content = section.querySelector('.flywheel-graph-section-content') as HTMLDivElement;
+      if (!content) return;
+      content.empty();
+
+      this.renderInfoRow(content, 'Status', health.status);
+      this.renderInfoRow(content, 'Vault', health.vault_path);
+      this.renderInfoRow(content, 'Notes', String(health.note_count));
+      this.renderInfoRow(content, 'Entities', String(health.entity_count));
+      this.renderInfoRow(content, 'Tags', String(health.tag_count));
+      this.renderInfoRow(content, 'Index', health.index_state);
+
+      if (health.last_rebuild) {
+        const ago = health.last_rebuild.ago_seconds;
+        const agoText = ago < 60 ? `${ago}s ago` : `${Math.floor(ago / 60)}m ago`;
+        this.renderInfoRow(content, 'Last rebuild', `${agoText} (${health.last_rebuild.trigger})`);
+      }
+
+      // StateDb path
+      this.renderInfoRow(content, 'StateDb', `${health.vault_path}/.flywheel/state.db`);
+
+      // MCP server
+      this.renderInfoRow(content, 'MCP server', 'connected');
+
+      // Config values (if any)
+      if (health.config && Object.keys(health.config).length > 0) {
+        const configSection = content.createDiv('flywheel-graph-info-group');
+        configSection.createDiv('flywheel-graph-info-group-label').setText('Config');
+        for (const [key, value] of Object.entries(health.config)) {
+          if (value != null) {
+            this.renderInfoRow(configSection, key, String(value));
+          }
+        }
+      }
+
+      // Recommendations
+      if (health.recommendations.length > 0) {
+        const recSection = content.createDiv('flywheel-graph-info-group');
+        recSection.createDiv('flywheel-graph-info-group-label').setText('Recommendations');
+        for (const rec of health.recommendations) {
+          const row = recSection.createDiv('flywheel-graph-info-row');
+          row.createSpan('flywheel-graph-info-value flywheel-graph-info-warn').setText(rec);
+        }
+      }
+
+      // Update section count badge with note count
+      const countEl = section.querySelector('.flywheel-graph-section-count') as HTMLElement;
+      if (countEl) {
+        countEl.setText(`${health.note_count}`);
+      }
+    } catch (err) {
+      const content = section.querySelector('.flywheel-graph-section-content') as HTMLDivElement;
+      if (content) {
+        content.empty();
+        this.renderInfoRow(content, 'Error', err instanceof Error ? err.message : 'Failed to load');
+      }
+    }
+  }
+
+  private renderInfoRow(container: HTMLDivElement, label: string, value: string): void {
+    const row = container.createDiv('flywheel-graph-info-row');
+    row.createSpan('flywheel-graph-info-label').setText(label);
+    row.createSpan('flywheel-graph-info-value').setText(value);
+  }
+
+  // ---------------------------------------------------------------------------
+  // Note header + sections
+  // ---------------------------------------------------------------------------
+
+  private renderNoteHeader(file: TFile): void {
     const header = this.contentContainer.createDiv('flywheel-graph-header');
     header.createDiv('flywheel-graph-note-title').setText(file.basename);
+  }
 
-    const scoreEl = header.createDiv('flywheel-graph-hub-score');
-    const scoreIcon = scoreEl.createSpan('flywheel-graph-hub-icon');
-    setIcon(scoreIcon, 'link');
-    const connectionText = scoreEl.createSpan();
-    connectionText.setText('loading...');
+  private async renderNoteSections(file: TFile): Promise<void> {
+    const notePath = file.path;
 
-    // Fetch backlinks and forward links in parallel
     try {
       const [backlinksResp, forwardLinksResp] = await Promise.all([
         this.mcpClient.getBacklinks(notePath),
@@ -101,9 +170,6 @@ export class GraphSidebarView extends ItemView {
         seen.add(key);
         return true;
       });
-
-      const totalConnections = backlinksResp.backlink_count + uniqueLinks.length;
-      connectionText.setText(`${totalConnections} connections`);
 
       // Backlinks section
       this.renderSection('Backlinks', 'arrow-left', backlinksResp.backlink_count, (container) => {
@@ -163,34 +229,12 @@ export class GraphSidebarView extends ItemView {
       await this.renderRelatedNotes(notePath);
     } catch (err) {
       console.error('Flywheel Crank: graph sidebar error', err);
-      connectionText.setText('error loading');
     }
   }
 
-  private renderSection(
-    title: string,
-    icon: string,
-    count: number,
-    renderContent: (container: HTMLDivElement) => void
-  ): void {
-    const section = this.contentContainer.createDiv('flywheel-graph-section');
-
-    const headerEl = section.createDiv('flywheel-graph-section-header');
-    headerEl.addEventListener('click', () => {
-      section.toggleClass('is-collapsed', !section.hasClass('is-collapsed'));
-    });
-
-    const iconEl = headerEl.createSpan('flywheel-graph-section-icon');
-    setIcon(iconEl, icon);
-    headerEl.createSpan('flywheel-graph-section-title').setText(title);
-    headerEl.createSpan('flywheel-graph-section-count').setText(`${count}`);
-
-    const chevron = headerEl.createSpan('flywheel-graph-section-chevron');
-    setIcon(chevron, 'chevron-down');
-
-    const content = section.createDiv('flywheel-graph-section-content');
-    renderContent(content);
-  }
+  // ---------------------------------------------------------------------------
+  // Related notes
+  // ---------------------------------------------------------------------------
 
   private async renderRelatedNotes(notePath: string): Promise<void> {
     try {
@@ -220,6 +264,39 @@ export class GraphSidebarView extends ItemView {
     } catch {
       // Skip related notes on error
     }
+  }
+
+  // ---------------------------------------------------------------------------
+  // Shared section renderer
+  // ---------------------------------------------------------------------------
+
+  private renderSection(
+    title: string,
+    icon: string,
+    count: number | undefined,
+    renderContent: (container: HTMLDivElement) => void
+  ): HTMLDivElement {
+    const section = this.contentContainer.createDiv('flywheel-graph-section');
+
+    const headerEl = section.createDiv('flywheel-graph-section-header');
+    headerEl.addEventListener('click', () => {
+      section.toggleClass('is-collapsed', !section.hasClass('is-collapsed'));
+    });
+
+    const iconEl = headerEl.createSpan('flywheel-graph-section-icon');
+    setIcon(iconEl, icon);
+    headerEl.createSpan('flywheel-graph-section-title').setText(title);
+    if (count !== undefined) {
+      headerEl.createSpan('flywheel-graph-section-count').setText(`${count}`);
+    }
+
+    const chevron = headerEl.createSpan('flywheel-graph-section-chevron');
+    setIcon(chevron, 'chevron-down');
+
+    const content = section.createDiv('flywheel-graph-section-content');
+    renderContent(content);
+
+    return section;
   }
 
   async onClose(): Promise<void> {

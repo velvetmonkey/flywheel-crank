@@ -398,6 +398,50 @@
   color: var(--text-faint);
 }
 
+/* Graph sidebar — info rows (Vault Info section) */
+.flywheel-graph-info-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 3px 16px 3px 28px;
+  font-size: var(--font-smallest);
+  line-height: 1.5;
+}
+
+.flywheel-graph-info-label {
+  color: var(--text-muted);
+  flex-shrink: 0;
+}
+
+.flywheel-graph-info-value {
+  color: var(--text-normal);
+  text-align: right;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+
+.flywheel-graph-info-warn {
+  color: var(--text-error);
+  text-align: left;
+}
+
+.flywheel-graph-info-group {
+  border-top: 1px solid var(--background-modifier-border);
+  margin-top: 4px;
+  padding-top: 4px;
+}
+
+.flywheel-graph-info-group-label {
+  padding: 2px 16px 2px 28px;
+  font-size: var(--font-smallest);
+  font-weight: var(--font-semibold);
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
 
 /* ===================================================================
    Vault Health

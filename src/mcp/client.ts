@@ -72,6 +72,27 @@ export interface McpForwardLinksResponse {
   forward_links: McpForwardLink[];
 }
 
+export interface McpHealthCheckResponse {
+  status: 'healthy' | 'degraded' | 'unhealthy';
+  vault_accessible: boolean;
+  vault_path: string;
+  index_state: 'building' | 'ready' | 'error';
+  index_built: boolean;
+  index_age_seconds: number;
+  index_stale: boolean;
+  note_count: number;
+  entity_count: number;
+  tag_count: number;
+  config?: Record<string, unknown>;
+  last_rebuild?: {
+    trigger: string;
+    timestamp: number;
+    duration_ms: number;
+    ago_seconds: number;
+  };
+  recommendations: string[];
+}
+
 // ---------------------------------------------------------------------------
 // Client
 // ---------------------------------------------------------------------------
@@ -101,7 +122,7 @@ export class FlywheelMcpClient {
       env: {
         ...process.env,
         VAULT_PATH: vaultPath,
-        FLYWHEEL_TOOLS: 'search,backlinks,schema',
+        FLYWHEEL_TOOLS: 'search,backlinks,schema,health',
         FLYWHEEL_WATCH: 'true',
       },
     });
@@ -198,5 +219,12 @@ export class FlywheelMcpClient {
     return this.callTool<McpForwardLinksResponse>('get_forward_links', {
       path,
     });
+  }
+
+  /**
+   * Get vault health check — note counts, config, index status.
+   */
+  async healthCheck(): Promise<McpHealthCheckResponse> {
+    return this.callTool<McpHealthCheckResponse>('health_check', {});
   }
 }
