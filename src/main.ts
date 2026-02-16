@@ -2,7 +2,7 @@
  * Flywheel Crank - Obsidian Plugin
  *
  * Graph intelligence & semantic search for your vault.
- * Embeds flywheel-memory's intelligence directly into Obsidian.
+ * Search and graph views are powered by flywheel-memory via MCP.
  */
 
 import { Plugin, TFile, TAbstractFile, Notice, WorkspaceLeaf, setIcon } from 'obsidian';
@@ -32,9 +32,11 @@ import { GraphSidebarView, GRAPH_VIEW_TYPE } from './views/graph-sidebar';
 import { EntityBrowserView, ENTITY_BROWSER_VIEW_TYPE } from './views/entity-browser';
 import { VaultHealthView, VAULT_HEALTH_VIEW_TYPE } from './views/vault-health';
 import { WikilinkSuggest } from './suggest/wikilink-suggest';
+import { FlywheelMcpClient } from './mcp/client';
 
 export default class FlywheelCrankPlugin extends Plugin {
   settings: FlywheelCrankSettings = DEFAULT_SETTINGS;
+  mcpClient: FlywheelMcpClient = new FlywheelMcpClient();
   private database: Database | null = null;
   private persistence: DatabasePersistence | null = null;
   private vaultIndex: VaultIndex | null = null;
@@ -53,10 +55,10 @@ export default class FlywheelCrankPlugin extends Plugin {
     this.statusBarEl.addClass('flywheel-status-bar');
     const statusBar = this.statusBarEl.parentElement;
     if (statusBar) statusBar.prepend(this.statusBarEl);
-    this.setStatus('loading...', true);
+    this.setStatus('connecting...', true);
 
     // Register views
-    this.registerView(GRAPH_VIEW_TYPE, (leaf) => new GraphSidebarView(leaf));
+    this.registerView(GRAPH_VIEW_TYPE, (leaf) => new GraphSidebarView(leaf, this.mcpClient));
     this.registerView(ENTITY_BROWSER_VIEW_TYPE, (leaf) => new EntityBrowserView(leaf));
     this.registerView(VAULT_HEALTH_VIEW_TYPE, (leaf) => new VaultHealthView(leaf));
 
@@ -67,7 +69,7 @@ export default class FlywheelCrankPlugin extends Plugin {
     this.addCommand({
       id: 'search',
       name: 'Search vault',
-      callback: () => new SearchModal(this.app).open(),
+      callback: () => new SearchModal(this.app, this.mcpClient).open(),
     });
 
     this.addCommand({
@@ -102,7 +104,7 @@ export default class FlywheelCrankPlugin extends Plugin {
 
     // Ribbon icons
     this.addRibbonIcon('search', 'Flywheel Search', () => {
-      new SearchModal(this.app).open();
+      new SearchModal(this.app, this.mcpClient).open();
     });
 
     this.addRibbonIcon('git-fork', 'Flywheel Graph', () => {
@@ -167,6 +169,13 @@ export default class FlywheelCrankPlugin extends Plugin {
   async onunload(): Promise<void> {
     console.log('Flywheel Crank: unloading plugin');
 
+    // Disconnect MCP client
+    try {
+      await this.mcpClient.disconnect();
+    } catch (err) {
+      console.error('Flywheel Crank: failed to disconnect MCP client', err);
+    }
+
     // Save database before unload
     if (this.database && this.persistence) {
       try {
@@ -185,21 +194,24 @@ export default class FlywheelCrankPlugin extends Plugin {
 
   private async initialize(): Promise<void> {
     try {
-      this.setStatus('initializing...', true);
+      this.setStatus('connecting...', true);
 
-      // Initialize SQL.js WASM engine + database
+      // Connect MCP client to flywheel-memory server
+      const vaultBase = (this.app.vault.adapter as any).basePath;
+      await this.mcpClient.connect(vaultBase);
+      this.setStatus('connected');
+
+      // Initialize SQL.js WASM engine + database (still needed for entity browser, vault health, wikilink suggest)
       await this.initDatabase();
 
-      // Build indexes
-      this.setStatus('indexing...', true);
+      // Build indexes (still needed for entity browser, vault health, wikilink suggest)
       await this.buildAllIndexes();
 
-      this.setStatus(`${this.vaultIndex?.notes.size ?? 0} notes`);
-      new Notice('Flywheel Crank: Index built');
+      new Notice('Flywheel Crank: Connected');
     } catch (err) {
       console.error('Flywheel Crank: initialization failed', err);
-      this.setStatus('error');
-      new Notice(`Flywheel Crank: ${err instanceof Error ? err.message : 'Init failed'}`);
+      this.setStatus('disconnected');
+      new Notice(`Flywheel Crank: ${err instanceof Error ? err.message : 'Connection failed'}`);
     }
   }
 
@@ -326,9 +338,7 @@ export default class FlywheelCrankPlugin extends Plugin {
     const leaves = this.app.workspace.getLeavesOfType(GRAPH_VIEW_TYPE);
     for (const leaf of leaves) {
       const view = leaf.view as GraphSidebarView;
-      if (this.vaultIndex) {
-        view.setIndex(this.vaultIndex);
-      }
+      view.refresh();
     }
   }
 
@@ -370,8 +380,9 @@ export default class FlywheelCrankPlugin extends Plugin {
       workspace.revealLeaf(leaf);
 
       // Set data on the view
-      if (viewType === GRAPH_VIEW_TYPE && this.vaultIndex) {
-        (leaf.view as GraphSidebarView).setIndex(this.vaultIndex);
+      if (viewType === GRAPH_VIEW_TYPE) {
+        // Graph sidebar uses MCP client — just trigger refresh
+        (leaf.view as GraphSidebarView).refresh();
       } else if (viewType === ENTITY_BROWSER_VIEW_TYPE && this.entityIndex) {
         (leaf.view as EntityBrowserView).setEntityIndex(this.entityIndex);
       } else if (viewType === VAULT_HEALTH_VIEW_TYPE && this.vaultIndex) {
@@ -414,10 +425,10 @@ export default class FlywheelCrankPlugin extends Plugin {
       this.scheduleDatabaseSave();
 
       const embedded = progress.total - progress.skipped;
-      this.setStatus(`${this.vaultIndex?.notes.size ?? 0} notes | ${embedded} embedded`);
+      this.setStatus('connected');
       new Notice(`Flywheel Crank: Semantic index built (${embedded} notes embedded)`);
     } catch (err) {
-      this.setStatus('embedding error');
+      this.setStatus('connected');
       new Notice(`Flywheel Crank: ${err instanceof Error ? err.message : 'Embedding failed'}`);
       console.error('Flywheel Crank: semantic build failed', err);
     } finally {
@@ -436,10 +447,10 @@ export default class FlywheelCrankPlugin extends Plugin {
 
     try {
       await this.buildAllIndexes();
-      this.setStatus(`${this.vaultIndex?.notes.size ?? 0} notes`);
+      this.setStatus('connected');
       new Notice('Flywheel Crank: Index rebuilt');
     } catch (err) {
-      this.setStatus('error');
+      this.setStatus('connected');
       new Notice(`Flywheel Crank: ${err instanceof Error ? err.message : 'Rebuild failed'}`);
     }
   }

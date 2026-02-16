@@ -1,25 +1,27 @@
 /**
- * Hybrid Search Modal
+ * Search Modal — powered by flywheel-memory MCP
  *
- * Full-text search with BM25 ranking, highlighted snippets,
- * keyboard navigation, and score badges.
+ * Sends search queries to the MCP server which handles FTS5 keyword
+ * search, hybrid semantic ranking, and entity matching. Results show
+ * match-source badges (keyword / semantic) and RRF scores.
  */
 
 import { App, Modal, setIcon } from 'obsidian';
-import { searchFTS5, escapeFts5Query, getFTS5State } from '../index/fts5';
-import { hybridSearch, hasEmbeddingsIndex } from '../index/embeddings';
-import type { FTS5Result } from '../core/types';
+import type { FlywheelMcpClient, McpSearchResult, McpSearchResponse } from '../mcp/client';
 
 export class SearchModal extends Modal {
-  private results: FTS5Result[] = [];
+  private mcpClient: FlywheelMcpClient;
+  private results: McpSearchResult[] = [];
+  private searchMethod = '';
   private selectedIndex = 0;
   private inputEl!: HTMLInputElement;
   private resultsEl!: HTMLDivElement;
   private statusEl!: HTMLDivElement;
   private debounceTimer: number | null = null;
 
-  constructor(app: App) {
+  constructor(app: App, mcpClient: FlywheelMcpClient) {
     super(app);
+    this.mcpClient = mcpClient;
   }
 
   onOpen(): void {
@@ -41,10 +43,9 @@ export class SearchModal extends Modal {
     this.statusEl = contentEl.createDiv('flywheel-search-status');
     this.resultsEl = contentEl.createDiv('flywheel-search-results');
 
-    // Check if FTS5 is ready
-    const ftsState = getFTS5State();
-    if (!ftsState.ready) {
-      this.statusEl.setText('Index not ready. Building...');
+    // Check MCP connection
+    if (!this.mcpClient.connected) {
+      this.statusEl.setText('MCP server not connected');
       this.statusEl.addClass('flywheel-search-status-warning');
     }
 
@@ -74,39 +75,34 @@ export class SearchModal extends Modal {
     const query = this.inputEl.value.trim();
     if (!query) {
       this.results = [];
+      this.searchMethod = '';
       this.renderResults();
+      this.statusEl.setText('');
       return;
     }
 
+    if (!this.mcpClient.connected) {
+      this.statusEl.setText('MCP server not connected');
+      this.statusEl.addClass('flywheel-search-status-warning');
+      return;
+    }
+
+    const start = performance.now();
+
     try {
-      const escaped = escapeFts5Query(query);
-      if (!escaped) return;
+      const response = await this.mcpClient.search(query, 20);
+      const elapsed = Math.round(performance.now() - start);
 
-      // FTS5 keyword search with prefix matching
-      const searchQuery = escaped.split(' ')
-        .filter(t => t.length > 0)
-        .map(t => `${t}*`)
-        .join(' ');
-
-      const fts5Results = searchFTS5(searchQuery, 20);
-
-      // Hybrid merge with semantic results if embeddings exist
-      const hasEmb = hasEmbeddingsIndex();
-      if (hasEmb) {
-        try {
-          this.results = await hybridSearch(fts5Results, query, 20);
-          this.statusEl.setText(`${this.results.length} result${this.results.length !== 1 ? 's' : ''} (hybrid)`);
-        } catch {
-          this.results = fts5Results;
-          this.statusEl.setText(`${this.results.length} result${this.results.length !== 1 ? 's' : ''}`);
-        }
-      } else {
-        this.results = fts5Results;
-        this.statusEl.setText(`${this.results.length} result${this.results.length !== 1 ? 's' : ''}`);
-      }
-
+      this.results = response.results;
+      this.searchMethod = response.method;
       this.selectedIndex = 0;
+
+      const count = this.results.length;
+      this.statusEl.setText(`${count} result${count !== 1 ? 's' : ''} (${response.method}) ${elapsed}ms`);
       this.statusEl.removeClass('flywheel-search-status-warning');
+
+      console.log(`[Flywheel Search] query="${query}" method=${response.method} results=${count} ${elapsed}ms`);
+
       this.renderResults();
     } catch (err) {
       this.statusEl.setText(err instanceof Error ? err.message : 'Search error');
@@ -145,12 +141,25 @@ export class SearchModal extends Modal {
       const titleEl = titleRow.createDiv('flywheel-search-result-title');
       titleEl.setText(result.title);
 
+      // Match source badges
+      if (result.in_fts5 || result.in_semantic) {
+        const badgeContainer = titleRow.createDiv('flywheel-search-source-badges');
+        if (result.in_fts5) {
+          const badge = badgeContainer.createSpan('flywheel-search-source-badge flywheel-search-source-keyword');
+          badge.setText('keyword');
+        }
+        if (result.in_semantic) {
+          const badge = badgeContainer.createSpan('flywheel-search-source-badge flywheel-search-source-semantic');
+          badge.setText('semantic');
+        }
+      }
+
       // Score badge
-      if (result.score != null) {
-        const pct = Math.round(result.score * 100);
+      if (result.rrf_score != null) {
+        const pct = Math.round(result.rrf_score * 100);
         const badge = titleRow.createDiv('flywheel-search-score-badge');
         badge.setText(`${pct}%`);
-        badge.style.opacity = String(0.4 + result.score * 0.6);
+        badge.style.opacity = String(0.4 + result.rrf_score * 0.6);
       }
 
       // Folder path

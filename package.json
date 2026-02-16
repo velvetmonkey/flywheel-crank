@@ -20,6 +20,7 @@
   },
   "dependencies": {
     "@huggingface/transformers": "^3.8.1",
+    "@modelcontextprotocol/sdk": "^1.26.0",
     "sql.js-fts5": "^1.4.0"
   }
 }

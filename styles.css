@@ -153,6 +153,38 @@
   border-radius: 2px;
 }
 
+/* Match-source badges (keyword / semantic / entity) */
+.flywheel-search-source-badges {
+  display: flex;
+  gap: 3px;
+  flex-shrink: 0;
+}
+
+.flywheel-search-source-badge {
+  font-size: 9px;
+  padding: 0 4px;
+  border-radius: 3px;
+  font-weight: var(--font-semibold);
+  line-height: 1.6;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+}
+
+.flywheel-search-source-keyword {
+  background-color: var(--background-modifier-success);
+  color: var(--text-on-accent);
+}
+
+.flywheel-search-source-semantic {
+  background-color: hsl(280 50% 55% / 0.2);
+  color: hsl(280 50% 55%);
+}
+
+.flywheel-search-source-entity {
+  background-color: hsl(30 70% 50% / 0.2);
+  color: hsl(30 70% 50%);
+}
+
 
 /* ===================================================================
    Graph Sidebar
