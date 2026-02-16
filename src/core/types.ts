@@ -272,6 +272,8 @@ export interface FlywheelCrankSettings {
   searchHotkey: string;
   excludeFolders: string[];
   maxSearchResults: number;
+  /** Path to flywheel-memory server entry point. Empty = use npx. */
+  mcpServerPath: string;
 }
 
 export const DEFAULT_SETTINGS: FlywheelCrankSettings = {
@@ -283,4 +285,5 @@ export const DEFAULT_SETTINGS: FlywheelCrankSettings = {
   searchHotkey: 'Ctrl+Shift+F',
   excludeFolders: ['daily-notes', 'templates', 'attachments', '.obsidian', '.trash'],
   maxSearchResults: 20,
+  mcpServerPath: '',
 };

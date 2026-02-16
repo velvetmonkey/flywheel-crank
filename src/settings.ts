@@ -98,6 +98,21 @@ export class FlywheelCrankSettingTab extends PluginSettingTab {
         })
       );
 
+    // MCP Server
+    containerEl.createEl('h3', { text: 'MCP Server' });
+
+    new Setting(containerEl)
+      .setName('Server path')
+      .setDesc('Path to flywheel-memory server entry point. Leave empty to use npx @velvetmonkey/flywheel-memory (recommended). Set a local path for development.')
+      .addText(text => text
+        .setPlaceholder('npx @velvetmonkey/flywheel-memory')
+        .setValue(this.plugin.settings.mcpServerPath)
+        .onChange(async (value) => {
+          this.plugin.settings.mcpServerPath = value.trim();
+          await this.plugin.saveSettings();
+        })
+      );
+
     // Exclude folders
     containerEl.createEl('h3', { text: 'Indexing' });
 

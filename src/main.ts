@@ -122,41 +122,7 @@ export default class FlywheelCrankPlugin extends Plugin {
       await this.initialize();
     });
 
-    // Register vault events for incremental updates
-    this.registerEvent(
-      this.app.vault.on('modify', (file) => {
-        if (file instanceof TFile && file.extension === 'md') {
-          this.onFileChanged(file);
-        }
-      })
-    );
-
-    this.registerEvent(
-      this.app.vault.on('create', (file) => {
-        if (file instanceof TFile && file.extension === 'md') {
-          this.onFileChanged(file);
-        }
-      })
-    );
-
-    this.registerEvent(
-      this.app.vault.on('delete', (file) => {
-        if (file instanceof TFile) {
-          removeFromIndex(file.path);
-          removeNoteEmbedding(file.path);
-        }
-      })
-    );
-
-    this.registerEvent(
-      this.app.vault.on('rename', (file, oldPath) => {
-        if (file instanceof TFile && file.extension === 'md') {
-          removeFromIndex(oldPath);
-          removeNoteEmbedding(oldPath);
-          this.onFileChanged(file);
-        }
-      })
-    );
+    // Vault file events handled by flywheel-memory's file watcher via MCP.
 
     // Update graph sidebar on active note change
     this.registerEvent(
@@ -198,21 +164,42 @@ export default class FlywheelCrankPlugin extends Plugin {
 
       // Connect MCP client to flywheel-memory server
       const vaultBase = (this.app.vault.adapter as any).basePath;
-      await this.mcpClient.connect(vaultBase);
-      this.setStatus('connected');
+      await this.mcpClient.connect(vaultBase, this.settings.mcpServerPath);
 
-      // Initialize SQL.js WASM engine + database (still needed for entity browser, vault health, wikilink suggest)
-      await this.initDatabase();
+      // Refresh graph sidebar now that MCP is connected
+      this.updateGraphSidebar(true);
 
-      // Build indexes (still needed for entity browser, vault health, wikilink suggest)
-      await this.buildAllIndexes();
-
-      new Notice('Flywheel Crank: Connected');
+      // Poll index state — show syncing until ready
+      this.setStatus('syncing...', true);
+      this.pollIndexState();
     } catch (err) {
       console.error('Flywheel Crank: initialization failed', err);
-      this.setStatus('disconnected');
+      this.setStatus('error', false);
       new Notice(`Flywheel Crank: ${err instanceof Error ? err.message : 'Connection failed'}`);
     }
+  }
+
+  /** Poll health_check until index is ready, updating status bar. */
+  private async pollIndexState(): Promise<void> {
+    try {
+      const health = await this.mcpClient.healthCheck();
+      if (health.index_state === 'ready') {
+        const ago = health.last_rebuild?.ago_seconds ?? 0;
+        const agoText = ago < 60 ? `${ago}s ago` : ago < 3600 ? `${Math.floor(ago / 60)}m ago` : `${Math.floor(ago / 3600)}h ago`;
+        this.setStatus(`ready · ${agoText}`);
+        return;
+      }
+      // Still building — show progress if available
+      const progress = (health as any).index_progress;
+      if (progress?.total > 0) {
+        this.setStatus(`syncing ${progress.parsed}/${progress.total}...`, true);
+      } else {
+        this.setStatus('syncing...', true);
+      }
+    } catch {
+      // health check failed, keep current status
+    }
+    setTimeout(() => this.pollIndexState(), 3000);
   }
 
   private async initDatabase(): Promise<void> {
@@ -282,8 +269,12 @@ export default class FlywheelCrankPlugin extends Plugin {
         this.wikilinkSuggest.setEntityIndex(this.entityIndex);
       }
 
-      // Build FTS5 index
-      await buildFTS5Index(this.app);
+      // Build FTS5 index (may fail with sql.js vtable issues — non-critical since MCP handles search)
+      try {
+        await buildFTS5Index(this.app);
+      } catch (err) {
+        console.warn('Flywheel Crank: FTS5 index build failed (search uses MCP instead)', err);
+      }
 
       // Update all views
       this.updateAllViews();
@@ -334,11 +325,11 @@ export default class FlywheelCrankPlugin extends Plugin {
     }
   }
 
-  private updateGraphSidebar(): void {
+  private updateGraphSidebar(force = false): void {
     const leaves = this.app.workspace.getLeavesOfType(GRAPH_VIEW_TYPE);
     for (const leaf of leaves) {
       const view = leaf.view as GraphSidebarView;
-      view.refresh();
+      view.refresh(force);
     }
   }
 
@@ -382,7 +373,7 @@ export default class FlywheelCrankPlugin extends Plugin {
       // Set data on the view
       if (viewType === GRAPH_VIEW_TYPE) {
         // Graph sidebar uses MCP client — just trigger refresh
-        (leaf.view as GraphSidebarView).refresh();
+        (leaf.view as GraphSidebarView).refresh(true);
       } else if (viewType === ENTITY_BROWSER_VIEW_TYPE && this.entityIndex) {
         (leaf.view as EntityBrowserView).setEntityIndex(this.entityIndex);
       } else if (viewType === VAULT_HEALTH_VIEW_TYPE && this.vaultIndex) {
@@ -425,10 +416,10 @@ export default class FlywheelCrankPlugin extends Plugin {
       this.scheduleDatabaseSave();
 
       const embedded = progress.total - progress.skipped;
-      this.setStatus('connected');
+      this.setStatus('ready');
       new Notice(`Flywheel Crank: Semantic index built (${embedded} notes embedded)`);
     } catch (err) {
-      this.setStatus('connected');
+      this.setStatus('ready');
       new Notice(`Flywheel Crank: ${err instanceof Error ? err.message : 'Embedding failed'}`);
       console.error('Flywheel Crank: semantic build failed', err);
     } finally {
@@ -447,10 +438,10 @@ export default class FlywheelCrankPlugin extends Plugin {
 
     try {
       await this.buildAllIndexes();
-      this.setStatus('connected');
+      this.setStatus('ready');
       new Notice('Flywheel Crank: Index rebuilt');
     } catch (err) {
-      this.setStatus('connected');
+      this.setStatus('ready');
       new Notice(`Flywheel Crank: ${err instanceof Error ? err.message : 'Rebuild failed'}`);
     }
   }
@@ -458,12 +449,17 @@ export default class FlywheelCrankPlugin extends Plugin {
   private setStatus(text: string, active = false): void {
     if (!this.statusBarEl) return;
     this.statusBarEl.empty();
-    const icon = this.statusBarEl.createSpan('flywheel-status-icon');
-    setIcon(icon, 'refresh-cw');
+
+    // Use flywheel logo as status icon
+    const imgEl = this.statusBarEl.createEl('img', { cls: 'flywheel-status-logo' });
+    const imgPath = `${this.app.vault.configDir}/plugins/flywheel-crank/flywheel.png`;
+    imgEl.src = this.app.vault.adapter.getResourcePath(imgPath);
+    imgEl.alt = '';
     if (active) {
-      icon.addClass('flywheel-status-spin');
+      imgEl.addClass('flywheel-status-spin');
     }
-    this.statusBarEl.createSpan().setText(` ${text}`);
+
+    this.statusBarEl.createSpan().setText(` Flywheel ${text}`);
   }
 
   async loadSettings(): Promise<void> {
