@@ -88,7 +88,6 @@ export class GraphSidebarView extends ItemView {
     if (activeFile) {
       this.renderNoteHeader(activeFile);
       this.renderNoteSections(activeFile);
-      this.renderFolderSchema(activeFile);
     }
   }
 
@@ -100,7 +99,7 @@ export class GraphSidebarView extends ItemView {
     const section = this.renderSection('Vault Info', 'info', undefined, (container) => {
       container.createDiv('flywheel-graph-info-row')
         .createSpan('flywheel-graph-info-value').setText('loading...');
-    }, false, this.vaultContainer);
+    }, true, this.vaultContainer);
 
     this.populateVaultInfo(section);
   }
@@ -572,7 +571,7 @@ export class GraphSidebarView extends ItemView {
 
     const section = this.renderSection(`Folder: ${folderLabel}`, 'file-json', undefined, (container) => {
       container.createDiv('flywheel-graph-section-empty').setText('loading...');
-    });
+    }, true);
 
     try {
       await this.mcpClient.waitForIndex();
@@ -704,7 +703,7 @@ export class GraphSidebarView extends ItemView {
         return true;
       });
 
-      const MAX_ITEMS = 8;
+      const MAX_ITEMS = 5;
 
       // Backlinks section
       this.renderSection('Backlinks', 'arrow-left', backlinksResp.backlink_count, (container) => {
@@ -745,6 +744,9 @@ export class GraphSidebarView extends ItemView {
           });
         }
       });
+
+      // Folder schema (right after forward links, before related)
+      this.renderFolderSchema(file);
 
       // Related notes via find_similar
       await this.renderRelatedNotes(notePath);
@@ -833,7 +835,7 @@ export class GraphSidebarView extends ItemView {
             snippetEl.innerHTML = result.snippet;
           }
         }
-      });
+      }, true);
     } catch {
       // Skip related notes on error
     }
