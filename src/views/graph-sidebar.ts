@@ -93,7 +93,16 @@ export class GraphSidebarView extends ItemView {
         this.mcpClient.getForwardLinks(notePath),
       ]);
 
-      const totalConnections = backlinksResp.backlink_count + forwardLinksResp.forward_link_count;
+      // Deduplicate forward links by resolved path (or target for dead links)
+      const seen = new Set<string>();
+      const uniqueLinks = forwardLinksResp.forward_links.filter(link => {
+        const key = link.resolved_path ?? link.target;
+        if (seen.has(key)) return false;
+        seen.add(key);
+        return true;
+      });
+
+      const totalConnections = backlinksResp.backlink_count + uniqueLinks.length;
       connectionText.setText(`${totalConnections} connections`);
 
       // Backlinks section
@@ -124,13 +133,13 @@ export class GraphSidebarView extends ItemView {
       });
 
       // Forward links section
-      this.renderSection('Forward Links', 'arrow-right', forwardLinksResp.forward_link_count, (container) => {
-        if (forwardLinksResp.forward_links.length === 0) {
+      this.renderSection('Forward Links', 'arrow-right', uniqueLinks.length, (container) => {
+        if (uniqueLinks.length === 0) {
           container.createDiv('flywheel-graph-section-empty').setText('No outgoing links');
           return;
         }
 
-        for (const link of forwardLinksResp.forward_links.slice(0, 20)) {
+        for (const link of uniqueLinks.slice(0, 20)) {
           const item = container.createDiv('flywheel-graph-link-item');
           if (link.exists && link.resolved_path) {
             item.addEventListener('click', () => {
