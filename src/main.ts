@@ -5,28 +5,10 @@
  * Search and graph views are powered by flywheel-memory via MCP.
  */
 
-import { Plugin, TFile, TAbstractFile, Notice, WorkspaceLeaf, setIcon } from 'obsidian';
-import type { FlywheelCrankSettings, VaultIndex, EntityIndex } from './core/types';
+import { Plugin, Notice, WorkspaceLeaf } from 'obsidian';
+import type { FlywheelCrankSettings } from './core/types';
 import { DEFAULT_SETTINGS } from './core/types';
 import { FlywheelCrankSettingTab } from './settings';
-import Database from './db/sql-js-adapter';
-import { DatabasePersistence } from './db/persistence';
-import { initSchema } from './db/schema';
-import { buildVaultIndex } from './index/vault-index';
-import { scanVaultEntities } from './index/entities';
-import { setFTS5Database, buildFTS5Index, indexSingleFile, removeFromIndex } from './index/fts5';
-import {
-  setEmbeddingsDatabase,
-  setPluginDir,
-  buildEmbeddingsIndex,
-  buildEntityEmbeddingsIndex,
-  loadEntityEmbeddingsToMemory,
-  updateNoteEmbedding,
-  removeNoteEmbedding,
-  hasEmbeddingsIndex,
-  getEmbeddingsCount,
-} from './index/embeddings';
-import { getAllEntitiesWithTypes } from './index/entities';
 import { SearchModal } from './views/search-modal';
 import { GraphSidebarView, GRAPH_VIEW_TYPE } from './views/graph-sidebar';
 import { EntityBrowserView, ENTITY_BROWSER_VIEW_TYPE } from './views/entity-browser';
@@ -37,10 +19,6 @@ import { FlywheelMcpClient } from './mcp/client';
 export default class FlywheelCrankPlugin extends Plugin {
   settings: FlywheelCrankSettings = DEFAULT_SETTINGS;
   mcpClient: FlywheelMcpClient = new FlywheelMcpClient();
-  private database: Database | null = null;
-  private persistence: DatabasePersistence | null = null;
-  private vaultIndex: VaultIndex | null = null;
-  private entityIndex: EntityIndex | null = null;
   private wikilinkSuggest: WikilinkSuggest | null = null;
   private statusBarEl: HTMLElement | null = null;
   private indexing = false;
@@ -141,21 +119,6 @@ export default class FlywheelCrankPlugin extends Plugin {
     } catch (err) {
       console.error('Flywheel Crank: failed to disconnect MCP client', err);
     }
-
-    // Save database before unload
-    if (this.database && this.persistence) {
-      try {
-        await this.persistence.forceSave(() => this.database!.export());
-      } catch (err) {
-        console.error('Flywheel Crank: failed to save database on unload', err);
-      }
-    }
-
-    if (this.database) {
-      try { this.database.close(); } catch { /* ignore */ }
-    }
-
-    this.persistence?.destroy();
   }
 
   private async initialize(): Promise<void> {
@@ -179,22 +142,59 @@ export default class FlywheelCrankPlugin extends Plugin {
     }
   }
 
-  /** Poll health_check until index is ready, updating status bar. */
+  /** Poll health_check until all indexes are ready, updating status bar. */
   private async pollIndexState(): Promise<void> {
     try {
       const health = await this.mcpClient.healthCheck();
+
       if (health.index_state === 'ready') {
         const ago = health.last_rebuild?.ago_seconds ?? 0;
         const agoText = ago < 60 ? `${ago}s ago` : ago < 3600 ? `${Math.floor(ago / 60)}m ago` : `${Math.floor(ago / 3600)}h ago`;
-        this.setStatus(`ready · ${agoText}`);
+
+        const fts5Label = health.fts5_building ? 'building...'
+          : health.fts5_ready ? 'ready' : 'not built';
+        const semanticLabel = health.embeddings_building
+          ? `building... (${health.embeddings_count ?? 0} embedded)`
+          : health.embeddings_ready ? `ready (${health.embeddings_count} embeddings)` : 'not built';
+        const tooltip = [
+          `Vault: ${health.note_count} notes · ${health.entity_count} entities · ${health.tag_count} tags`,
+          '',
+          `Graph index: ready (${agoText})`,
+          `Keyword search: ${fts5Label}`,
+          `Semantic search: ${semanticLabel}`,
+        ].join('\n');
+
+        // Still building secondary indexes
+        if (health.fts5_building) {
+          this.setStatus('indexing search...', true, tooltip);
+          setTimeout(() => this.pollIndexState(), 3000);
+          return;
+        }
+        if (health.embeddings_building) {
+          this.setStatus(`embedding ${health.embeddings_count ?? 0} notes...`, true, tooltip);
+          setTimeout(() => this.pollIndexState(), 3000);
+          return;
+        }
+
+        this.setStatus(`ready · ${agoText}`, false, tooltip);
         return;
       }
-      // Still building — show progress if available
+
+      // Still building graph — show progress if available
       const progress = (health as any).index_progress;
+      const graphStatus = progress?.total > 0
+        ? `building (${progress.parsed}/${progress.total})`
+        : 'building...';
+      const fts5Status = health.fts5_building ? 'building...' : health.fts5_ready ? 'ready' : 'waiting';
+      const tooltip = [
+        `Graph index: ${graphStatus}`,
+        `Keyword search: ${fts5Status}`,
+        'Semantic search: waiting',
+      ].join('\n');
       if (progress?.total > 0) {
-        this.setStatus(`syncing ${progress.parsed}/${progress.total}...`, true);
+        this.setStatus(`syncing ${progress.parsed}/${progress.total}...`, true, tooltip);
       } else {
-        this.setStatus('syncing...', true);
+        this.setStatus('syncing...', true, tooltip);
       }
     } catch {
       // health check failed, keep current status
@@ -202,153 +202,11 @@ export default class FlywheelCrankPlugin extends Plugin {
     setTimeout(() => this.pollIndexState(), 3000);
   }
 
-  private async initDatabase(): Promise<void> {
-    this.persistence = new DatabasePersistence(this.app);
-
-    // Initialize the WASM engine
-    try {
-      const wasmBinary = await this.app.vault.adapter.readBinary(
-        `${this.app.vault.configDir}/plugins/flywheel-crank/sql-wasm.wasm`
-      );
-      await Database.initialize(wasmBinary);
-    } catch {
-      // Fallback: let sql.js find the WASM file itself
-      await Database.initialize();
-    }
-
-    // Load existing DB or create new
-    const existingData = await this.persistence.load();
-    if (existingData) {
-      try {
-        this.database = new Database(new Uint8Array(existingData));
-        console.log('Flywheel Crank: loaded existing database');
-      } catch {
-        console.warn('Flywheel Crank: existing database corrupted, creating new');
-        this.database = new Database();
-      }
-    } else {
-      this.database = new Database();
-    }
-
-    // Initialize schema
-    initSchema(this.database);
-
-    // Set up FTS5 and embeddings modules
-    setFTS5Database(this.database);
-    setEmbeddingsDatabase(this.database);
-
-    // Tell embeddings where to find node_modules (for @huggingface/transformers)
-    const vaultBase = (this.app.vault.adapter as any).basePath;
-    if (vaultBase && this.manifest.dir) {
-      setPluginDir(vaultBase + '/' + this.manifest.dir);
-    }
-
-    // Load entity embeddings into memory if they exist
-    loadEntityEmbeddingsToMemory();
-  }
-
-  private async buildAllIndexes(): Promise<void> {
-    this.indexing = true;
-
-    try {
-      // Build vault index from MetadataCache
-      this.vaultIndex = buildVaultIndex(this.app);
-
-      // Scan entities
-      this.entityIndex = scanVaultEntities(this.app, {
-        excludeFolders: this.settings.excludeFolders,
-      });
-
-      // Enrich entities with hub scores from vault index
-      if (this.vaultIndex && this.entityIndex) {
-        this.enrichHubScores();
-      }
-
-      // Update wikilink suggest
-      if (this.wikilinkSuggest && this.entityIndex) {
-        this.wikilinkSuggest.setEntityIndex(this.entityIndex);
-      }
-
-      // Build FTS5 index (may fail with sql.js vtable issues — non-critical since MCP handles search)
-      try {
-        await buildFTS5Index(this.app);
-      } catch (err) {
-        console.warn('Flywheel Crank: FTS5 index build failed (search uses MCP instead)', err);
-      }
-
-      // Update all views
-      this.updateAllViews();
-
-      // Save database
-      this.scheduleDatabaseSave();
-    } finally {
-      this.indexing = false;
-    }
-  }
-
-  /**
-   * Enrich entity hub scores from vault index backlinks
-   */
-  private enrichHubScores(): void {
-    if (!this.vaultIndex || !this.entityIndex) return;
-
-    const categories = [
-      'technologies', 'acronyms', 'people', 'projects',
-      'organizations', 'locations', 'concepts', 'other',
-    ] as const;
-
-    for (const cat of categories) {
-      for (const entity of this.entityIndex[cat]) {
-        if (typeof entity === 'string') continue;
-        const note = this.vaultIndex.notes.get(entity.path);
-        if (note) {
-          const backlinks = this.vaultIndex.backlinks.get(
-            entity.path.toLowerCase().replace(/\.md$/, '')
-          );
-          entity.hubScore = backlinks?.length ?? 0;
-        }
-      }
-    }
-  }
-
-  private onFileChanged(file: TFile): void {
-    // Incremental FTS5 update
-    indexSingleFile(this.app, file);
-    // Incremental embedding update (no-op if model not loaded)
-    updateNoteEmbedding(this.app, file);
-    this.scheduleDatabaseSave();
-  }
-
-  private scheduleDatabaseSave(): void {
-    if (this.database && this.persistence) {
-      this.persistence.scheduleSave(() => this.database!.export());
-    }
-  }
-
   private updateGraphSidebar(force = false): void {
     const leaves = this.app.workspace.getLeavesOfType(GRAPH_VIEW_TYPE);
     for (const leaf of leaves) {
       const view = leaf.view as GraphSidebarView;
       view.refresh(force);
-    }
-  }
-
-  private updateAllViews(): void {
-    // Graph sidebar
-    this.updateGraphSidebar();
-
-    // Entity browser
-    const entityLeaves = this.app.workspace.getLeavesOfType(ENTITY_BROWSER_VIEW_TYPE);
-    for (const leaf of entityLeaves) {
-      const view = leaf.view as EntityBrowserView;
-      if (this.entityIndex) view.setEntityIndex(this.entityIndex);
-    }
-
-    // Vault health
-    const healthLeaves = this.app.workspace.getLeavesOfType(VAULT_HEALTH_VIEW_TYPE);
-    for (const leaf of healthLeaves) {
-      const view = leaf.view as VaultHealthView;
-      if (this.vaultIndex) view.setData(this.vaultIndex, this.entityIndex);
     }
   }
 
@@ -370,57 +228,51 @@ export default class FlywheelCrankPlugin extends Plugin {
     if (leaf) {
       workspace.revealLeaf(leaf);
 
-      // Set data on the view
+      // Graph sidebar uses MCP client — trigger refresh on activate
       if (viewType === GRAPH_VIEW_TYPE) {
-        // Graph sidebar uses MCP client — just trigger refresh
         (leaf.view as GraphSidebarView).refresh(true);
-      } else if (viewType === ENTITY_BROWSER_VIEW_TYPE && this.entityIndex) {
-        (leaf.view as EntityBrowserView).setEntityIndex(this.entityIndex);
-      } else if (viewType === VAULT_HEALTH_VIEW_TYPE && this.vaultIndex) {
-        (leaf.view as VaultHealthView).setData(this.vaultIndex, this.entityIndex);
       }
     }
   }
 
   private async buildSemanticIndex(): Promise<void> {
     if (this.indexing) {
-      new Notice('Flywheel Crank: Already indexing...');
+      new Notice('Already indexing...');
+      return;
+    }
+    if (!this.mcpClient.connected) {
+      new Notice('MCP server not connected');
       return;
     }
 
     this.indexing = true;
-    new Notice('Flywheel Crank: Building semantic embeddings... (downloading model on first run)');
+    new Notice('Building semantic embeddings... (this may take a few minutes)');
     this.setStatus('embedding...', true);
 
     try {
-      // Build note embeddings
-      const progress = await buildEmbeddingsIndex(this.app, (p) => {
-        this.setStatus(`embedding ${p.current}/${p.total}...`, true);
-      });
+      // Start build (long-running, up to 10min timeout)
+      const buildPromise = this.mcpClient.initSemantic();
 
-      // Build entity embeddings
-      if (this.entityIndex) {
-        const entityMap = new Map<string, { name: string; path: string; category: string; aliases: string[] }>();
-        for (const { entity, category } of getAllEntitiesWithTypes(this.entityIndex)) {
-          entityMap.set(entity.name, {
-            name: entity.name,
-            path: entity.path,
-            category,
-            aliases: entity.aliases,
-          });
+      // Poll progress via health check while build is running
+      const pollProgress = async () => {
+        while (this.indexing) {
+          try {
+            const health = await this.mcpClient.healthCheck();
+            if (health.embeddings_count != null && health.embeddings_count > 0) {
+              this.setStatus(`embedding ${health.embeddings_count}/${health.note_count}...`, true);
+            }
+          } catch { /* ignore poll errors */ }
+          await new Promise(r => setTimeout(r, 3000));
         }
-        await buildEntityEmbeddingsIndex(this.app, entityMap);
-        loadEntityEmbeddingsToMemory();
-      }
+      };
+      pollProgress(); // fire-and-forget
 
-      this.scheduleDatabaseSave();
-
-      const embedded = progress.total - progress.skipped;
+      const result = await buildPromise;
       this.setStatus('ready');
-      new Notice(`Flywheel Crank: Semantic index built (${embedded} notes embedded)`);
+      new Notice(`Semantic index built (${result.embedded} notes embedded)`);
     } catch (err) {
       this.setStatus('ready');
-      new Notice(`Flywheel Crank: ${err instanceof Error ? err.message : 'Embedding failed'}`);
+      new Notice(`${err instanceof Error ? err.message : 'Embedding failed'}`);
       console.error('Flywheel Crank: semantic build failed', err);
     } finally {
       this.indexing = false;
@@ -429,24 +281,31 @@ export default class FlywheelCrankPlugin extends Plugin {
 
   private async rebuildIndex(): Promise<void> {
     if (this.indexing) {
-      new Notice('Flywheel Crank: Already indexing...');
+      new Notice('Already indexing...');
+      return;
+    }
+    if (!this.mcpClient.connected) {
+      new Notice('MCP server not connected');
       return;
     }
 
-    new Notice('Flywheel Crank: Rebuilding index...');
+    this.indexing = true;
+    new Notice('Rebuilding index...');
     this.setStatus('rebuilding...', true);
 
     try {
-      await this.buildAllIndexes();
+      const result = await this.mcpClient.refreshIndex();
       this.setStatus('ready');
-      new Notice('Flywheel Crank: Index rebuilt');
+      new Notice(`Index rebuilt (${result.note_count} notes, ${result.duration_ms}ms)`);
     } catch (err) {
       this.setStatus('ready');
-      new Notice(`Flywheel Crank: ${err instanceof Error ? err.message : 'Rebuild failed'}`);
+      new Notice(`${err instanceof Error ? err.message : 'Rebuild failed'}`);
+    } finally {
+      this.indexing = false;
     }
   }
 
-  private setStatus(text: string, active = false): void {
+  private setStatus(text: string, active = false, tooltip?: string): void {
     if (!this.statusBarEl) return;
     this.statusBarEl.empty();
 
@@ -460,6 +319,11 @@ export default class FlywheelCrankPlugin extends Plugin {
     }
 
     this.statusBarEl.createSpan().setText(` Flywheel ${text}`);
+
+    if (tooltip) {
+      this.statusBarEl.setAttribute('aria-label', tooltip);
+      this.statusBarEl.setAttribute('data-tooltip-position', 'top');
+    }
   }
 
   async loadSettings(): Promise<void> {

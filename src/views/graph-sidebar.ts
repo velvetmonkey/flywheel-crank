@@ -8,7 +8,10 @@
 import { ItemView, WorkspaceLeaf, TFile, setIcon } from 'obsidian';
 import type {
   FlywheelMcpClient,
-  McpHealthCheckResponse,
+  McpBacklinksResponse,
+  McpForwardLinksResponse,
+  McpSuggestWikilinksResponse,
+  McpSimilarResponse,
 } from '../mcp/client';
 
 export const GRAPH_VIEW_TYPE = 'flywheel-graph';
@@ -22,6 +25,10 @@ export class GraphSidebarView extends ItemView {
   private noteContainer!: HTMLDivElement;
   private currentNotePath: string | null = null;
   private vaultSectionsRendered = false;
+  /** Folder prefixes for periodic notes (daily-notes/, weekly-notes/, etc.) */
+  private periodicPrefixes: string[] = [];
+  /** Remember collapsed state per section title across note changes */
+  private sectionCollapsed = new Map<string, boolean>();
 
   constructor(leaf: WorkspaceLeaf, mcpClient: FlywheelMcpClient) {
     super(leaf);
@@ -62,25 +69,15 @@ export class GraphSidebarView extends ItemView {
     this.currentNotePath = newPath;
 
     if (!this.mcpClient.connected) {
-      this.vaultContainer.empty();
-      this.noteContainer.empty();
-      this.vaultSectionsRendered = false;
-
-      const empty = this.vaultContainer.createDiv('flywheel-graph-empty');
-      const imgPath = `${this.app.vault.configDir}/plugins/flywheel-crank/flywheel.png`;
-      const imgEl = empty.createEl('img', { cls: 'flywheel-graph-logo' });
-      imgEl.src = this.app.vault.adapter.getResourcePath(imgPath);
-      imgEl.alt = 'Flywheel';
-      empty.createDiv('flywheel-graph-empty-text').setText('Connecting to flywheel-memory...');
+      this.showSplash('Connecting to flywheel-memory...');
       return;
     }
 
-    // Vault sections: render once (or on force refresh)
+    // Show splash while index builds, then render everything once ready
     if (!this.vaultSectionsRendered || force) {
-      this.vaultContainer.empty();
-      this.vaultSectionsRendered = true;
-      this.renderVaultInfo();
-      this.renderVaultIntelligence();
+      this.showSplash('Syncing vault index...');
+      this.waitForIndexThenRender(activeFile, force);
+      return;
     }
 
     // Note sections: always refresh on note change
@@ -91,21 +88,53 @@ export class GraphSidebarView extends ItemView {
     }
   }
 
+  private showSplash(message: string): void {
+    this.vaultContainer.empty();
+    this.noteContainer.empty();
+    this.vaultSectionsRendered = false;
+
+    const empty = this.vaultContainer.createDiv('flywheel-graph-empty');
+    const imgPath = `${this.app.vault.configDir}/plugins/flywheel-crank/flywheel.png`;
+    const imgEl = empty.createEl('img', { cls: 'flywheel-graph-logo' });
+    imgEl.src = this.app.vault.adapter.getResourcePath(imgPath);
+    imgEl.alt = 'Flywheel';
+    empty.createDiv('flywheel-graph-empty-text').setText(message);
+  }
+
+  private async waitForIndexThenRender(activeFile: TFile | null, force: boolean): Promise<void> {
+    try {
+      await this.mcpClient.waitForIndex();
+    } catch {
+      // Timed out — render what we can anyway
+    }
+
+    // Render vault overview
+    this.vaultContainer.empty();
+    this.vaultSectionsRendered = true;
+    this.renderVaultOverview();
+
+    // Render note sections
+    this.noteContainer.empty();
+    if (activeFile) {
+      this.renderNoteHeader(activeFile);
+      this.renderNoteSections(activeFile);
+    }
+  }
+
   // ---------------------------------------------------------------------------
-  // Vault Info section
+  // Vault Overview section (merged Vault Info + Vault Stats)
   // ---------------------------------------------------------------------------
 
-  private async renderVaultInfo(): Promise<void> {
-    const section = this.renderSection('Vault Info', 'info', undefined, (container) => {
+  private async renderVaultOverview(): Promise<void> {
+    const section = this.renderSection('Vault Overview', 'info', undefined, (container) => {
       container.createDiv('flywheel-graph-info-row')
         .createSpan('flywheel-graph-info-value').setText('loading...');
     }, true, this.vaultContainer);
 
-    this.populateVaultInfo(section);
+    this.populateVaultOverview(section);
   }
 
-  /** Shared renderer for vault info — used by initial load and auto-refresh. */
-  private async populateVaultInfo(section: HTMLDivElement): Promise<void> {
+  private async populateVaultOverview(section: HTMLDivElement): Promise<void> {
     if (!section.isConnected) return;
 
     try {
@@ -120,7 +149,7 @@ export class GraphSidebarView extends ItemView {
       this.renderCountBadge(countsRow, 'users', String(health.entity_count), 'entities');
       this.renderCountBadge(countsRow, 'tag', String(health.tag_count), 'tags');
 
-      // Status indicator on right of counts row — includes index age
+      // Status indicator on right of counts row
       const statusEl = countsRow.createSpan('flywheel-graph-counts-status');
       if (health.index_state === 'building') {
         const icon = statusEl.createSpan('flywheel-graph-status-icon');
@@ -139,70 +168,177 @@ export class GraphSidebarView extends ItemView {
         statusEl.createSpan().setText(` indexed ${age} ago`);
       }
 
-      // Vault name
-      const vaultName = health.vault_path.split('/').pop() || health.vault_path;
-      this.renderInfoRow(content, 'Vault', vaultName);
-
-      // Surface inferred config prominently
+      // Periodic note locations + templates from inferred config — behind toggle
       if (health.config && Object.keys(health.config).length > 0) {
         const cfg = health.config as Record<string, any>;
-
-        // Periodic note locations
         const paths = cfg.paths as Record<string, string> | undefined;
-        if (paths && Object.keys(paths).length > 0) {
-          const periodicGroup = content.createDiv('flywheel-graph-info-group');
-          periodicGroup.createDiv('flywheel-graph-info-group-label').setText('Periodic Locations');
-          const labels: Record<string, string> = {
-            daily_notes: 'Daily', weekly_notes: 'Weekly', monthly_notes: 'Monthly',
-            quarterly_notes: 'Quarterly', yearly_notes: 'Yearly', templates: 'Templates',
-          };
-          for (const [key, path] of Object.entries(paths)) {
-            if (path) this.renderInfoRow(periodicGroup, labels[key] ?? key, path);
-          }
-        }
-
-        // Templates
         const templates = cfg.templates as Record<string, string> | undefined;
-        if (templates && Object.keys(templates).length > 0) {
-          const tplGroup = content.createDiv('flywheel-graph-info-group');
-          tplGroup.createDiv('flywheel-graph-info-group-label').setText('Templates');
-          const labels: Record<string, string> = {
-            daily: 'Daily', weekly: 'Weekly', monthly: 'Monthly',
-            quarterly: 'Quarterly', yearly: 'Yearly',
-          };
-          for (const [key, path] of Object.entries(templates)) {
-            if (path) this.renderInfoRow(tplGroup, labels[key] ?? key, path);
-          }
+        const hasConfig = (paths && Object.keys(paths).length > 0) ||
+          (templates && Object.keys(templates).length > 0);
+
+        // Store periodic folder prefixes for cloud splitting
+        if (paths) {
+          this.periodicPrefixes = Object.values(paths)
+            .filter((p): p is string => !!p)
+            .map(p => p.endsWith('/') ? p : `${p}/`);
         }
 
-        // Excluded task tags
-        const excludeTags = cfg.exclude_task_tags as string[] | undefined;
-        if (excludeTags && excludeTags.length > 0) {
-          this.renderInfoRow(content, 'Excluded tags', excludeTags.join(', '));
+        if (hasConfig) {
+          const configToggle = content.createDiv('flywheel-graph-more');
+          configToggle.setText('+ vault config');
+          const configGroup = content.createDiv('flywheel-graph-info-group flywheel-graph-details-hidden');
+
+          if (paths && Object.keys(paths).length > 0) {
+            const periodicGroup = configGroup.createDiv('flywheel-graph-info-group');
+            periodicGroup.createDiv('flywheel-graph-info-group-label').setText('Periodic Locations');
+            const labels: Record<string, string> = {
+              daily_notes: 'Daily', weekly_notes: 'Weekly', monthly_notes: 'Monthly',
+              quarterly_notes: 'Quarterly', yearly_notes: 'Yearly', templates: 'Templates',
+            };
+            for (const [key, path] of Object.entries(paths)) {
+              if (path) this.renderInfoRow(periodicGroup, labels[key] ?? key, path);
+            }
+          }
+
+          if (templates && Object.keys(templates).length > 0) {
+            const tplGroup = configGroup.createDiv('flywheel-graph-info-group');
+            tplGroup.createDiv('flywheel-graph-info-group-label').setText('Templates');
+            const tplLabels: Record<string, string> = {
+              daily: 'Daily', weekly: 'Weekly', monthly: 'Monthly',
+              quarterly: 'Quarterly', yearly: 'Yearly',
+            };
+            for (const [key, path] of Object.entries(templates)) {
+              if (path) this.renderInfoRow(tplGroup, tplLabels[key] ?? key, path);
+            }
+          }
+
+          configToggle.addEventListener('click', () => {
+            if (configGroup.hasClass('flywheel-graph-details-hidden')) {
+              configGroup.removeClass('flywheel-graph-details-hidden');
+              configToggle.setText('- vault config');
+            } else {
+              configGroup.addClass('flywheel-graph-details-hidden');
+              configToggle.setText('+ vault config');
+            }
+          });
         }
       }
+
+      // Lazy "more" toggle — loads vault stats on first expand
+      let statsLoaded = false;
+      const moreToggle = content.createDiv('flywheel-graph-more');
+      moreToggle.setText('+ vault stats');
+      const statsGroup = content.createDiv('flywheel-graph-info-group flywheel-graph-details-hidden');
+
+      moreToggle.addEventListener('click', async () => {
+        if (statsLoaded) {
+          // Toggle visibility
+          if (statsGroup.hasClass('flywheel-graph-details-hidden')) {
+            statsGroup.removeClass('flywheel-graph-details-hidden');
+            moreToggle.setText('- vault stats');
+          } else {
+            statsGroup.addClass('flywheel-graph-details-hidden');
+            moreToggle.setText('+ vault stats');
+          }
+          return;
+        }
+
+        statsLoaded = true;
+        statsGroup.removeClass('flywheel-graph-details-hidden');
+        moreToggle.setText('- vault stats');
+        statsGroup.createDiv('flywheel-graph-section-empty').setText('loading...');
+
+        try {
+          await this.mcpClient.waitForIndex();
+          const stats = await this.mcpClient.vaultStats();
+          statsGroup.empty();
+
+          this.renderInfoRow(statsGroup, 'Avg links/note', stats.average_links_per_note.toFixed(1));
+          if (stats.orphan_notes.total > 0) {
+            this.renderInfoRow(statsGroup, 'Orphans', `${stats.orphan_notes.content} content, ${stats.orphan_notes.periodic} periodic`);
+          }
+
+          // Most linked notes
+          if (stats.most_linked_notes.length > 0) {
+            const hubGroup = statsGroup.createDiv('flywheel-graph-info-group');
+            hubGroup.createDiv('flywheel-graph-info-group-label').setText('Most Linked');
+            for (const note of stats.most_linked_notes.slice(0, 5)) {
+              const name = note.path.replace(/\.md$/, '').split('/').pop() || note.path;
+              this.renderInfoRow(hubGroup, name, `${note.backlinks}`);
+            }
+          }
+
+          // Top tags
+          if (stats.top_tags.length > 0) {
+            const tagGroup = statsGroup.createDiv('flywheel-graph-info-group');
+            tagGroup.createDiv('flywheel-graph-info-group-label').setText('Top Tags');
+            for (const tag of stats.top_tags.slice(0, 5)) {
+              this.renderInfoRow(tagGroup, tag.tag, String(tag.count));
+            }
+          }
+        } catch (err) {
+          statsGroup.empty();
+          statsGroup.createDiv('flywheel-graph-section-empty')
+            .setText(err instanceof Error ? err.message : 'Failed to load stats');
+        }
+      });
 
       // Technical details — hidden behind toggle
       const detailsToggle = content.createDiv('flywheel-graph-more');
       detailsToggle.setText('+ technical details');
       const detailsGroup = content.createDiv('flywheel-graph-info-group flywheel-graph-details-hidden');
-      this.renderInfoRow(detailsGroup, 'Vault path', health.vault_path);
-      this.renderInfoRow(detailsGroup, 'StateDb', `${health.vault_path}/.flywheel/state.db`);
-      this.renderInfoRow(detailsGroup, 'MCP', 'connected (stdio)');
+
+      // Index statuses sub-group
+      const indexGroup = detailsGroup.createDiv('flywheel-graph-info-group');
+      indexGroup.createDiv('flywheel-graph-info-group-label').setText('Indexes');
+
+      const graphStatus = health.index_state === 'ready'
+        ? `ready · ${health.note_count} notes`
+        : health.index_state === 'building' ? 'building...' : 'error';
+      this.renderInfoRow(indexGroup, 'Graph index', graphStatus);
+
+      const fts5Status = health.fts5_building
+        ? 'building...'
+        : health.fts5_ready ? 'ready · full-text with stemming' : 'not built';
+      this.renderInfoRow(indexGroup, 'Keyword search', fts5Status);
+
+      const semanticStatus = health.embeddings_building
+        ? 'building...'
+        : health.embeddings_ready
+          ? `ready · ${health.embeddings_count} embeddings`
+          : 'not built';
+      this.renderInfoRow(indexGroup, 'Semantic search', semanticStatus);
+
+      // Server info sub-group
+      const serverGroup = detailsGroup.createDiv('flywheel-graph-info-group');
+      serverGroup.createDiv('flywheel-graph-info-group-label').setText('Server');
+      this.renderInfoRow(serverGroup, 'Vault path', health.vault_path);
+      this.renderInfoRow(serverGroup, 'StateDb', `${health.vault_path}/.flywheel/state.db`);
+      if (health.schema_version) {
+        this.renderInfoRow(serverGroup, 'Schema', `v${health.schema_version}`);
+      }
+      this.renderInfoRow(serverGroup, 'MCP', 'connected (stdio)');
 
       detailsToggle.addEventListener('click', () => {
-        detailsGroup.removeClass('flywheel-graph-details-hidden');
-        detailsToggle.remove();
+        if (detailsGroup.hasClass('flywheel-graph-details-hidden')) {
+          detailsGroup.removeClass('flywheel-graph-details-hidden');
+          detailsToggle.setText('- technical details');
+        } else {
+          detailsGroup.addClass('flywheel-graph-details-hidden');
+          detailsToggle.setText('+ technical details');
+        }
       });
 
       // Update count badge
       const countEl = section.querySelector('.flywheel-graph-section-count') as HTMLElement;
       if (countEl) countEl.setText(`${health.note_count}`);
 
-      // Keep polling while building or while config hasn't loaded yet
+      // Keep polling while any index is building or config not yet inferred
       const configMissing = !health.config || Object.keys(health.config).length === 0;
-      if (health.index_state === 'building' || configMissing) {
-        setTimeout(() => this.populateVaultInfo(section), health.index_state === 'building' ? 5000 : 2000);
+      const stillBuilding = health.index_state === 'building' || health.fts5_building || health.embeddings_building || configMissing;
+      if (stillBuilding) {
+        const delay = health.index_state === 'building' ? 5000 : 3000;
+        setTimeout(() => this.populateVaultOverview(section), delay);
       }
     } catch (err) {
       const content = section.querySelector('.flywheel-graph-section-content') as HTMLDivElement;
@@ -237,216 +373,6 @@ export class GraphSidebarView extends ItemView {
     row.createSpan('flywheel-graph-info-value').setText(value);
   }
 
-  /** Flatten nested config objects into key/value rows */
-  private renderConfigEntries(container: HTMLDivElement, obj: Record<string, unknown>, prefix = ''): void {
-    for (const [key, value] of Object.entries(obj)) {
-      if (value == null) continue;
-      const label = prefix ? `${prefix}.${key}` : key;
-      if (typeof value === 'object' && !Array.isArray(value)) {
-        this.renderConfigEntries(container, value as Record<string, unknown>, label);
-      } else if (Array.isArray(value)) {
-        if (value.length > 0) {
-          this.renderInfoRow(container, label, value.join(', '));
-        }
-      } else {
-        this.renderInfoRow(container, label, String(value));
-      }
-    }
-  }
-
-  // ---------------------------------------------------------------------------
-  // Vault Intelligence sections (lazy-loaded on expand)
-  // ---------------------------------------------------------------------------
-
-  private renderVaultIntelligence(): void {
-    this.renderLazySection('Vault Stats', 'bar-chart-2', () => this.loadVaultStats());
-    this.renderLazySection('Folder Structure', 'folder-tree', () => this.loadFolderStructure());
-    this.renderLazySection('Type Inconsistencies', 'alert-triangle', () => this.loadInconsistencies());
-  }
-
-  /**
-   * Render a section that starts collapsed and lazy-loads data on first expand.
-   * The loader is called once; subsequent expand/collapse is free.
-   */
-  private renderLazySection(
-    title: string,
-    icon: string,
-    loader: () => Promise<{ content: HTMLDivElement } | void>,
-  ): void {
-    const section = this.vaultContainer.createDiv('flywheel-graph-section is-collapsed');
-
-    const headerEl = section.createDiv('flywheel-graph-section-header');
-    const iconEl = headerEl.createSpan('flywheel-graph-section-icon');
-    setIcon(iconEl, icon);
-    headerEl.createSpan('flywheel-graph-section-title').setText(title);
-    const countEl = headerEl.createSpan('flywheel-graph-section-count');
-    countEl.setText('...');
-    const chevron = headerEl.createSpan('flywheel-graph-section-chevron');
-    setIcon(chevron, 'chevron-down');
-
-    const content = section.createDiv('flywheel-graph-section-content');
-    content.createDiv('flywheel-graph-section-empty').setText('Click to load');
-
-    let loaded = false;
-    headerEl.addEventListener('click', async () => {
-      const wasCollapsed = section.hasClass('is-collapsed');
-      section.toggleClass('is-collapsed', !wasCollapsed);
-
-      if (!loaded && wasCollapsed) {
-        loaded = true;
-        content.empty();
-        content.createDiv('flywheel-graph-section-empty').setText('loading...');
-        try {
-          await this.mcpClient.waitForIndex();
-          await loader();
-        } catch (err) {
-          content.empty();
-          content.createDiv('flywheel-graph-section-empty')
-            .setText(err instanceof Error ? err.message : 'Failed to load');
-        }
-      }
-    });
-  }
-
-  private async loadVaultStats(): Promise<void> {
-    const stats = await this.mcpClient.vaultStats();
-    const section = this.findSectionByTitle('Vault Stats');
-    if (!section) return;
-    const content = section.querySelector('.flywheel-graph-section-content') as HTMLDivElement;
-    const countEl = section.querySelector('.flywheel-graph-section-count') as HTMLElement;
-    content.empty();
-
-    // Summary counts row
-    const row = content.createDiv('flywheel-graph-counts-row');
-    this.renderCountBadge(row, 'link', String(stats.total_links), 'links');
-    this.renderCountBadge(row, 'tag', String(stats.total_tags), 'tags');
-    const avgLabel = row.createSpan('flywheel-graph-counts-status');
-    avgLabel.setText(`${stats.average_links_per_note.toFixed(1)} links/note`);
-
-    // Orphans
-    if (stats.orphan_notes.total > 0) {
-      const orphanGroup = content.createDiv('flywheel-graph-info-group');
-      orphanGroup.createDiv('flywheel-graph-info-group-label').setText('Orphans');
-      this.renderInfoRow(orphanGroup, 'Content orphans', String(stats.orphan_notes.content));
-      this.renderInfoRow(orphanGroup, 'Periodic orphans', String(stats.orphan_notes.periodic));
-    }
-
-    // Broken links
-    if (stats.broken_links > 0) {
-      this.renderInfoRow(content, 'Broken links', String(stats.broken_links));
-    }
-
-    // Most linked notes
-    if (stats.most_linked_notes.length > 0) {
-      const hubGroup = content.createDiv('flywheel-graph-info-group');
-      hubGroup.createDiv('flywheel-graph-info-group-label').setText('Most Linked');
-      for (const note of stats.most_linked_notes.slice(0, 8)) {
-        const name = note.path.replace(/\.md$/, '').split('/').pop() || note.path;
-        const item = hubGroup.createDiv('flywheel-graph-link-item');
-        item.addEventListener('click', () => this.app.workspace.openLinkText(note.path, '', false));
-        const nameRow = item.createDiv('flywheel-graph-link-name-row');
-        nameRow.createSpan('flywheel-graph-link-name').setText(name);
-        nameRow.createSpan('flywheel-graph-link-line').setText(`${note.backlinks} backlinks`);
-      }
-    }
-
-    // Top tags
-    if (stats.top_tags.length > 0) {
-      const tagGroup = content.createDiv('flywheel-graph-info-group');
-      tagGroup.createDiv('flywheel-graph-info-group-label').setText('Top Tags');
-      for (const tag of stats.top_tags.slice(0, 10)) {
-        this.renderInfoRow(tagGroup, tag.tag, String(tag.count));
-      }
-    }
-
-    // Recent activity
-    if (stats.recent_activity) {
-      const actGroup = content.createDiv('flywheel-graph-info-group');
-      actGroup.createDiv('flywheel-graph-info-group-label').setText(`Activity (${stats.recent_activity.period_days}d)`);
-      this.renderInfoRow(actGroup, 'Modified', String(stats.recent_activity.notes_modified));
-      this.renderInfoRow(actGroup, 'Created', String(stats.recent_activity.notes_created));
-      if (stats.recent_activity.most_active_day) {
-        this.renderInfoRow(actGroup, 'Most active', stats.recent_activity.most_active_day);
-      }
-    }
-
-    if (countEl) countEl.setText(`${stats.total_links} links`);
-  }
-
-  private async loadFolderStructure(): Promise<void> {
-    const result = await this.mcpClient.folderStructure();
-    const section = this.findSectionByTitle('Folder Structure');
-    if (!section) return;
-    const content = section.querySelector('.flywheel-graph-section-content') as HTMLDivElement;
-    const countEl = section.querySelector('.flywheel-graph-section-count') as HTMLElement;
-    content.empty();
-
-    if (result.folders.length === 0) {
-      content.createDiv('flywheel-graph-section-empty').setText('No folders');
-      if (countEl) countEl.setText('0');
-      return;
-    }
-
-    // Sort by note count descending
-    const sorted = [...result.folders].sort((a, b) => b.note_count - a.note_count);
-
-    const renderFolderRow = (folder: { path: string; note_count: number; subfolder_count: number }) => {
-      const wrapper = content.createDiv('flywheel-graph-folder-item');
-      const row = wrapper.createDiv('flywheel-graph-folder-row');
-      const chevron = row.createSpan('flywheel-graph-folder-chevron');
-      setIcon(chevron, 'chevron-right');
-      row.createSpan('flywheel-graph-folder-name').setText(folder.path || '(root)');
-      const meta = row.createSpan('flywheel-graph-folder-meta');
-      meta.setText(folder.subfolder_count > 0
-        ? `${folder.note_count} · ${folder.subfolder_count} sub`
-        : `${folder.note_count}`);
-
-      let expanded = false;
-      row.addEventListener('click', async () => {
-        if (expanded) {
-          // Collapse
-          expanded = false;
-          chevron.empty();
-          setIcon(chevron, 'chevron-right');
-          const detail = wrapper.querySelector('.flywheel-graph-folder-detail');
-          detail?.remove();
-          return;
-        }
-        expanded = true;
-        chevron.empty();
-        setIcon(chevron, 'chevron-down');
-        const detail = wrapper.createDiv('flywheel-graph-folder-detail');
-        detail.createDiv('flywheel-graph-section-empty').setText('loading...');
-        try {
-          const conv = await this.mcpClient.folderConventions(folder.path);
-          detail.empty();
-          this.renderFolderConventionsInline(detail, conv);
-        } catch (err) {
-          detail.empty();
-          detail.createDiv('flywheel-graph-section-empty')
-            .setText(err instanceof Error ? err.message : 'Failed to load');
-        }
-      });
-    };
-
-    for (const folder of sorted.slice(0, 20)) {
-      renderFolderRow(folder);
-    }
-
-    if (sorted.length > 20) {
-      const moreEl = content.createDiv('flywheel-graph-more');
-      moreEl.setText(`+ ${sorted.length - 20} more folders`);
-      moreEl.addEventListener('click', () => {
-        moreEl.remove();
-        for (const folder of sorted.slice(20)) {
-          renderFolderRow(folder);
-        }
-      });
-    }
-
-    if (countEl) countEl.setText(`${result.folder_count}`);
-  }
-
   /** Render folder conventions inline within a folder detail panel. */
   private renderFolderConventionsInline(
     container: HTMLDivElement,
@@ -463,9 +389,11 @@ export class GraphSidebarView extends ItemView {
       patRow.createSpan('flywheel-graph-info-value').setText(conv.naming_pattern);
     }
 
+    const NOISE_FIELDS = new Set(['word_count', 'link_count']);
+
     // Inferred fields (top by frequency)
     const fields = conv.inferred_fields
-      .filter(f => f.frequency >= 0.2)
+      .filter(f => f.frequency >= 0.2 && !NOISE_FIELDS.has(f.name))
       .sort((a, b) => b.frequency - a.frequency);
 
     if (fields.length > 0) {
@@ -491,9 +419,10 @@ export class GraphSidebarView extends ItemView {
     }
 
     // Computed field suggestions
-    if (conv.computed_field_suggestions && conv.computed_field_suggestions.length > 0) {
+    const suggestions = (conv.computed_field_suggestions ?? []).filter(s => !NOISE_FIELDS.has(s.name));
+    if (suggestions.length > 0) {
       container.createDiv('flywheel-graph-info-group-label').setText('Suggested Fields');
-      for (const sug of conv.computed_field_suggestions) {
+      for (const sug of suggestions) {
         const row = container.createDiv('flywheel-graph-info-row');
         row.createSpan('flywheel-graph-info-label').setText(sug.name);
         const desc = sug.sample_value
@@ -508,70 +437,17 @@ export class GraphSidebarView extends ItemView {
     }
   }
 
-  private async loadInconsistencies(): Promise<void> {
-    const result = await this.mcpClient.schemaInconsistencies();
-    const section = this.findSectionByTitle('Type Inconsistencies');
-    if (!section) return;
-    const content = section.querySelector('.flywheel-graph-section-content') as HTMLDivElement;
-    const countEl = section.querySelector('.flywheel-graph-section-count') as HTMLElement;
-    content.empty();
-
-    if (result.inconsistency_count === 0) {
-      content.createDiv('flywheel-graph-section-empty').setText('No type inconsistencies found');
-      if (countEl) countEl.setText('0');
-      return;
-    }
-
-    for (const inc of result.inconsistencies.slice(0, 10)) {
-      const item = content.createDiv('flywheel-graph-inconsistency-item');
-
-      // Header: field name + type summary
-      const header = item.createDiv('flywheel-graph-inconsistency-header');
-      const iconEl = header.createSpan('flywheel-graph-inconsistency-icon');
-      setIcon(iconEl, 'alert-triangle');
-      header.createSpan('flywheel-graph-inconsistency-field').setText(inc.field);
-      header.createSpan('flywheel-graph-inconsistency-types')
-        .setText(`used as ${inc.types_found.join(' and ')}`);
-
-      // Examples: "NoteA → string: "value""
-      for (const ex of inc.examples.slice(0, 3)) {
-        const exEl = item.createDiv('flywheel-graph-inconsistency-example');
-        const noteName = ex.note.replace(/\.md$/, '').split('/').pop() || ex.note;
-        const noteSpan = exEl.createSpan('flywheel-graph-inconsistency-note');
-        noteSpan.setText(noteName);
-        noteSpan.addEventListener('click', () => this.app.workspace.openLinkText(ex.note, '', false));
-        const valStr = typeof ex.value === 'string' ? `"${ex.value}"` : JSON.stringify(ex.value);
-        exEl.createSpan('flywheel-graph-inconsistency-val').setText(` ${ex.type}: ${valStr}`);
-      }
-    }
-
-    if (countEl) {
-      countEl.setText(`${result.inconsistency_count}`);
-      if (result.inconsistency_count > 0) countEl.addClass('flywheel-graph-section-count-warn');
-    }
-  }
-
-  /** Find a section element by its title text. */
-  private findSectionByTitle(title: string): HTMLDivElement | null {
-    const sections = this.vaultContainer.querySelectorAll('.flywheel-graph-section');
-    for (const s of sections) {
-      const titleEl = s.querySelector('.flywheel-graph-section-title');
-      if (titleEl?.textContent === title) return s as HTMLDivElement;
-    }
-    return null;
-  }
-
   // ---------------------------------------------------------------------------
-  // Schema section
+  // Folder section (merged folder conventions + browse all folders)
   // ---------------------------------------------------------------------------
 
-  private async renderFolderSchema(file: TFile): Promise<void> {
+  private async renderFolderSection(file: TFile): Promise<void> {
     const folder = file.path.split('/').slice(0, -1).join('/') || '';
     const folderLabel = folder || '(root)';
 
-    const section = this.renderSection(`Folder: ${folderLabel}`, 'file-json', undefined, (container) => {
+    const section = this.renderSection(`Folder: ${folderLabel}`, 'folder', undefined, (container) => {
       container.createDiv('flywheel-graph-section-empty').setText('loading...');
-    }, true);
+    }, true, undefined, 'Folder');
 
     try {
       await this.mcpClient.waitForIndex();
@@ -584,86 +460,173 @@ export class GraphSidebarView extends ItemView {
       const cache = this.app.metadataCache.getFileCache(file);
       const fm = cache?.frontmatter ?? {};
 
+      const NOISE_FIELDS = new Set(['word_count', 'link_count']);
+
       // Build a map of all inferred fields
-      const fieldMap = new Map(conv.inferred_fields.map(f => [f.name, f]));
+      const fieldMap = new Map(conv.inferred_fields.filter(f => !NOISE_FIELDS.has(f.name)).map(f => [f.name, f]));
 
       // Collect all field names: those in this note + those expected by the folder
       const allFieldNames = new Set<string>();
       for (const key of Object.keys(fm)) {
-        if (key !== 'position') allFieldNames.add(key); // skip Obsidian internal
+        if (key !== 'position' && !NOISE_FIELDS.has(key)) allFieldNames.add(key);
       }
       for (const f of conv.inferred_fields) {
-        allFieldNames.add(f.name);
+        if (!NOISE_FIELDS.has(f.name)) allFieldNames.add(f.name);
       }
 
       if (allFieldNames.size === 0) {
         content.createDiv('flywheel-graph-section-empty').setText('No frontmatter');
-        return;
-      }
+      } else {
+        let missingCount = 0;
 
-      this.renderInfoRow(content, 'Notes in folder', `${conv.note_count}`);
-      this.renderInfoRow(content, 'Coverage', `${Math.round(conv.coverage * 100)}%`);
+        // Sort: present first, then missing; within each group by frequency desc
+        const sortedNames = [...allFieldNames].sort((a, b) => {
+          const aHas = a in fm ? 0 : 1;
+          const bHas = b in fm ? 0 : 1;
+          if (aHas !== bHas) return aHas - bHas;
+          const aFreq = fieldMap.get(a)?.frequency ?? 0;
+          const bFreq = fieldMap.get(b)?.frequency ?? 0;
+          return bFreq - aFreq;
+        });
 
-      let missingCount = 0;
+        for (const name of sortedNames) {
+          const hasField = name in fm;
+          const inferred = fieldMap.get(name);
+          if (!hasField && (!inferred || inferred.frequency < 0.3)) continue;
+          if (!hasField) missingCount++;
 
-      // Sort: present first, then missing; within each group by frequency desc
-      const sortedNames = [...allFieldNames].sort((a, b) => {
-        const aHas = a in fm ? 0 : 1;
-        const bHas = b in fm ? 0 : 1;
-        if (aHas !== bHas) return aHas - bHas;
-        const aFreq = fieldMap.get(a)?.frequency ?? 0;
-        const bFreq = fieldMap.get(b)?.frequency ?? 0;
-        return bFreq - aFreq;
-      });
+          const row = content.createDiv('flywheel-graph-schema-field');
+          if (!hasField) row.addClass('flywheel-graph-schema-field-missing');
 
-      for (const name of sortedNames) {
-        const hasField = name in fm;
-        const inferred = fieldMap.get(name);
-        // Skip fields that are neither in the note nor common in the folder (>30%)
-        if (!hasField && (!inferred || inferred.frequency < 0.3)) continue;
-        if (!hasField) missingCount++;
+          const nameRow = row.createDiv('flywheel-graph-schema-field-header');
+          const iconEl = nameRow.createSpan('flywheel-graph-schema-field-icon');
+          setIcon(iconEl, hasField ? 'check-circle' : 'circle');
+          nameRow.createSpan('flywheel-graph-schema-field-name').setText(name);
 
-        const row = content.createDiv('flywheel-graph-schema-field');
-        if (!hasField) row.addClass('flywheel-graph-schema-field-missing');
-
-        const nameRow = row.createDiv('flywheel-graph-schema-field-header');
-
-        const iconEl = nameRow.createSpan('flywheel-graph-schema-field-icon');
-        setIcon(iconEl, hasField ? 'check-circle' : 'circle');
-
-        nameRow.createSpan('flywheel-graph-schema-field-name').setText(name);
-
-        if (inferred) {
-          const pct = Math.round(inferred.frequency * 100);
-          nameRow.createSpan('flywheel-graph-schema-field-meta').setText(
-            `${inferred.inferred_type} · ${pct}%`
-          );
-        }
-
-        if (hasField) {
-          const val = fm[name];
-          const valStr = Array.isArray(val) ? val.join(', ') : String(val ?? '');
-          if (valStr) {
-            row.createDiv('flywheel-graph-schema-field-value').setText(valStr);
+          if (inferred) {
+            const pct = Math.round(inferred.frequency * 100);
+            nameRow.createSpan('flywheel-graph-schema-field-meta').setText(
+              `${inferred.inferred_type} · ${pct}%`
+            );
           }
-        } else if (inferred?.common_values && inferred.common_values.length > 0) {
-          const values = inferred.common_values
-            .slice(0, 5)
-            .map(v => typeof v === 'string' ? v : JSON.stringify(v))
-            .join(' · ');
-          row.createDiv('flywheel-graph-schema-field-examples').setText(values);
+
+          if (hasField) {
+            const val = fm[name];
+            const valStr = Array.isArray(val) ? val.join(', ') : String(val ?? '');
+            if (valStr) {
+              row.createDiv('flywheel-graph-schema-field-value').setText(valStr);
+            }
+          } else if (inferred?.common_values && inferred.common_values.length > 0) {
+            const values = inferred.common_values
+              .slice(0, 5)
+              .map(v => typeof v === 'string' ? v : JSON.stringify(v))
+              .join(' · ');
+            row.createDiv('flywheel-graph-schema-field-examples').setText(values);
+          }
+        }
+
+        const countEl = section.querySelector('.flywheel-graph-section-count') as HTMLElement;
+        if (countEl) {
+          if (missingCount > 0) {
+            countEl.setText(`${missingCount} missing`);
+            countEl.addClass('flywheel-graph-section-count-warn');
+          } else {
+            countEl.setText('complete');
+          }
         }
       }
 
-      const countEl = section.querySelector('.flywheel-graph-section-count') as HTMLElement;
-      if (countEl) {
-        if (missingCount > 0) {
-          countEl.setText(`${missingCount} missing`);
-          countEl.addClass('flywheel-graph-section-count-warn');
-        } else {
-          countEl.setText('complete');
+      // Browse all folders toggle
+      let browseFoldersLoaded = false;
+      const browseToggle = content.createDiv('flywheel-graph-more');
+      browseToggle.setText('+ browse all folders');
+      const browseGroup = content.createDiv('flywheel-graph-info-group flywheel-graph-details-hidden');
+
+      browseToggle.addEventListener('click', async () => {
+        if (browseFoldersLoaded) {
+          if (browseGroup.hasClass('flywheel-graph-details-hidden')) {
+            browseGroup.removeClass('flywheel-graph-details-hidden');
+            browseToggle.setText('- browse all folders');
+          } else {
+            browseGroup.addClass('flywheel-graph-details-hidden');
+            browseToggle.setText('+ browse all folders');
+          }
+          return;
         }
-      }
+
+        browseFoldersLoaded = true;
+        browseGroup.removeClass('flywheel-graph-details-hidden');
+        browseToggle.setText('- browse all folders');
+        browseGroup.createDiv('flywheel-graph-section-empty').setText('loading...');
+
+        try {
+          const result = await this.mcpClient.folderStructure();
+          browseGroup.empty();
+
+          if (result.folders.length === 0) {
+            browseGroup.createDiv('flywheel-graph-section-empty').setText('No folders');
+            return;
+          }
+
+          const sorted = [...result.folders].sort((a, b) => b.note_count - a.note_count);
+
+          const renderFolderRow = (f: { path: string; note_count: number; subfolder_count: number }) => {
+            const wrapper = browseGroup.createDiv('flywheel-graph-folder-item');
+            const row = wrapper.createDiv('flywheel-graph-folder-row');
+            const chevron = row.createSpan('flywheel-graph-folder-chevron');
+            setIcon(chevron, 'chevron-right');
+            row.createSpan('flywheel-graph-folder-name').setText(f.path || '(root)');
+            const meta = row.createSpan('flywheel-graph-folder-meta');
+            meta.setText(f.subfolder_count > 0
+              ? `${f.note_count} · ${f.subfolder_count} sub`
+              : `${f.note_count}`);
+
+            let expanded = false;
+            row.addEventListener('click', async () => {
+              if (expanded) {
+                expanded = false;
+                chevron.empty();
+                setIcon(chevron, 'chevron-right');
+                wrapper.querySelector('.flywheel-graph-folder-detail')?.remove();
+                return;
+              }
+              expanded = true;
+              chevron.empty();
+              setIcon(chevron, 'chevron-down');
+              const detail = wrapper.createDiv('flywheel-graph-folder-detail');
+              detail.createDiv('flywheel-graph-section-empty').setText('loading...');
+              try {
+                const fConv = await this.mcpClient.folderConventions(f.path);
+                detail.empty();
+                this.renderFolderConventionsInline(detail, fConv);
+              } catch (err) {
+                detail.empty();
+                detail.createDiv('flywheel-graph-section-empty')
+                  .setText(err instanceof Error ? err.message : 'Failed to load');
+              }
+            });
+          };
+
+          for (const f of sorted.slice(0, 20)) {
+            renderFolderRow(f);
+          }
+
+          if (sorted.length > 20) {
+            const moreEl = browseGroup.createDiv('flywheel-graph-more');
+            moreEl.setText(`+ ${sorted.length - 20} more folders`);
+            moreEl.addEventListener('click', () => {
+              moreEl.remove();
+              for (const f of sorted.slice(20)) {
+                renderFolderRow(f);
+              }
+            });
+          }
+        } catch (err) {
+          browseGroup.empty();
+          browseGroup.createDiv('flywheel-graph-section-empty')
+            .setText(err instanceof Error ? err.message : 'Failed to load folders');
+        }
+      });
     } catch (err) {
       const content = section.querySelector('.flywheel-graph-section-content') as HTMLDivElement;
       if (content) {
@@ -689,10 +652,24 @@ export class GraphSidebarView extends ItemView {
       // Wait for the server index before calling graph tools
       await this.mcpClient.waitForIndex();
 
-      const [backlinksResp, forwardLinksResp] = await Promise.all([
+      const noteContent = await this.app.vault.cachedRead(file);
+      const [backlinksResp, forwardLinksResp, suggestResp, similarResp, health] = await Promise.all([
         this.mcpClient.getBacklinks(notePath),
         this.mcpClient.getForwardLinks(notePath),
+        this.mcpClient.suggestWikilinks(noteContent, true).catch(() => null),
+        this.mcpClient.findSimilar(notePath, 15).catch(() => null),
+        this.mcpClient.healthCheck().catch(() => null),
       ]);
+
+      // Ensure periodic prefixes are set for cloud splitting
+      if (this.periodicPrefixes.length === 0 && health?.config) {
+        const paths = (health.config as Record<string, any>).paths as Record<string, string> | undefined;
+        if (paths) {
+          this.periodicPrefixes = Object.values(paths)
+            .filter((p): p is string => !!p)
+            .map(p => p.endsWith('/') ? p : `${p}/`);
+        }
+      }
 
       // Deduplicate forward links by resolved path (or target for dead links)
       const seen = new Set<string>();
@@ -703,27 +680,47 @@ export class GraphSidebarView extends ItemView {
         return true;
       });
 
+      // Context Cloud (rendered first)
+      this.renderContextCloud(backlinksResp, forwardLinksResp, suggestResp, similarResp);
+
+      // Folder section (before links)
+      this.renderFolderSection(file);
+
       const MAX_ITEMS = 5;
 
-      // Backlinks section
-      this.renderSection('Backlinks', 'arrow-left', backlinksResp.backlink_count, (container) => {
-        if (backlinksResp.backlinks.length === 0) {
+      // Backlinks section — group by source, sorted by mention count desc
+      const blGrouped = new Map<string, { source: string; count: number; lines: number[]; context?: string }>();
+      for (const bl of backlinksResp.backlinks) {
+        const existing = blGrouped.get(bl.source);
+        if (existing) {
+          existing.count++;
+          existing.lines.push(bl.line);
+          if (!existing.context && bl.context) existing.context = bl.context;
+        } else {
+          blGrouped.set(bl.source, { source: bl.source, count: 1, lines: [bl.line], context: bl.context });
+        }
+      }
+      const blSorted = [...blGrouped.values()].sort((a, b) => b.count - a.count);
+      const uniqueBacklinks = blSorted.length;
+
+      this.renderSection('Backlinks', 'arrow-left', uniqueBacklinks, (container) => {
+        if (blSorted.length === 0) {
           container.createDiv('flywheel-graph-section-empty').setText('No backlinks');
           return;
         }
 
-        const visible = backlinksResp.backlinks.slice(0, MAX_ITEMS);
+        const visible = blSorted.slice(0, MAX_ITEMS);
         for (const bl of visible) {
-          this.renderBacklink(container, bl);
+          this.renderBacklinkGrouped(container, bl);
         }
 
-        const remaining = backlinksResp.backlink_count - visible.length;
+        const remaining = blSorted.length - visible.length;
         if (remaining > 0) {
-          this.renderShowMore(container, remaining, backlinksResp.backlinks.slice(MAX_ITEMS), (bl) => {
-            this.renderBacklink(container, bl);
+          this.renderShowMore(container, remaining, blSorted.slice(MAX_ITEMS), (bl) => {
+            this.renderBacklinkGrouped(container, bl);
           });
         }
-      });
+      }, true);
 
       // Forward links section
       this.renderSection('Forward Links', 'arrow-right', uniqueLinks.length, (container) => {
@@ -743,13 +740,10 @@ export class GraphSidebarView extends ItemView {
             this.renderForwardLink(container, link);
           });
         }
-      });
+      }, true);
 
-      // Folder schema (right after forward links, before related)
-      this.renderFolderSchema(file);
-
-      // Related notes via find_similar
-      await this.renderRelatedNotes(notePath);
+      // Related notes (after backlinks/forward links)
+      this.renderRelatedNotes(similarResp);
     } catch (err) {
       console.error('Flywheel Crank: graph sidebar error', err);
     }
@@ -770,6 +764,33 @@ export class GraphSidebarView extends ItemView {
     if (bl.context) {
       const snippetEl = item.createDiv('flywheel-graph-link-snippet');
       snippetEl.setText(bl.context);
+    }
+  }
+
+  private renderBacklinkGrouped(
+    container: HTMLDivElement,
+    bl: { source: string; count: number; lines: number[]; context?: string },
+  ): void {
+    const item = container.createDiv('flywheel-graph-link-item');
+    item.addEventListener('click', () => this.app.workspace.openLinkText(bl.source, '', false));
+
+    const title = bl.source.replace(/\.md$/, '').split('/').pop() || bl.source;
+    const nameRow = item.createDiv('flywheel-graph-link-name-row');
+    nameRow.createSpan('flywheel-graph-link-name').setText(title);
+    if (bl.count > 1) {
+      nameRow.createSpan('flywheel-graph-score-badge').setText(`${bl.count}x`);
+    }
+    nameRow.createSpan('flywheel-graph-link-line').setText(
+      bl.lines.length <= 3
+        ? bl.lines.map(l => `L${l}`).join(', ')
+        : `L${bl.lines[0]}, +${bl.lines.length - 1} more`,
+    );
+
+    const folder = bl.source.split('/').slice(0, -1).join('/');
+    if (folder) item.createDiv('flywheel-graph-link-path').setText(folder);
+
+    if (bl.context) {
+      item.createDiv('flywheel-graph-link-snippet').setText(bl.context);
     }
   }
 
@@ -812,33 +833,249 @@ export class GraphSidebarView extends ItemView {
   }
 
   // ---------------------------------------------------------------------------
+  // Context Cloud
+  // ---------------------------------------------------------------------------
+
+  private renderContextCloud(
+    backlinksResp: McpBacklinksResponse,
+    forwardLinksResp: McpForwardLinksResponse,
+    suggestResp: McpSuggestWikilinksResponse | null,
+    similarResp: McpSimilarResponse | null,
+  ): void {
+    interface CloudEntry {
+      name: string;
+      path: string | null;
+      score: number;
+      reasons: string[];
+      sources: Set<string>;
+    }
+
+    const cloud = new Map<string, CloudEntry>();
+
+    const mergeEntry = (key: string, entry: Omit<CloudEntry, 'sources'> & { source: string }) => {
+      const existing = cloud.get(key);
+      if (existing) {
+        if (entry.score > existing.score) existing.score = entry.score;
+        if (!existing.path && entry.path) existing.path = entry.path;
+        // Deduplicate reasons
+        for (const r of entry.reasons) {
+          if (!existing.reasons.includes(r)) existing.reasons.push(r);
+        }
+        existing.sources.add(entry.source);
+      } else {
+        cloud.set(key, {
+          name: entry.name,
+          path: entry.path,
+          score: entry.score,
+          reasons: [...entry.reasons],
+          sources: new Set([entry.source]),
+        });
+      }
+    };
+
+    // 1. Backlinks
+    const blBySource = new Map<string, number>();
+    for (const bl of backlinksResp.backlinks) {
+      blBySource.set(bl.source, (blBySource.get(bl.source) ?? 0) + 1);
+    }
+    for (const [source] of blBySource) {
+      const name = source.replace(/\.md$/, '').split('/').pop() || source;
+      const count = blBySource.get(source)!;
+      const score = Math.min(0.7 + 0.1 * (count - 1), 1.0);
+      mergeEntry(source, {
+        name,
+        path: source,
+        score,
+        reasons: [`Links here from ${name}`],
+        source: 'backlink',
+      });
+    }
+
+    // 2. Forward links
+    for (const link of forwardLinksResp.forward_links) {
+      const key = link.resolved_path ?? link.target;
+      const name = link.target;
+      mergeEntry(key, {
+        name,
+        path: link.exists ? (link.resolved_path ?? null) : null,
+        score: link.exists ? 0.5 : 0.2,
+        reasons: ['Linked from this note'],
+        source: 'forward',
+      });
+    }
+
+    // 3. Suggest wikilinks (scored suggestions)
+    if (suggestResp?.scored_suggestions) {
+      for (const sug of suggestResp.scored_suggestions) {
+        const name = sug.entity;
+        const score = Math.min(sug.totalScore / 80, 1.0);
+        const bd = sug.breakdown;
+        const parts: string[] = [];
+        if (bd.hubBoost > 0) parts.push('highly connected note');
+        if (bd.semanticBoost && bd.semanticBoost > 0) parts.push('similar topics');
+        if (bd.contentMatch > 0) parts.push('overlapping content');
+        if (bd.cooccurrenceBoost > 0) parts.push('frequently mentioned together');
+        if (bd.crossFolderBoost > 0) parts.push('bridges different folders');
+        if (bd.recencyBoost > 0) parts.push('recently active');
+        const partsStr = parts.join(', ');
+
+        // Already in cloud (backlink/forward) → tooltip enrichment; genuinely new → discovery
+        const alreadyInCloud = cloud.has(sug.path);
+        const reason = alreadyInCloud
+          ? (partsStr ? `Suggestion scoring: ${partsStr}` : 'Suggestion scoring')
+          : (partsStr ? `Could be linked \u2014 ${partsStr}` : 'Could be linked');
+
+        mergeEntry(sug.path, {
+          name,
+          path: sug.path,
+          score,
+          reasons: [reason],
+          source: 'suggested',
+        });
+      }
+    }
+
+    // 4. Similar notes — score range is typically 0–5, map to 0.3–1.0
+    if (similarResp?.similar) {
+      for (const sim of similarResp.similar) {
+        const name = sim.title;
+        const score = Math.min(0.3 + (sim.score / 5) * 0.7, 1.0);
+        mergeEntry(sim.path, {
+          name,
+          path: sim.path,
+          score,
+          reasons: ['Similar content'],
+          source: 'similar',
+        });
+      }
+    }
+
+    if (cloud.size === 0) return;
+
+    // Split into main vs periodic entries
+    const PERIODIC_NAME_RE = /^\d{4}(-\d{2}(-\d{2})?)?$|^\d{4}-W\d{2}$|^\d{4}-Q[1-4]$/;
+
+    const isPeriodic = (entry: { name: string; path: string | null }): boolean => {
+      // Name-based: date patterns (2024-05-14, 2025-02, 2024-W07, 2025-Q1)
+      if (PERIODIC_NAME_RE.test(entry.name)) return true;
+      // Path-based: folder prefix from vault config
+      if (entry.path && this.periodicPrefixes.length > 0) {
+        return this.periodicPrefixes.some(prefix => entry.path!.startsWith(prefix));
+      }
+      return false;
+    };
+
+    const MAX_MAIN = 30;
+    const MAX_PERIODIC = 15;
+
+    const allEntries = [...cloud.values()].filter(e => e.score > 0);
+    const mainEntries = allEntries
+      .filter(e => !isPeriodic(e))
+      .sort((a, b) => b.score - a.score)
+      .slice(0, MAX_MAIN)
+      .sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: 'base' }));
+    const periodicEntries = allEntries
+      .filter(e => isPeriodic(e))
+      .sort((a, b) => b.score - a.score)
+      .slice(0, MAX_PERIODIC)
+      .sort((a, b) => b.name.localeCompare(a.name, undefined, { sensitivity: 'base' }));
+
+    this.renderSection('Context', 'cloud', mainEntries.length + periodicEntries.length, (container) => {
+      // Main cloud
+      if (mainEntries.length > 0) {
+        this.renderCloudItems(container, mainEntries, 12, 24);
+      }
+
+      // Periodic cloud — smaller, more compact
+      if (periodicEntries.length > 0) {
+        const periodicLabel = container.createDiv('flywheel-cloud-label');
+        periodicLabel.setText('periodic');
+        this.renderCloudItems(container, periodicEntries, 11, 16);
+      }
+    });
+  }
+
+  private renderCloudItems(
+    container: HTMLDivElement,
+    entries: Array<{ name: string; path: string | null; score: number; reasons: string[]; sources: Set<string> }>,
+    minFontSize: number,
+    maxFontSize: number,
+  ): void {
+    const minScore = Math.min(...entries.map(e => e.score));
+    const maxScore = Math.max(...entries.map(e => e.score));
+    const scoreRange = maxScore - minScore || 1;
+
+    const cloudEl = container.createDiv('flywheel-cloud');
+
+    for (const entry of entries) {
+      const t = (entry.score - minScore) / scoreRange; // 0..1
+      const fontSize = minFontSize + t * (maxFontSize - minFontSize);
+      const fontWeight = Math.round(400 + t * 300); // 400 to 700
+      const opacity = 0.6 + t * 0.4; // 0.6 to 1.0
+
+      const span = cloudEl.createEl('span', { cls: 'flywheel-cloud-item' });
+      span.style.fontSize = `${fontSize.toFixed(1)}px`;
+      span.style.fontWeight = String(fontWeight);
+      span.style.opacity = String(opacity.toFixed(2));
+      span.setText(entry.name);
+
+      // Tooltip: score + source signals + reasons
+      const sourceLabels: string[] = [];
+      if (entry.sources.has('backlink')) sourceLabels.push('backlink');
+      if (entry.sources.has('forward')) sourceLabels.push('linked');
+      if (entry.sources.has('suggested')) sourceLabels.push('suggested');
+      if (entry.sources.has('similar')) sourceLabels.push('similar');
+      const tooltipLines = [
+        `Score: ${Math.round(entry.score * 100)} · ${sourceLabels.join(', ')}`,
+        ...entry.reasons,
+      ];
+      span.setAttribute('aria-label', tooltipLines.join('\n'));
+
+      if (entry.path) {
+        span.addEventListener('click', () => {
+          this.app.workspace.openLinkText(entry.path!, '', false);
+        });
+      } else {
+        span.addClass('flywheel-cloud-dead');
+      }
+    }
+  }
+
+  // ---------------------------------------------------------------------------
   // Related notes
   // ---------------------------------------------------------------------------
 
-  private async renderRelatedNotes(notePath: string): Promise<void> {
-    try {
-      const response = await this.mcpClient.findSimilar(notePath, 10);
+  private renderRelatedNotes(response: McpSimilarResponse | null): void {
+    if (!response?.similar || response.similar.length === 0) return;
 
-      if (response.similar.length === 0) return;
+    const method = response.method === 'hybrid' ? 'keyword + semantic' : 'keyword only';
+    const topScore = response.similar[0]?.score || 1;
 
-      this.renderSection('Related Notes', 'sparkles', response.similar.length, (container) => {
-        for (const result of response.similar.slice(0, 15)) {
-          const item = container.createDiv('flywheel-graph-link-item');
-          item.addEventListener('click', () => {
-            this.app.workspace.openLinkText(result.path, '', false);
-          });
+    this.renderSection('Related Notes', 'sparkles', response.similar.length, (container) => {
+      for (const result of response.similar.slice(0, 15)) {
+        const item = container.createDiv('flywheel-graph-link-item');
+        item.addEventListener('click', () => {
+          this.app.workspace.openLinkText(result.path, '', false);
+        });
 
-          item.createDiv('flywheel-graph-link-name').setText(result.title);
+        const nameRow = item.createDiv('flywheel-graph-link-name-row');
+        nameRow.createSpan('flywheel-graph-link-name').setText(result.title);
+        const pct = topScore > 0 ? Math.round((result.score / topScore) * 100) : 0;
+        nameRow.createSpan('flywheel-graph-score-badge').setText(`${pct}%`);
 
-          if (result.snippet) {
-            const snippetEl = item.createDiv('flywheel-graph-link-snippet');
-            snippetEl.innerHTML = result.snippet;
-          }
-        }
-      }, true);
-    } catch {
-      // Skip related notes on error
-    }
+        // Tooltip with relatedness explanation
+        const folder = result.path.split('/').slice(0, -1).join('/');
+        const snippetText = result.snippet
+          ? result.snippet.replace(/<[^>]+>/g, '').replace(/\s+/g, ' ').trim()
+          : '';
+        const tooltipLines = [
+          `Similarity: ${pct}% (via ${method})`,
+          folder ? `Folder: ${folder}` : '',
+          snippetText ? `Matching content: ${snippetText}` : '',
+        ].filter(Boolean);
+        item.setAttribute('aria-label', tooltipLines.join('\n'));
+      }
+    }, true);
   }
 
   // ---------------------------------------------------------------------------
@@ -852,13 +1089,21 @@ export class GraphSidebarView extends ItemView {
     renderContent: (container: HTMLDivElement) => void,
     collapsed = false,
     target?: HTMLDivElement,
+    stateKey?: string,
   ): HTMLDivElement {
+    const key = stateKey ?? title;
     const section = (target ?? this.noteContainer).createDiv('flywheel-graph-section');
-    if (collapsed) section.addClass('is-collapsed');
+    // Use remembered state if available, otherwise use default
+    const isCollapsed = this.sectionCollapsed.has(key)
+      ? this.sectionCollapsed.get(key)!
+      : collapsed;
+    if (isCollapsed) section.addClass('is-collapsed');
 
     const headerEl = section.createDiv('flywheel-graph-section-header');
     headerEl.addEventListener('click', () => {
-      section.toggleClass('is-collapsed', !section.hasClass('is-collapsed'));
+      const nowCollapsed = !section.hasClass('is-collapsed');
+      section.toggleClass('is-collapsed', nowCollapsed);
+      this.sectionCollapsed.set(key, nowCollapsed);
     });
 
     const iconEl = headerEl.createSpan('flywheel-graph-section-icon');

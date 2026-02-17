@@ -27,6 +27,7 @@ export interface McpSearchResult {
   rrf_score?: number;
   in_fts5?: boolean;
   in_semantic?: boolean;
+  in_entity?: boolean;
 }
 
 export interface McpSearchResponse {
@@ -35,6 +36,8 @@ export interface McpSearchResponse {
   query: string;
   total_results: number;
   results: McpSearchResult[];
+  building?: boolean;
+  message?: string;
 }
 
 export interface McpSimilarNote {
@@ -81,6 +84,7 @@ export interface McpForwardLinksResponse {
 
 export interface McpHealthCheckResponse {
   status: 'healthy' | 'degraded' | 'unhealthy';
+  schema_version?: number;
   vault_accessible: boolean;
   vault_path: string;
   index_state: 'building' | 'ready' | 'error';
@@ -97,6 +101,11 @@ export interface McpHealthCheckResponse {
     duration_ms: number;
     ago_seconds: number;
   };
+  fts5_ready?: boolean;
+  fts5_building?: boolean;
+  embeddings_building?: boolean;
+  embeddings_ready?: boolean;
+  embeddings_count?: number;
   recommendations: string[];
 }
 
@@ -173,6 +182,48 @@ export interface McpFolderStructureResponse {
   folders: Array<{ path: string; note_count: number; subfolder_count: number }>;
 }
 
+export interface McpInitSemanticResponse {
+  success: boolean;
+  already_built?: boolean;
+  embedded: number;
+  skipped?: number;
+  total?: number;
+  entity_embeddings?: number;
+  hint?: string;
+}
+
+export interface McpRefreshIndexResponse {
+  status: string;
+  duration_ms: number;
+  note_count: number;
+}
+
+export interface McpScoredSuggestion {
+  entity: string;
+  path: string;
+  totalScore: number;
+  breakdown: {
+    contentMatch: number;
+    cooccurrenceBoost: number;
+    typeBoost: number;
+    contextBoost: number;
+    recencyBoost: number;
+    crossFolderBoost: number;
+    hubBoost: number;
+    feedbackAdjustment: number;
+    semanticBoost?: number;
+  };
+  confidence: 'high' | 'medium' | 'low';
+}
+
+export interface McpSuggestWikilinksResponse {
+  input_length: number;
+  suggestion_count: number;
+  returned_count: number;
+  suggestions: Array<{ entity: string; start: number; end: number; target: string }>;
+  scored_suggestions?: McpScoredSuggestion[];
+}
+
 // ---------------------------------------------------------------------------
 // Client
 // ---------------------------------------------------------------------------
@@ -213,7 +264,7 @@ export class FlywheelMcpClient {
         command = 'wsl';
         args = [
           'bash', '-c',
-          `VAULT_PATH="${wslVault}" FLYWHEEL_TOOLS="search,backlinks,schema,health" FLYWHEEL_WATCH="true" exec node "${serverPath}"`,
+          `VAULT_PATH="${wslVault}" FLYWHEEL_TOOLS="search,backlinks,schema,health,wikilinks" FLYWHEEL_WATCH="true" exec node "${serverPath}"`,
         ];
         // Don't set effectiveVaultPath since it's baked into the command
         effectiveVaultPath = wslVault;
@@ -245,7 +296,7 @@ export class FlywheelMcpClient {
       env: {
         ...process.env,
         VAULT_PATH: effectiveVaultPath,
-        FLYWHEEL_TOOLS: 'search,backlinks,schema,health',
+        FLYWHEEL_TOOLS: 'search,backlinks,schema,health,wikilinks',
         FLYWHEEL_WATCH: 'true',
       },
     });
@@ -303,12 +354,16 @@ export class FlywheelMcpClient {
   /**
    * Call an MCP tool and parse the JSON text response.
    */
-  private async callTool<T>(name: string, args: Record<string, unknown>): Promise<T> {
+  private async callTool<T>(name: string, args: Record<string, unknown>, timeout?: number): Promise<T> {
     if (!this.client || !this._connected) {
       throw new Error('MCP client not connected');
     }
 
-    const result = await this.client.callTool({ name, arguments: args });
+    const result = await this.client.callTool(
+      { name, arguments: args },
+      undefined,
+      timeout ? { timeout } : undefined,
+    );
 
     // The MCP SDK returns content as an array of content blocks.
     const content = result.content as Array<{ type: string; text?: string }>;
@@ -430,9 +485,34 @@ export class FlywheelMcpClient {
   }
 
   /**
+   * Suggest wikilinks for a given text.
+   */
+  async suggestWikilinks(text: string, detail = false): Promise<McpSuggestWikilinksResponse> {
+    return this.callTool<McpSuggestWikilinksResponse>('suggest_wikilinks', {
+      text,
+      limit: 30,
+      detail,
+    });
+  }
+
+  /**
    * Get folder structure with note counts.
    */
   async folderStructure(): Promise<McpFolderStructureResponse> {
     return this.callTool<McpFolderStructureResponse>('get_folder_structure', {});
+  }
+
+  /**
+   * Build semantic embeddings (notes + entities) via MCP server.
+   */
+  async initSemantic(force = false): Promise<McpInitSemanticResponse> {
+    return this.callTool<McpInitSemanticResponse>('init_semantic', { force }, 600_000);
+  }
+
+  /**
+   * Trigger a full index rebuild on the MCP server.
+   */
+  async refreshIndex(): Promise<McpRefreshIndexResponse> {
+    return this.callTool<McpRefreshIndexResponse>('refresh_index', {});
   }
 }

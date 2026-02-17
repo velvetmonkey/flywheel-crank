@@ -42,8 +42,8 @@
 .flywheel-search-input-container {
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 12px 16px;
+  gap: 10px;
+  padding: 16px 20px;
   border-bottom: 1px solid var(--background-modifier-border);
 }
 
@@ -52,12 +52,17 @@
   flex-shrink: 0;
 }
 
+.flywheel-search-icon .svg-icon {
+  width: 20px;
+  height: 20px;
+}
+
 .flywheel-search-input {
   flex: 1;
   background: transparent;
   border: none;
   outline: none;
-  font-size: 16px;
+  font-size: 20px;
   color: var(--text-normal);
   font-family: var(--font-interface);
 }
@@ -66,18 +71,68 @@
   color: var(--text-faint);
 }
 
+/* Index status bar — sits between input and results */
+.flywheel-search-index-bar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 6px 20px;
+  font-size: var(--font-ui-smaller);
+  color: var(--text-faint);
+  border-bottom: 1px solid var(--background-modifier-border);
+}
+
+.flywheel-search-index-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.flywheel-search-index-dot-ok {
+  background-color: hsl(135 50% 55%);
+}
+
+.flywheel-search-index-dot-building {
+  background-color: hsl(38 90% 60%);
+  animation: flywheel-pulse 1.5s ease-in-out infinite;
+}
+
+.flywheel-search-index-dot-off {
+  background-color: var(--text-faint);
+  opacity: 0.4;
+}
+
+@keyframes flywheel-pulse {
+  0%, 100% { opacity: 0.4; }
+  50% { opacity: 1; }
+}
+
+.flywheel-search-index-label {
+  white-space: nowrap;
+}
+
+.flywheel-search-index-sep {
+  color: var(--background-modifier-border);
+}
+
 .flywheel-search-status {
-  padding: 6px 16px;
-  font-size: var(--font-smallest);
+  padding: 6px 20px;
+  font-size: var(--font-small);
   color: var(--text-muted);
 }
 
 .flywheel-search-status-warning {
-  color: var(--text-error);
+  font-size: var(--font-ui-small);
+  padding: 8px 16px;
+  background: var(--background-modifier-error);
+  color: var(--text-on-accent);
+  border-radius: 4px;
+  margin: 4px 16px;
 }
 
 .flywheel-search-results {
-  max-height: 400px;
+  max-height: 500px;
   overflow-y: auto;
   padding-bottom: 8px;
 }
@@ -89,7 +144,7 @@
 }
 
 .flywheel-search-result-item {
-  padding: 8px 16px;
+  padding: 10px 20px;
   cursor: pointer;
   border-left: 3px solid transparent;
   transition: background-color 0.1s ease, border-color 0.1s ease;
@@ -109,6 +164,7 @@
 
 .flywheel-search-result-title {
   font-weight: var(--font-semibold);
+  font-size: var(--font-ui-medium);
   color: var(--text-normal);
   white-space: nowrap;
   overflow: hidden;
@@ -126,8 +182,8 @@
 }
 
 .flywheel-search-score-badge {
-  font-size: 10px;
-  padding: 0 5px;
+  font-size: 11px;
+  padding: 1px 6px;
   border-radius: 4px;
   font-weight: var(--font-semibold);
   line-height: 1.5;
@@ -139,7 +195,7 @@
 
 .flywheel-search-result-snippet {
   margin-top: 4px;
-  font-size: var(--font-smaller);
+  font-size: var(--font-small);
   color: var(--text-muted);
   line-height: 1.4;
   overflow: hidden;
@@ -155,6 +211,13 @@
   border-radius: 2px;
 }
 
+.flywheel-search-result-explanation {
+  font-size: var(--font-smallest);
+  color: var(--text-faint);
+  margin-top: 2px;
+  font-style: italic;
+}
+
 /* Match-source badges (keyword / semantic / entity) */
 .flywheel-search-source-badges {
   display: flex;
@@ -163,8 +226,8 @@
 }
 
 .flywheel-search-source-badge {
-  font-size: 9px;
-  padding: 0 4px;
+  font-size: 10px;
+  padding: 1px 5px;
   border-radius: 3px;
   font-weight: var(--font-semibold);
   line-height: 1.6;
@@ -436,6 +499,8 @@
 
 .flywheel-graph-more {
   padding: 6px 12px 6px 24px;
+  margin-top: 4px;
+  border-top: 1px solid var(--background-modifier-border);
   font-size: var(--font-ui-smaller);
   color: var(--interactive-accent);
   cursor: pointer;
@@ -505,7 +570,7 @@
   display: flex;
   justify-content: space-between;
   gap: 8px;
-  padding: 2px 12px 2px 24px;
+  padding: 3px 12px 3px 24px;
   font-size: var(--font-ui-smaller);
   line-height: 1.5;
 }
@@ -531,21 +596,40 @@
 
 .flywheel-graph-info-group {
   border-top: 1px solid var(--background-modifier-border);
-  margin-top: 4px;
-  padding-top: 4px;
+  margin-top: 8px;
+  padding-top: 6px;
 }
 
 .flywheel-graph-details-hidden {
   display: none;
 }
 
+/* Content revealed by a toggle should be visually nested under it.
+   Toggle sits at 24px left → labels at 32px → rows at 36px. */
+.flywheel-graph-more + .flywheel-graph-info-group .flywheel-graph-info-group-label {
+  padding-left: 32px;
+}
+
+.flywheel-graph-more + .flywheel-graph-info-group .flywheel-graph-info-row {
+  padding-left: 36px;
+}
+
+.flywheel-graph-more + .flywheel-graph-info-group .flywheel-graph-link-item {
+  padding-left: 36px;
+}
+
+.flywheel-graph-more + .flywheel-graph-info-group .flywheel-graph-section-empty {
+  padding-left: 36px;
+}
+
 .flywheel-graph-info-group-label {
-  padding: 2px 12px 2px 24px;
-  font-size: var(--font-ui-smaller);
+  padding: 4px 12px 2px 16px;
+  font-size: var(--font-ui-small);
   font-weight: var(--font-semibold);
   color: var(--text-muted);
   text-transform: uppercase;
   letter-spacing: 0.03em;
+  margin-bottom: 2px;
 }
 
 
@@ -588,20 +672,20 @@
 }
 
 .flywheel-graph-schema-field-name {
-  font-size: var(--font-ui-small);
+  font-size: var(--font-ui-medium);
   color: var(--text-normal);
   font-weight: var(--font-semibold);
 }
 
 .flywheel-graph-schema-field-meta {
-  font-size: var(--font-smallest);
+  font-size: var(--font-ui-smaller);
   color: var(--text-faint);
   margin-left: auto;
   white-space: nowrap;
 }
 
 .flywheel-graph-schema-field-value {
-  font-size: var(--font-ui-smaller);
+  font-size: var(--font-ui-small);
   color: var(--text-muted);
   margin-top: 2px;
   padding-left: 20px;
@@ -611,7 +695,7 @@
 }
 
 .flywheel-graph-schema-field-examples {
-  font-size: var(--font-ui-smaller);
+  font-size: var(--font-ui-small);
   color: var(--text-faint);
   font-style: italic;
   margin-top: 2px;
@@ -682,65 +766,31 @@
   background: var(--background-secondary);
 }
 
-/* Inconsistencies */
-.flywheel-graph-inconsistency-item {
-  padding: 6px 12px 6px 24px;
-}
-
-.flywheel-graph-inconsistency-item + .flywheel-graph-inconsistency-item {
-  border-top: 1px solid var(--background-modifier-border);
-}
-
-.flywheel-graph-inconsistency-header {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-}
-
-.flywheel-graph-inconsistency-icon {
-  flex-shrink: 0;
-  color: var(--text-warning, hsl(38 90% 60%));
-  display: flex;
-  align-items: center;
-}
-
-.flywheel-graph-inconsistency-icon .svg-icon {
-  width: 14px;
-  height: 14px;
-}
-
-.flywheel-graph-inconsistency-field {
-  font-size: var(--font-ui-small);
-  font-weight: var(--font-semibold);
-  color: var(--text-normal);
-}
-
-.flywheel-graph-inconsistency-types {
-  font-size: var(--font-ui-smaller);
+/* Context Cloud */
+/* Context Cloud — continuous sizing via inline styles */
+.flywheel-cloud { display: flex; flex-wrap: wrap; gap: 8px 12px; padding: 10px 16px; align-items: baseline; }
+.flywheel-cloud-item { cursor: pointer; color: var(--text-accent); white-space: nowrap; transition: opacity 0.1s ease; }
+.flywheel-cloud-item:hover { text-decoration: underline; }
+.flywheel-cloud-dead { color: var(--text-faint); text-decoration: line-through; cursor: default; }
+.flywheel-cloud-dead:hover { text-decoration: line-through; }
+.flywheel-cloud-label {
+  padding: 6px 16px 0;
+  font-size: var(--font-smallest);
   color: var(--text-faint);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
 }
 
-.flywheel-graph-inconsistency-example {
-  padding-left: 20px;
-  margin-top: 2px;
-  font-size: var(--font-ui-smaller);
-  color: var(--text-muted);
+/* Score badge — small pill for similarity/mention scores */
+.flywheel-graph-score-badge {
+  font-size: 10px;
+  padding: 0 5px;
+  border-radius: 4px;
   line-height: 1.5;
+  background: var(--background-modifier-hover);
+  color: var(--text-muted);
+  flex-shrink: 0;
 }
-
-.flywheel-graph-inconsistency-note {
-  color: var(--text-accent);
-  cursor: pointer;
-}
-
-.flywheel-graph-inconsistency-note:hover {
-  text-decoration: underline;
-}
-
-.flywheel-graph-inconsistency-val {
-  color: var(--text-faint);
-}
-
 
 /* ===================================================================
    Vault Health

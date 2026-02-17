@@ -7,7 +7,7 @@
  */
 
 import { App, Modal, setIcon } from 'obsidian';
-import type { FlywheelMcpClient, McpSearchResult, McpSearchResponse } from '../mcp/client';
+import type { FlywheelMcpClient, McpSearchResult, McpSearchResponse, McpHealthCheckResponse } from '../mcp/client';
 
 export class SearchModal extends Modal {
   private mcpClient: FlywheelMcpClient;
@@ -17,6 +17,7 @@ export class SearchModal extends Modal {
   private inputEl!: HTMLInputElement;
   private resultsEl!: HTMLDivElement;
   private statusEl!: HTMLDivElement;
+  private indexBarEl!: HTMLDivElement;
   private debounceTimer: number | null = null;
 
   constructor(app: App, mcpClient: FlywheelMcpClient) {
@@ -40,13 +41,17 @@ export class SearchModal extends Modal {
       cls: 'flywheel-search-input',
     });
 
+    this.indexBarEl = contentEl.createDiv('flywheel-search-index-bar');
     this.statusEl = contentEl.createDiv('flywheel-search-status');
     this.resultsEl = contentEl.createDiv('flywheel-search-results');
 
-    // Check MCP connection
+    // Show index status
     if (!this.mcpClient.connected) {
       this.statusEl.setText('MCP server not connected');
       this.statusEl.addClass('flywheel-search-status-warning');
+      this.renderIndexBar(null);
+    } else {
+      this.showIndexStatus();
     }
 
     // Event handlers
@@ -71,6 +76,65 @@ export class SearchModal extends Modal {
     this.inputEl.focus();
   }
 
+  private renderIndexBar(health: McpHealthCheckResponse | null): void {
+    this.indexBarEl.empty();
+
+    if (!health) {
+      // Disconnected state
+      this.addIndexIndicator('off', 'disconnected');
+      return;
+    }
+
+    // FTS5 / keyword status
+    if (health.fts5_building) {
+      this.addIndexIndicator('building', `keyword: building...`);
+    } else if (health.fts5_ready) {
+      this.addIndexIndicator('ok', `keyword: ${health.note_count} notes`);
+    } else {
+      this.addIndexIndicator('off', 'keyword: off');
+    }
+
+    // Separator
+    this.indexBarEl.createSpan({ cls: 'flywheel-search-index-sep', text: '·' });
+
+    // Semantic status
+    if (health.embeddings_building) {
+      this.addIndexIndicator('building', 'semantic: building...');
+    } else if (health.embeddings_ready && health.embeddings_count) {
+      this.addIndexIndicator('ok', `semantic: ${health.embeddings_count} embeddings`);
+    } else {
+      this.addIndexIndicator('off', 'semantic: off');
+    }
+  }
+
+  private addIndexIndicator(state: 'ok' | 'building' | 'off', label: string): void {
+    const wrapper = this.indexBarEl.createSpan({ cls: 'flywheel-search-index-label' });
+    wrapper.style.display = 'inline-flex';
+    wrapper.style.alignItems = 'center';
+    wrapper.style.gap = '5px';
+    wrapper.createSpan({ cls: `flywheel-search-index-dot flywheel-search-index-dot-${state}` });
+    wrapper.appendText(label);
+  }
+
+  private async showIndexStatus(): Promise<void> {
+    try {
+      const health = await this.mcpClient.healthCheck();
+      this.renderIndexBar(health);
+
+      // Only update text status if user hasn't started typing
+      if (this.inputEl.value.trim()) return;
+      this.statusEl.setText('');
+      this.statusEl.removeClass('flywheel-search-status-warning');
+
+      // Re-poll if any index still building
+      if (health.fts5_building || health.embeddings_building) {
+        setTimeout(() => this.showIndexStatus(), 3000);
+      }
+    } catch {
+      this.renderIndexBar(null);
+    }
+  }
+
   private async performSearch(): Promise<void> {
     const query = this.inputEl.value.trim();
     if (!query) {
@@ -89,23 +153,43 @@ export class SearchModal extends Modal {
 
     const start = performance.now();
 
+    this.statusEl.setText('Searching...');
+    this.statusEl.removeClass('flywheel-search-status-warning');
+
     try {
       const response = await this.mcpClient.search(query, 20);
       const elapsed = Math.round(performance.now() - start);
+
+      // Handle building state — FTS5 index not ready yet
+      if (response.building) {
+        this.statusEl.setText('Building search index — try again shortly...');
+        this.statusEl.addClass('flywheel-search-status-warning');
+        this.results = [];
+        this.renderResults();
+        // Auto-retry after 3 seconds
+        if (this.debounceTimer) clearTimeout(this.debounceTimer);
+        this.debounceTimer = window.setTimeout(() => this.performSearch(), 3000);
+        return;
+      }
 
       this.results = response.results;
       this.searchMethod = response.method;
       this.selectedIndex = 0;
 
       const count = this.results.length;
-      this.statusEl.setText(`${count} result${count !== 1 ? 's' : ''} (${response.method}) ${elapsed}ms`);
+      const methodLabel = response.method === 'hybrid'
+        ? 'keyword + semantic'
+        : 'keyword only';
+      this.statusEl.setText(`${count} result${count !== 1 ? 's' : ''} via ${methodLabel} · ${elapsed}ms`);
       this.statusEl.removeClass('flywheel-search-status-warning');
 
       console.log(`[Flywheel Search] query="${query}" method=${response.method} results=${count} ${elapsed}ms`);
 
       this.renderResults();
     } catch (err) {
-      this.statusEl.setText(err instanceof Error ? err.message : 'Search error');
+      const raw = err instanceof Error ? err.message : 'Search error';
+      const msg = raw.length > 120 ? raw.slice(0, 120) + '...' : raw;
+      this.statusEl.setText(msg);
       this.statusEl.addClass('flywheel-search-status-warning');
     }
   }
@@ -142,7 +226,7 @@ export class SearchModal extends Modal {
       titleEl.setText(result.title);
 
       // Match source badges
-      if (result.in_fts5 || result.in_semantic) {
+      if (result.in_fts5 || result.in_semantic || result.in_entity) {
         const badgeContainer = titleRow.createDiv('flywheel-search-source-badges');
         if (result.in_fts5) {
           const badge = badgeContainer.createSpan('flywheel-search-source-badge flywheel-search-source-keyword');
@@ -151,6 +235,10 @@ export class SearchModal extends Modal {
         if (result.in_semantic) {
           const badge = badgeContainer.createSpan('flywheel-search-source-badge flywheel-search-source-semantic');
           badge.setText('semantic');
+        }
+        if (result.in_entity) {
+          const badge = badgeContainer.createSpan('flywheel-search-source-badge flywheel-search-source-entity');
+          badge.setText('entity');
         }
       }
 
@@ -173,6 +261,16 @@ export class SearchModal extends Modal {
       if (result.snippet) {
         const snippetEl = item.createDiv('flywheel-search-result-snippet');
         snippetEl.innerHTML = result.snippet;
+      }
+
+      // Match explanation
+      if (result.in_fts5 || result.in_semantic || result.in_entity) {
+        const reasons: string[] = [];
+        if (result.in_fts5) reasons.push('Matched keywords in content');
+        if (result.in_semantic) reasons.push('Semantically similar');
+        if (result.in_entity) reasons.push('Entity match (name/category)');
+        const explanationEl = item.createDiv('flywheel-search-result-explanation');
+        explanationEl.setText(reasons.join(' · '));
       }
     });
   }
@@ -201,7 +299,7 @@ export class SearchModal extends Modal {
     const result = this.results[this.selectedIndex];
     if (result) {
       this.close();
-      this.app.workspace.openLinkText(result.path, '', false);
+      this.app.workspace.openLinkText(result.path.replace(/\.md$/, ''), '', false);
     }
   }
 
