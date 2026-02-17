@@ -30,6 +30,8 @@ export class GraphSidebarView extends ItemView {
   private periodicPrefixes: string[] = [];
   /** Remember collapsed state per section title across note changes */
   private sectionCollapsed = new Map<string, boolean>();
+  /** Monotonically increasing counter to detect stale renders */
+  private renderGeneration = 0;
 
   constructor(leaf: WorkspaceLeaf, mcpClient: FlywheelMcpClient) {
     super(leaf);
@@ -83,9 +85,10 @@ export class GraphSidebarView extends ItemView {
 
     // Note sections: always refresh on note change
     this.noteContainer.empty();
+    const generation = ++this.renderGeneration;
     if (activeFile) {
       this.renderNoteHeader(activeFile);
-      this.renderNoteSections(activeFile);
+      this.renderNoteSections(activeFile, generation);
     }
   }
 
@@ -116,9 +119,10 @@ export class GraphSidebarView extends ItemView {
 
     // Render note sections
     this.noteContainer.empty();
+    const generation = ++this.renderGeneration;
     if (activeFile) {
       this.renderNoteHeader(activeFile);
-      this.renderNoteSections(activeFile);
+      this.renderNoteSections(activeFile, generation);
     }
   }
 
@@ -442,7 +446,7 @@ export class GraphSidebarView extends ItemView {
   // Folder section (merged folder conventions + browse all folders)
   // ---------------------------------------------------------------------------
 
-  private async renderFolderSection(file: TFile): Promise<void> {
+  private async renderFolderSection(file: TFile, generation: number): Promise<void> {
     const folder = file.path.split('/').slice(0, -1).join('/') || '';
     const folderLabel = folder || '(root)';
 
@@ -452,7 +456,9 @@ export class GraphSidebarView extends ItemView {
 
     try {
       await this.mcpClient.waitForIndex();
+      if (generation !== this.renderGeneration) return;
       const conv = await this.mcpClient.folderConventions(folder);
+      if (generation !== this.renderGeneration) return;
       const content = section.querySelector('.flywheel-graph-section-content') as HTMLDivElement;
       if (!content) return;
       content.empty();
@@ -646,12 +652,13 @@ export class GraphSidebarView extends ItemView {
     header.createDiv('flywheel-graph-note-title').setText(file.basename);
   }
 
-  private async renderNoteSections(file: TFile): Promise<void> {
+  private async renderNoteSections(file: TFile, generation: number): Promise<void> {
     const notePath = file.path;
 
     try {
       // Wait for the server index before calling graph tools
       await this.mcpClient.waitForIndex();
+      if (generation !== this.renderGeneration) return;
 
       const noteContent = await this.app.vault.cachedRead(file);
       const [backlinksResp, forwardLinksResp, suggestResp, similarResp, health, semanticResp] = await Promise.all([
@@ -662,6 +669,8 @@ export class GraphSidebarView extends ItemView {
         this.mcpClient.healthCheck().catch(() => null),
         this.mcpClient.noteIntelligence(notePath, 'semantic_links').catch(() => null),
       ]);
+
+      if (generation !== this.renderGeneration) return;
 
       // Ensure periodic prefixes are set for cloud splitting
       if (this.periodicPrefixes.length === 0 && health?.config) {
@@ -686,7 +695,7 @@ export class GraphSidebarView extends ItemView {
       this.renderContextCloud(backlinksResp, forwardLinksResp, suggestResp, similarResp, semanticResp);
 
       // Folder section (before links)
-      this.renderFolderSection(file);
+      await this.renderFolderSection(file, generation);
 
       const MAX_ITEMS = 5;
 
@@ -745,7 +754,7 @@ export class GraphSidebarView extends ItemView {
       }, true);
 
       // Note Intelligence (lazy-loaded) — structural analysis, not related notes
-      this.renderNoteIntelligence(file);
+      this.renderNoteIntelligence(file, generation);
     } catch (err) {
       console.error('Flywheel Crank: graph sidebar error', err);
     }
@@ -1016,11 +1025,12 @@ export class GraphSidebarView extends ItemView {
   // Note Intelligence
   // ---------------------------------------------------------------------------
 
-  private renderNoteIntelligence(file: TFile): void {
+  private renderNoteIntelligence(file: TFile, generation: number): void {
     this.renderSection('Note Intelligence', 'brain', undefined, (container) => {
       let loaded = false;
       const loadIntelligence = async () => {
         if (loaded) return;
+        if (generation !== this.renderGeneration) return;
         loaded = true;
         container.empty();
 
