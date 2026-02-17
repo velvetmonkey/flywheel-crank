@@ -12,6 +12,7 @@ import type {
   McpForwardLinksResponse,
   McpSuggestWikilinksResponse,
   McpSimilarResponse,
+  McpHealthCheckResponse,
 } from '../mcp/client';
 
 export const GRAPH_VIEW_TYPE = 'flywheel-graph';
@@ -653,12 +654,13 @@ export class GraphSidebarView extends ItemView {
       await this.mcpClient.waitForIndex();
 
       const noteContent = await this.app.vault.cachedRead(file);
-      const [backlinksResp, forwardLinksResp, suggestResp, similarResp, health] = await Promise.all([
+      const [backlinksResp, forwardLinksResp, suggestResp, similarResp, health, semanticResp] = await Promise.all([
         this.mcpClient.getBacklinks(notePath),
         this.mcpClient.getForwardLinks(notePath),
         this.mcpClient.suggestWikilinks(noteContent, true).catch(() => null),
         this.mcpClient.findSimilar(notePath, 15).catch(() => null),
         this.mcpClient.healthCheck().catch(() => null),
+        this.mcpClient.noteIntelligence(notePath, 'semantic_links').catch(() => null),
       ]);
 
       // Ensure periodic prefixes are set for cloud splitting
@@ -680,8 +682,8 @@ export class GraphSidebarView extends ItemView {
         return true;
       });
 
-      // Context Cloud (rendered first)
-      this.renderContextCloud(backlinksResp, forwardLinksResp, suggestResp, similarResp);
+      // Context Cloud (rendered first) — unified view of all related notes
+      this.renderContextCloud(backlinksResp, forwardLinksResp, suggestResp, similarResp, semanticResp);
 
       // Folder section (before links)
       this.renderFolderSection(file);
@@ -742,8 +744,8 @@ export class GraphSidebarView extends ItemView {
         }
       }, true);
 
-      // Related notes (after backlinks/forward links)
-      this.renderRelatedNotes(similarResp);
+      // Note Intelligence (lazy-loaded) — structural analysis, not related notes
+      this.renderNoteIntelligence(file);
     } catch (err) {
       console.error('Flywheel Crank: graph sidebar error', err);
     }
@@ -833,6 +835,301 @@ export class GraphSidebarView extends ItemView {
   }
 
   // ---------------------------------------------------------------------------
+  // Unlinked Mentions
+  // ---------------------------------------------------------------------------
+
+  private renderUnlinkedMentions(
+    file: TFile,
+    suggestResp: McpSuggestWikilinksResponse | null,
+  ): void {
+    // Use scored suggestions to find entities that exist but aren't linked in this note
+    const unlinkedEntities = suggestResp?.scored_suggestions?.filter(s => s.confidence !== 'low') ?? [];
+    if (unlinkedEntities.length === 0) return;
+
+    this.renderSection('Unlinked Mentions', 'link-2', unlinkedEntities.length, (container) => {
+      // Lazy-load: only fetch full mentions on first expand
+      let loaded = false;
+      const loadMentions = async () => {
+        if (loaded) return;
+        loaded = true;
+        container.empty();
+
+        for (const sug of unlinkedEntities.slice(0, 15)) {
+          const item = container.createDiv('flywheel-graph-mention-item');
+
+          const nameRow = item.createDiv('flywheel-graph-link-name-row');
+          const nameEl = nameRow.createSpan('flywheel-graph-link-name');
+          nameEl.setText(sug.entity);
+          nameEl.addEventListener('click', () => {
+            this.app.workspace.openLinkText(sug.path, '', false);
+          });
+          nameEl.style.cursor = 'pointer';
+
+          const pct = Math.round(sug.totalScore);
+          nameRow.createSpan('flywheel-graph-score-badge').setText(`${pct}`);
+
+          // "Link it" button
+          const linkBtn = nameRow.createSpan('flywheel-graph-mention-action');
+          setIcon(linkBtn, 'link');
+          linkBtn.setAttribute('aria-label', `Add [[${sug.entity}]] wikilink`);
+          linkBtn.addEventListener('click', async (e) => {
+            e.stopPropagation();
+            try {
+              // Read current file content and replace first unlinked occurrence
+              const content = await this.app.vault.cachedRead(file);
+              const entityName = sug.entity;
+              // Find the entity in content outside of existing wikilinks
+              const regex = new RegExp(`(?<!\\[\\[)\\b${entityName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b(?!\\]\\])`, 'i');
+              const match = regex.exec(content);
+              if (match) {
+                const newContent = content.slice(0, match.index) + `[[${entityName}]]` + content.slice(match.index + match[0].length);
+                await this.app.vault.modify(file, newContent);
+                linkBtn.empty();
+                setIcon(linkBtn, 'check');
+                linkBtn.addClass('flywheel-graph-mention-action-done');
+              }
+            } catch (err) {
+              console.error('Flywheel Crank: failed to add wikilink', err);
+            }
+          });
+
+          // Tooltip with scoring breakdown
+          const bd = sug.breakdown;
+          const parts: string[] = [];
+          if (bd.hubBoost > 0) parts.push('hub note');
+          if (bd.semanticBoost && bd.semanticBoost > 0) parts.push('semantically similar');
+          if (bd.contentMatch > 0) parts.push('content overlap');
+          if (bd.cooccurrenceBoost > 0) parts.push('co-occurs often');
+          if (parts.length > 0) {
+            item.createDiv('flywheel-graph-link-snippet').setText(parts.join(' · '));
+          }
+        }
+
+        if (unlinkedEntities.length > 15) {
+          container.createDiv('flywheel-graph-more').setText(`+${unlinkedEntities.length - 15} more`);
+        }
+      };
+
+      container.createDiv('flywheel-graph-section-empty').setText('Expand to see suggestions...');
+
+      // Override: load on first expand via section observer
+      const section = container.parentElement!;
+      const observer = new MutationObserver(() => {
+        if (!section.hasClass('is-collapsed')) {
+          loadMentions();
+          observer.disconnect();
+        }
+      });
+      observer.observe(section, { attributes: true, attributeFilter: ['class'] });
+
+      // Also load immediately if section starts expanded
+      if (!section.hasClass('is-collapsed')) {
+        loadMentions();
+        observer.disconnect();
+      }
+    }, true);
+  }
+
+  // ---------------------------------------------------------------------------
+  // Semantic Bridges
+  // ---------------------------------------------------------------------------
+
+  private renderSemanticBridges(file: TFile, health: McpHealthCheckResponse | null): void {
+    const hasEmbeddings = health?.embeddings_ready ?? false;
+
+    this.renderSection('Semantic Bridges', 'git-merge', undefined, (container) => {
+      if (!hasEmbeddings) {
+        container.createDiv('flywheel-graph-section-empty')
+          .setText('Requires semantic index (run "Build semantic embeddings")');
+        return;
+      }
+
+      let loaded = false;
+      const loadBridges = async () => {
+        if (loaded) return;
+        loaded = true;
+        container.empty();
+
+        try {
+          // Use per-note semantic_links analysis instead of vault-wide semantic_bridges
+          // Returns: { suggestions: [{ entity, similarity }] }
+          const result = await this.mcpClient.noteIntelligence(file.path, 'semantic_links');
+          const suggestions = (result as any).suggestions ?? [];
+
+          if (suggestions.length === 0) {
+            container.createDiv('flywheel-graph-section-empty').setText('No semantic bridges found');
+            return;
+          }
+
+          for (const sug of suggestions.slice(0, 12)) {
+            const item = container.createDiv('flywheel-graph-bridge-item');
+            const pair = item.createDiv('flywheel-graph-bridge-pair');
+
+            // Current note → semantically similar entity
+            const currentName = file.basename;
+            const nodeA = pair.createSpan('flywheel-graph-bridge-node flywheel-graph-bridge-node-current');
+            nodeA.setText(currentName);
+
+            pair.createSpan('flywheel-graph-bridge-arrow').setText(' \u2194 ');
+
+            const nodeB = pair.createSpan('flywheel-graph-bridge-node');
+            nodeB.setText(sug.entity);
+            nodeB.addEventListener('click', () => {
+              this.app.workspace.openLinkText(sug.entity, '', false);
+            });
+
+            const pct = Math.round((sug.similarity ?? 0) * 100);
+            if (pct > 0) {
+              pair.createSpan('flywheel-graph-score-badge').setText(`${pct}%`);
+            }
+          }
+
+          // Update count badge
+          const section = container.parentElement!;
+          const countEl = section.querySelector('.flywheel-graph-section-count') as HTMLElement;
+          if (countEl) countEl.setText(`${suggestions.length}`);
+        } catch (err) {
+          container.createDiv('flywheel-graph-section-empty')
+            .setText(err instanceof Error ? err.message : 'Failed to load');
+        }
+      };
+
+      container.createDiv('flywheel-graph-section-empty').setText('Expand to discover bridges...');
+
+      const section = container.parentElement!;
+      const observer = new MutationObserver(() => {
+        if (!section.hasClass('is-collapsed')) {
+          loadBridges();
+          observer.disconnect();
+        }
+      });
+      observer.observe(section, { attributes: true, attributeFilter: ['class'] });
+
+      if (!section.hasClass('is-collapsed')) {
+        loadBridges();
+        observer.disconnect();
+      }
+    }, true);
+  }
+
+  // ---------------------------------------------------------------------------
+  // Note Intelligence
+  // ---------------------------------------------------------------------------
+
+  private renderNoteIntelligence(file: TFile): void {
+    this.renderSection('Note Intelligence', 'brain', undefined, (container) => {
+      let loaded = false;
+      const loadIntelligence = async () => {
+        if (loaded) return;
+        loaded = true;
+        container.empty();
+
+        try {
+          const [proseResp, fmResp, crossResp] = await Promise.all([
+            this.mcpClient.noteIntelligence(file.path, 'prose_patterns').catch(() => null),
+            this.mcpClient.noteIntelligence(file.path, 'suggest_frontmatter').catch(() => null),
+            this.mcpClient.noteIntelligence(file.path, 'cross_layer').catch(() => null),
+          ]);
+
+          let hasContent = false;
+
+          // Cross-layer analysis (shown first — most actionable)
+          // Server returns: { frontmatter_only: [...], prose_only: [...], consistent: [...] }
+          const fmOnly = (crossResp as any)?.frontmatter_only ?? [];
+          const proseOnly = (crossResp as any)?.prose_only ?? [];
+          const crossIssues = [...fmOnly, ...proseOnly];
+          if (crossIssues.length > 0) {
+            hasContent = true;
+            container.createDiv('flywheel-graph-info-group-label').setText('Cross-Layer Gaps');
+            if (fmOnly.length > 0) {
+              for (const item of fmOnly.slice(0, 3)) {
+                const row = container.createDiv('flywheel-graph-intelligence-issue');
+                const iconEl = row.createSpan('flywheel-graph-intelligence-issue-icon');
+                setIcon(iconEl, 'alert-triangle');
+                const desc = `Frontmatter links ${item.target}${item.field ? ` (${item.field})` : ''} but prose doesn't`;
+                row.createSpan('flywheel-graph-intelligence-issue-text').setText(desc);
+              }
+            }
+            if (proseOnly.length > 0) {
+              for (const item of proseOnly.slice(0, 3)) {
+                const row = container.createDiv('flywheel-graph-intelligence-issue');
+                const iconEl = row.createSpan('flywheel-graph-intelligence-issue-icon');
+                setIcon(iconEl, 'info');
+                const desc = `Prose mentions ${item.target}${item.pattern ? ` (${item.pattern})` : ''} but no frontmatter link`;
+                row.createSpan('flywheel-graph-intelligence-issue-text').setText(desc);
+              }
+            }
+          }
+
+          // Suggested frontmatter
+          // Server returns: { suggestions: [{ field, value, source_lines, confidence, preserveWikilink }] }
+          const suggestions = (fmResp as any)?.suggestions ?? [];
+          if (suggestions.length > 0) {
+            hasContent = true;
+            container.createDiv('flywheel-graph-info-group-label').setText('Suggested Frontmatter');
+            for (const sug of suggestions.slice(0, 6)) {
+              const row = container.createDiv('flywheel-graph-intelligence-suggestion');
+              const nameEl = row.createSpan('flywheel-graph-schema-field-name');
+              nameEl.setText(sug.field ?? 'unknown');
+              const valueEl = row.createSpan('flywheel-graph-schema-field-value');
+              const val = sug.value ?? '';
+              valueEl.setText(typeof val === 'string' ? val : JSON.stringify(val));
+              if (sug.confidence != null) {
+                const pct = Math.round(sug.confidence * 100);
+                row.createDiv('flywheel-graph-link-snippet').setText(`${pct}% confidence`);
+              }
+            }
+          }
+
+          // Prose patterns
+          // Server returns: { patterns: [{ key, value, line, raw, isWikilink }] }
+          const patterns = (proseResp as any)?.patterns ?? [];
+          if (patterns.length > 0) {
+            hasContent = true;
+            container.createDiv('flywheel-graph-info-group-label').setText('Prose Patterns');
+            for (const pat of patterns.slice(0, 8)) {
+              const row = container.createDiv('flywheel-graph-info-row');
+              row.createSpan('flywheel-graph-info-label').setText(pat.key ?? 'pattern');
+              row.createSpan('flywheel-graph-info-value').setText(pat.value ?? JSON.stringify(pat));
+            }
+          }
+
+          if (!hasContent) {
+            container.createDiv('flywheel-graph-section-empty').setText('No intelligence signals');
+          }
+
+          // Update count badge
+          const total = crossIssues.length + suggestions.length + patterns.length;
+          if (total > 0) {
+            const section = container.parentElement!;
+            const countEl = section.querySelector('.flywheel-graph-section-count') as HTMLElement;
+            if (countEl) countEl.setText(`${total}`);
+          }
+        } catch (err) {
+          container.createDiv('flywheel-graph-section-empty')
+            .setText(err instanceof Error ? err.message : 'Failed to load');
+        }
+      };
+
+      container.createDiv('flywheel-graph-section-empty').setText('Expand to analyze note...');
+
+      const section = container.parentElement!;
+      const observer = new MutationObserver(() => {
+        if (!section.hasClass('is-collapsed')) {
+          loadIntelligence();
+          observer.disconnect();
+        }
+      });
+      observer.observe(section, { attributes: true, attributeFilter: ['class'] });
+
+      if (!section.hasClass('is-collapsed')) {
+        loadIntelligence();
+        observer.disconnect();
+      }
+    }, true);
+  }
+
+  // ---------------------------------------------------------------------------
   // Context Cloud
   // ---------------------------------------------------------------------------
 
@@ -841,6 +1138,7 @@ export class GraphSidebarView extends ItemView {
     forwardLinksResp: McpForwardLinksResponse,
     suggestResp: McpSuggestWikilinksResponse | null,
     similarResp: McpSimilarResponse | null,
+    semanticResp: import('../mcp/client').McpNoteIntelligenceResponse | null,
   ): void {
     interface CloudEntry {
       name: string;
@@ -950,6 +1248,22 @@ export class GraphSidebarView extends ItemView {
       }
     }
 
+    // 5. Semantic links — entities semantically similar but not linked
+    const semanticSuggestions = (semanticResp as any)?.suggestions as Array<{ entity: string; similarity: number }> | undefined;
+    if (semanticSuggestions) {
+      for (const sug of semanticSuggestions) {
+        const name = sug.entity;
+        const score = Math.min(0.4 + (sug.similarity ?? 0) * 0.6, 1.0);
+        mergeEntry(name, {
+          name,
+          path: null, // entity name, not a path — openLinkText will resolve it
+          score,
+          reasons: [`Semantically similar (${Math.round((sug.similarity ?? 0) * 100)}%)`],
+          source: 'semantic',
+        });
+      }
+    }
+
     if (cloud.size === 0) return;
 
     // Split into main vs periodic entries
@@ -1025,15 +1339,18 @@ export class GraphSidebarView extends ItemView {
       if (entry.sources.has('forward')) sourceLabels.push('linked');
       if (entry.sources.has('suggested')) sourceLabels.push('suggested');
       if (entry.sources.has('similar')) sourceLabels.push('similar');
+      if (entry.sources.has('semantic')) sourceLabels.push('semantic');
       const tooltipLines = [
         `Score: ${Math.round(entry.score * 100)} · ${sourceLabels.join(', ')}`,
         ...entry.reasons,
       ];
       span.setAttribute('aria-label', tooltipLines.join('\n'));
 
-      if (entry.path) {
+      // Navigate on click — use path if available, otherwise try name (entity resolution)
+      const navTarget = entry.path ?? entry.name;
+      if (entry.path || entry.sources.has('semantic') || entry.sources.has('suggested')) {
         span.addEventListener('click', () => {
-          this.app.workspace.openLinkText(entry.path!, '', false);
+          this.app.workspace.openLinkText(navTarget, '', false);
         });
       } else {
         span.addClass('flywheel-cloud-dead');

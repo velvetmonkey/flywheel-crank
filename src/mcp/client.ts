@@ -224,6 +224,137 @@ export interface McpSuggestWikilinksResponse {
   scored_suggestions?: McpScoredSuggestion[];
 }
 
+// Graph analysis types
+export type GraphAnalysisMode =
+  | 'orphans' | 'dead_ends' | 'sources' | 'hubs' | 'stale'
+  | 'immature' | 'evolution' | 'emerging_hubs'
+  | 'semantic_clusters' | 'semantic_bridges';
+
+export interface McpGraphAnalysisOptions {
+  folder?: string;
+  min_links?: number;
+  min_backlinks?: number;
+  min_outlinks?: number;
+  days?: number;
+  limit?: number;
+  offset?: number;
+}
+
+export interface McpGraphAnalysisResponse {
+  analysis: string;
+  [key: string]: unknown;
+}
+
+// Unlinked mentions
+export interface McpUnlinkedMention {
+  path: string;
+  line: number;
+  context: string;
+}
+
+export interface McpUnlinkedMentionsResponse {
+  entity: string;
+  resolved_path?: string;
+  mention_count: number;
+  mentions: McpUnlinkedMention[];
+}
+
+// Note intelligence
+export type NoteIntelligenceMode =
+  | 'prose_patterns' | 'suggest_frontmatter' | 'suggest_wikilinks'
+  | 'cross_layer' | 'compute' | 'semantic_links' | 'all';
+
+export interface McpNoteIntelligenceResponse {
+  path: string;
+  analysis: string;
+  [key: string]: unknown;
+}
+
+// Tasks
+export interface McpTask {
+  path: string;
+  line: number;
+  text: string;
+  status: 'open' | 'completed' | 'cancelled';
+  raw: string;
+  context?: string;
+  tags: string[];
+  due_date?: string;
+}
+
+export interface McpTasksResponse {
+  total: number;
+  returned: number;
+  status_filter: string;
+  tasks: McpTask[];
+  counts?: { open: number; completed: number; cancelled: number };
+}
+
+export interface McpToggleTaskResponse {
+  success: boolean;
+  path: string;
+  task: string;
+  new_status: string;
+  [key: string]: unknown;
+}
+
+// Link path
+export interface McpLinkPathResponse {
+  from: string;
+  to: string;
+  exists: boolean;
+  path: string[];
+  length: number;
+  total_weight?: number;
+  weights?: number[];
+}
+
+// Common neighbors
+export interface McpCommonNeighbor {
+  path: string;
+  title: string;
+  linked_from_a_line: number;
+  linked_from_b_line: number;
+}
+
+export interface McpCommonNeighborsResponse {
+  note_a: string;
+  note_b: string;
+  common_count: number;
+  common_neighbors: McpCommonNeighbor[];
+}
+
+// Connection strength
+export interface McpConnectionStrengthResponse {
+  note_a: string;
+  note_b: string;
+  score: number;
+  factors: {
+    mutual_link: boolean;
+    shared_tags: string[];
+    shared_outlinks: number;
+    same_folder: boolean;
+  };
+}
+
+// Vault growth
+export type VaultGrowthMode = 'current' | 'history' | 'trends' | 'index_activity';
+
+export interface McpVaultGrowthResponse {
+  mode: string;
+  metrics?: Record<string, number>;
+  recorded_at?: number;
+  history?: Array<{ timestamp: number; metric: string; value: number }>;
+  trends?: Array<{ metric: string; current: number; previous: number; delta: number; pct_change: number }>;
+  index_activity?: { summary: Record<string, unknown>; recent_events: Array<Record<string, unknown>> };
+}
+
+// Write tool responses
+export interface McpMutationResponse {
+  success: boolean;
+  [key: string]: unknown;
+}
+
 // ---------------------------------------------------------------------------
 // Client
 // ---------------------------------------------------------------------------
@@ -264,7 +395,7 @@ export class FlywheelMcpClient {
         command = 'wsl';
         args = [
           'bash', '-c',
-          `VAULT_PATH="${wslVault}" FLYWHEEL_TOOLS="search,backlinks,schema,health,wikilinks" FLYWHEEL_WATCH="true" exec node "${serverPath}"`,
+          `VAULT_PATH="${wslVault}" FLYWHEEL_TOOLS="full" FLYWHEEL_WATCH="true" exec node "${serverPath}"`,
         ];
         // Don't set effectiveVaultPath since it's baked into the command
         effectiveVaultPath = wslVault;
@@ -296,7 +427,7 @@ export class FlywheelMcpClient {
       env: {
         ...process.env,
         VAULT_PATH: effectiveVaultPath,
-        FLYWHEEL_TOOLS: 'search,backlinks,schema,health,wikilinks',
+        FLYWHEEL_TOOLS: 'full',
         FLYWHEEL_WATCH: 'true',
       },
     });
@@ -514,5 +645,162 @@ export class FlywheelMcpClient {
    */
   async refreshIndex(): Promise<McpRefreshIndexResponse> {
     return this.callTool<McpRefreshIndexResponse>('refresh_index', {});
+  }
+
+  // -------------------------------------------------------------------------
+  // Graph analysis
+  // -------------------------------------------------------------------------
+
+  /**
+   * Run graph topology analysis (orphans, hubs, stale, semantic bridges, etc.)
+   */
+  async graphAnalysis(
+    analysis: GraphAnalysisMode,
+    options: McpGraphAnalysisOptions = {},
+  ): Promise<McpGraphAnalysisResponse> {
+    return this.callTool<McpGraphAnalysisResponse>('graph_analysis', {
+      analysis,
+      ...options,
+    });
+  }
+
+  // -------------------------------------------------------------------------
+  // Unlinked mentions
+  // -------------------------------------------------------------------------
+
+  /**
+   * Find unlinked mentions of an entity across the vault.
+   */
+  async getUnlinkedMentions(entity: string, limit = 50): Promise<McpUnlinkedMentionsResponse> {
+    return this.callTool<McpUnlinkedMentionsResponse>('get_unlinked_mentions', {
+      entity,
+      limit,
+    });
+  }
+
+  // -------------------------------------------------------------------------
+  // Note intelligence
+  // -------------------------------------------------------------------------
+
+  /**
+   * Run note intelligence analysis (prose patterns, frontmatter suggestions, etc.)
+   */
+  async noteIntelligence(
+    path: string,
+    analysis: NoteIntelligenceMode,
+  ): Promise<McpNoteIntelligenceResponse> {
+    return this.callTool<McpNoteIntelligenceResponse>('note_intelligence', {
+      path,
+      analysis,
+    });
+  }
+
+  // -------------------------------------------------------------------------
+  // Tasks
+  // -------------------------------------------------------------------------
+
+  /**
+   * Query tasks across the vault with filtering.
+   */
+  async queryTasks(options: {
+    path?: string;
+    status?: 'open' | 'completed' | 'cancelled' | 'all';
+    has_due_date?: boolean;
+    folder?: string;
+    tag?: string;
+    limit?: number;
+    offset?: number;
+  } = {}): Promise<McpTasksResponse> {
+    return this.callTool<McpTasksResponse>('tasks', {
+      status: 'open',
+      limit: 50,
+      ...options,
+    });
+  }
+
+  /**
+   * Toggle a task's completion status.
+   */
+  async toggleTask(path: string, task: string): Promise<McpToggleTaskResponse> {
+    return this.callTool<McpToggleTaskResponse>('vault_toggle_task', {
+      path,
+      task,
+    });
+  }
+
+  // -------------------------------------------------------------------------
+  // Path & connection analysis
+  // -------------------------------------------------------------------------
+
+  /**
+   * Find the shortest link path between two notes.
+   */
+  async getLinkPath(from: string, to: string, weighted = false): Promise<McpLinkPathResponse> {
+    return this.callTool<McpLinkPathResponse>('get_link_path', {
+      from,
+      to,
+      weighted,
+    });
+  }
+
+  /**
+   * Find notes linked by both note A and note B.
+   */
+  async getCommonNeighbors(noteA: string, noteB: string): Promise<McpCommonNeighborsResponse> {
+    return this.callTool<McpCommonNeighborsResponse>('get_common_neighbors', {
+      note_a: noteA,
+      note_b: noteB,
+    });
+  }
+
+  /**
+   * Get connection strength score between two notes.
+   */
+  async getConnectionStrength(noteA: string, noteB: string): Promise<McpConnectionStrengthResponse> {
+    return this.callTool<McpConnectionStrengthResponse>('get_connection_strength', {
+      note_a: noteA,
+      note_b: noteB,
+    });
+  }
+
+  // -------------------------------------------------------------------------
+  // Vault growth & metrics
+  // -------------------------------------------------------------------------
+
+  /**
+   * Get vault growth metrics (current snapshot, history, trends, or index activity).
+   */
+  async vaultGrowth(
+    mode: VaultGrowthMode = 'current',
+    options: { metric?: string; days_back?: number; limit?: number } = {},
+  ): Promise<McpVaultGrowthResponse> {
+    return this.callTool<McpVaultGrowthResponse>('vault_growth', {
+      mode,
+      ...options,
+    });
+  }
+
+  // -------------------------------------------------------------------------
+  // Write tools
+  // -------------------------------------------------------------------------
+
+  /**
+   * Replace text in a specific section of a note.
+   */
+  async replaceInSection(
+    path: string,
+    section: string,
+    search: string,
+    replacement: string,
+  ): Promise<McpMutationResponse> {
+    return this.callTool<McpMutationResponse>('vault_replace_in_section', {
+      path,
+      section,
+      search,
+      replacement,
+      skipWikilinks: true,
+      suggestOutgoingLinks: false,
+      validate: false,
+    });
   }
 }

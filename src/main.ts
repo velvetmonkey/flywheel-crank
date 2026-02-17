@@ -10,9 +10,11 @@ import type { FlywheelCrankSettings } from './core/types';
 import { DEFAULT_SETTINGS } from './core/types';
 import { FlywheelCrankSettingTab } from './settings';
 import { SearchModal } from './views/search-modal';
+import { ConnectionExplorerModal } from './views/connection-explorer';
 import { GraphSidebarView, GRAPH_VIEW_TYPE } from './views/graph-sidebar';
 import { EntityBrowserView, ENTITY_BROWSER_VIEW_TYPE } from './views/entity-browser';
 import { VaultHealthView, VAULT_HEALTH_VIEW_TYPE } from './views/vault-health';
+import { TaskDashboardView, TASK_DASHBOARD_VIEW_TYPE } from './views/task-dashboard';
 import { WikilinkSuggest } from './suggest/wikilink-suggest';
 import { FlywheelMcpClient } from './mcp/client';
 
@@ -38,7 +40,8 @@ export default class FlywheelCrankPlugin extends Plugin {
     // Register views
     this.registerView(GRAPH_VIEW_TYPE, (leaf) => new GraphSidebarView(leaf, this.mcpClient));
     this.registerView(ENTITY_BROWSER_VIEW_TYPE, (leaf) => new EntityBrowserView(leaf));
-    this.registerView(VAULT_HEALTH_VIEW_TYPE, (leaf) => new VaultHealthView(leaf));
+    this.registerView(VAULT_HEALTH_VIEW_TYPE, (leaf) => new VaultHealthView(leaf, this.mcpClient));
+    this.registerView(TASK_DASHBOARD_VIEW_TYPE, (leaf) => new TaskDashboardView(leaf, this.mcpClient));
 
     // Settings tab
     this.addSettingTab(new FlywheelCrankSettingTab(this.app, this));
@@ -69,6 +72,12 @@ export default class FlywheelCrankPlugin extends Plugin {
     });
 
     this.addCommand({
+      id: 'open-task-dashboard',
+      name: 'Open task dashboard',
+      callback: () => this.activateView(TASK_DASHBOARD_VIEW_TYPE),
+    });
+
+    this.addCommand({
       id: 'rebuild-index',
       name: 'Rebuild index',
       callback: () => this.rebuildIndex(),
@@ -78,6 +87,12 @@ export default class FlywheelCrankPlugin extends Plugin {
       id: 'init-semantic',
       name: 'Build semantic embeddings',
       callback: () => this.buildSemanticIndex(),
+    });
+
+    this.addCommand({
+      id: 'open-connection-explorer',
+      name: 'Explore connections between notes',
+      callback: () => new ConnectionExplorerModal(this.app, this.mcpClient).open(),
     });
 
     // Ribbon icons
