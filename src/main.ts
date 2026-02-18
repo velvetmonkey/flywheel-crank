@@ -25,6 +25,8 @@ export default class FlywheelCrankPlugin extends Plugin {
   private statusBarEl: HTMLElement | null = null;
   private indexing = false;
   private wikilinkEntitiesLoaded = false;
+  private healthUnsub: (() => void) | null = null;
+  private graphRefreshTimer: number | null = null;
 
   async onload(): Promise<void> {
     console.log('Flywheel Crank: loading plugin');
@@ -129,6 +131,9 @@ export default class FlywheelCrankPlugin extends Plugin {
   async onunload(): Promise<void> {
     console.log('Flywheel Crank: unloading plugin');
 
+    if (this.healthUnsub) { this.healthUnsub(); this.healthUnsub = null; }
+    this.mcpClient.stopHealthPoll();
+
     // Disconnect MCP client
     try {
       await this.mcpClient.disconnect();
@@ -148,9 +153,10 @@ export default class FlywheelCrankPlugin extends Plugin {
       // Refresh graph sidebar now that MCP is connected
       this.updateGraphSidebar(true);
 
-      // Poll index state — show syncing until ready
+      // Subscribe to centralized health polling
       this.setStatus('syncing...', true);
-      this.pollIndexState();
+      this.healthUnsub = this.mcpClient.onHealthUpdate(health => this.handleHealthUpdate(health));
+      this.mcpClient.startHealthPoll();
     } catch (err) {
       console.error('Flywheel Crank: initialization failed', err);
       this.setStatus('error', false);
@@ -158,70 +164,61 @@ export default class FlywheelCrankPlugin extends Plugin {
     }
   }
 
-  /** Poll health_check until all indexes are ready, updating status bar. */
-  private async pollIndexState(): Promise<void> {
-    try {
-      const health = await this.mcpClient.healthCheck();
+  /** Handle health updates from the centralized health poller. */
+  private handleHealthUpdate(health: import('./mcp/client').McpHealthCheckResponse): void {
+    if (health.index_state === 'ready') {
+      // Load entities for wikilink suggest (once, when graph index first ready)
+      if (this.wikilinkSuggest && !this.wikilinkEntitiesLoaded) {
+        this.wikilinkEntitiesLoaded = true;
+        this.loadWikilinkEntities();
+      }
 
-      if (health.index_state === 'ready') {
-        // Load entities for wikilink suggest (once, when graph index first ready)
-        if (this.wikilinkSuggest && !this.wikilinkEntitiesLoaded) {
-          this.wikilinkEntitiesLoaded = true;
-          this.loadWikilinkEntities();
-        }
+      const ago = health.last_rebuild?.ago_seconds ?? 0;
+      const agoText = ago < 60 ? `${ago}s ago` : ago < 3600 ? `${Math.floor(ago / 60)}m ago` : `${Math.floor(ago / 3600)}h ago`;
 
-        const ago = health.last_rebuild?.ago_seconds ?? 0;
-        const agoText = ago < 60 ? `${ago}s ago` : ago < 3600 ? `${Math.floor(ago / 60)}m ago` : `${Math.floor(ago / 3600)}h ago`;
+      const fts5Label = health.fts5_building ? 'building...'
+        : health.fts5_ready ? 'ready' : 'not built';
+      const semanticLabel = health.embeddings_building
+        ? `building... (${health.embeddings_count ?? 0} embedded)`
+        : health.embeddings_ready ? `ready (${health.embeddings_count} embeddings)` : 'not built';
+      const tooltip = [
+        `Vault: ${health.note_count} notes · ${health.entity_count} entities · ${health.tag_count} tags`,
+        '',
+        `Graph index: ready (${agoText})`,
+        `Keyword search: ${fts5Label}`,
+        `Semantic search: ${semanticLabel}`,
+      ].join('\n');
 
-        const fts5Label = health.fts5_building ? 'building...'
-          : health.fts5_ready ? 'ready' : 'not built';
-        const semanticLabel = health.embeddings_building
-          ? `building... (${health.embeddings_count ?? 0} embedded)`
-          : health.embeddings_ready ? `ready (${health.embeddings_count} embeddings)` : 'not built';
-        const tooltip = [
-          `Vault: ${health.note_count} notes · ${health.entity_count} entities · ${health.tag_count} tags`,
-          '',
-          `Graph index: ready (${agoText})`,
-          `Keyword search: ${fts5Label}`,
-          `Semantic search: ${semanticLabel}`,
-        ].join('\n');
-
-        // Still building secondary indexes
-        if (health.fts5_building) {
-          this.setStatus('indexing search...', true, tooltip);
-          setTimeout(() => this.pollIndexState(), 3000);
-          return;
-        }
-        if (health.embeddings_building) {
-          this.setStatus(`embedding ${health.embeddings_count ?? 0} notes...`, true, tooltip);
-          setTimeout(() => this.pollIndexState(), 3000);
-          return;
-        }
-
-        this.setStatus(`ready · ${agoText}`, false, tooltip);
+      // Still building secondary indexes
+      if (health.fts5_building) {
+        this.setStatus('indexing search...', true, tooltip);
+        return;
+      }
+      if (health.embeddings_building) {
+        this.setStatus(`embedding ${health.embeddings_count ?? 0} notes...`, true, tooltip);
         return;
       }
 
-      // Still building graph — show progress if available
-      const progress = (health as any).index_progress;
-      const graphStatus = progress?.total > 0
-        ? `building (${progress.parsed}/${progress.total})`
-        : 'building...';
-      const fts5Status = health.fts5_building ? 'building...' : health.fts5_ready ? 'ready' : 'waiting';
-      const tooltip = [
-        `Graph index: ${graphStatus}`,
-        `Keyword search: ${fts5Status}`,
-        'Semantic search: waiting',
-      ].join('\n');
-      if (progress?.total > 0) {
-        this.setStatus(`syncing ${progress.parsed}/${progress.total}...`, true, tooltip);
-      } else {
-        this.setStatus('syncing...', true, tooltip);
-      }
-    } catch {
-      // health check failed, keep current status
+      this.setStatus(`ready · ${agoText}`, false, tooltip);
+      return;
     }
-    setTimeout(() => this.pollIndexState(), 3000);
+
+    // Still building graph — show progress if available
+    const progress = (health as any).index_progress;
+    const graphStatus = progress?.total > 0
+      ? `building (${progress.parsed}/${progress.total})`
+      : 'building...';
+    const fts5Status = health.fts5_building ? 'building...' : health.fts5_ready ? 'ready' : 'waiting';
+    const tooltip = [
+      `Graph index: ${graphStatus}`,
+      `Keyword search: ${fts5Status}`,
+      'Semantic search: waiting',
+    ].join('\n');
+    if (progress?.total > 0) {
+      this.setStatus(`syncing ${progress.parsed}/${progress.total}...`, true, tooltip);
+    } else {
+      this.setStatus('syncing...', true, tooltip);
+    }
   }
 
   private async loadWikilinkEntities(): Promise<void> {
@@ -236,13 +233,17 @@ export default class FlywheelCrankPlugin extends Plugin {
   }
 
   private updateGraphSidebar(force = false): void {
-    const leaves = this.app.workspace.getLeavesOfType(GRAPH_VIEW_TYPE);
-    for (const leaf of leaves) {
-      const view = leaf.view as GraphSidebarView;
-      if (typeof view.refresh === 'function') {
-        view.refresh(force);
+    if (this.graphRefreshTimer) window.clearTimeout(this.graphRefreshTimer);
+    this.graphRefreshTimer = window.setTimeout(() => {
+      this.graphRefreshTimer = null;
+      const leaves = this.app.workspace.getLeavesOfType(GRAPH_VIEW_TYPE);
+      for (const leaf of leaves) {
+        const view = leaf.view as GraphSidebarView;
+        if (typeof view.refresh === 'function') {
+          view.refresh(force);
+        }
       }
-    }
+    }, 150);
   }
 
   private async activateView(viewType: string): Promise<void> {

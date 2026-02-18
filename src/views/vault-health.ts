@@ -20,8 +20,8 @@ export class VaultHealthView extends ItemView {
   private activityLogInterval: ReturnType<typeof setInterval> | null = null;
   /** Whether the server index is confirmed ready */
   private indexReady = false;
-  /** Poll timer for index readiness */
-  private indexPollTimer: ReturnType<typeof setInterval> | null = null;
+  /** Unsubscribe from health updates */
+  private healthUnsub: (() => void) | null = null;
 
   constructor(leaf: WorkspaceLeaf, mcpClient: FlywheelMcpClient) {
     super(leaf);
@@ -58,24 +58,14 @@ export class VaultHealthView extends ItemView {
       splash.createDiv('flywheel-splash-text').setText(
         this.mcpClient.connected ? 'Building vault index...' : 'Connecting to flywheel-memory...'
       );
-      // Poll until index is ready, then re-render
-      if (!this.indexPollTimer) {
-        this.indexPollTimer = setInterval(async () => {
-          if (!this.mcpClient.connected) return;
-          try {
-            const health = await this.mcpClient.healthCheck();
-            if (health.index_state === 'ready') {
-              this.indexReady = true;
-              if (this.indexPollTimer) {
-                clearInterval(this.indexPollTimer);
-                this.indexPollTimer = null;
-              }
-              this.render();
-            }
-          } catch {
-            // health_check may fail during startup, keep polling
+      // Subscribe to health updates — re-render when index is ready
+      if (!this.healthUnsub) {
+        this.healthUnsub = this.mcpClient.onHealthUpdate(health => {
+          if (health.index_state === 'ready' && !this.indexReady) {
+            this.indexReady = true;
+            this.render();
           }
-        }, 2000);
+        });
       }
       return;
     }
@@ -806,9 +796,9 @@ export class VaultHealthView extends ItemView {
       clearInterval(this.activityLogInterval);
       this.activityLogInterval = null;
     }
-    if (this.indexPollTimer) {
-      clearInterval(this.indexPollTimer);
-      this.indexPollTimer = null;
+    if (this.healthUnsub) {
+      this.healthUnsub();
+      this.healthUnsub = null;
     }
   }
 }

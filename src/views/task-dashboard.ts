@@ -54,7 +54,7 @@ export class TaskDashboardView extends ItemView {
   private sort: SortMode = 'due_date';
   private counts = { open: 0, upcoming: 0, completed: 0, total: 0 };
   private cacheReady = false;
-  private pollTimer: ReturnType<typeof setInterval> | null = null;
+  private healthUnsub: (() => void) | null = null;
   private collapsedFolders = new Map<string, boolean>();
 
   constructor(leaf: WorkspaceLeaf, mcpClient: FlywheelMcpClient) {
@@ -76,63 +76,53 @@ export class TaskDashboardView extends ItemView {
 
   async onOpen(): Promise<void> {
     this.renderSplash();
-    this.pollUntilReady();
+    this.waitForReady();
   }
 
   async onClose(): Promise<void> {
-    if (this.pollTimer) {
-      clearInterval(this.pollTimer);
-      this.pollTimer = null;
+    if (this.healthUnsub) {
+      this.healthUnsub();
+      this.healthUnsub = null;
     }
   }
 
   /**
-   * Poll until the task cache is confirmed ready, then fetch and render.
-   * Checks server_log for a 'Task cache built' message from the 'tasks' component.
-   * Falls back to health_check index_state.
+   * Subscribe to health updates. Once the index is ready, check server_log
+   * for task cache readiness, then fetch and render.
    */
-  private pollUntilReady(): void {
-    const check = async () => {
-      if (!this.mcpClient.connected) return;
+  private waitForReady(): void {
+    // If already ready from a previous open, just fetch
+    if (this.cacheReady) {
+      this.fetchTasks();
+      return;
+    }
 
-      try {
-        // Primary: check server_log for task cache readiness
-        const log = await this.mcpClient.getServerLog({ component: 'tasks', limit: 20 });
-        const ready = log.entries.some(e =>
-          e.component === 'tasks' && e.message.toLowerCase().includes('task cache built')
-        );
+    this.healthUnsub = this.mcpClient.onHealthUpdate(async (health) => {
+      if (this.cacheReady) return;
 
-        if (ready) {
-          this.cacheReady = true;
-          if (this.pollTimer) {
-            clearInterval(this.pollTimer);
-            this.pollTimer = null;
-          }
-          await this.fetchTasks();
-          return;
-        }
-      } catch {
-        // server_log not available yet — try health_check
+      if (health.index_state === 'ready') {
+        // Check server_log for task cache readiness
         try {
-          const health = await this.mcpClient.healthCheck();
-          if (health.index_state === 'ready') {
+          const log = await this.mcpClient.getServerLog({ component: 'tasks', limit: 20 });
+          const ready = log.entries.some(e =>
+            e.component === 'tasks' && (
+              e.message.toLowerCase().includes('task cache built') ||
+              e.message.toLowerCase().includes('task cache ready')
+            )
+          );
+          if (ready) {
             this.cacheReady = true;
-            if (this.pollTimer) {
-              clearInterval(this.pollTimer);
-              this.pollTimer = null;
-            }
+            if (this.healthUnsub) { this.healthUnsub(); this.healthUnsub = null; }
             await this.fetchTasks();
-            return;
           }
         } catch {
-          // not connected yet, keep polling
+          // server_log not available, try fetching tasks directly
+          this.cacheReady = true;
+          if (this.healthUnsub) { this.healthUnsub(); this.healthUnsub = null; }
+          await this.fetchTasks();
         }
       }
-    };
-
-    // Check immediately, then poll every 2s
-    check();
-    this.pollTimer = setInterval(check, 2000);
+    });
   }
 
   private async fetchTasks(): Promise<void> {
@@ -344,6 +334,16 @@ export class TaskDashboardView extends ItemView {
 
   private renderTask(container: HTMLElement, task: McpTask): void {
     const item = container.createDiv('flywheel-task-item');
+    item.style.cursor = 'pointer';
+    item.addEventListener('click', async () => {
+      await this.app.workspace.openLinkText(task.path, '', false);
+      const view = this.app.workspace.getActiveViewOfType(MarkdownView);
+      if (view) {
+        const line = Math.max(0, task.line - 1);
+        view.editor.setCursor({ line, ch: 0 });
+        view.editor.scrollIntoView({ from: { line, ch: 0 }, to: { line, ch: 0 } }, true);
+      }
+    });
 
     // Checkbox
     const checkbox = item.createEl('input', {
@@ -353,6 +353,7 @@ export class TaskDashboardView extends ItemView {
     checkbox.checked = task.status === 'completed';
     checkbox.addEventListener('click', async (e) => {
       e.preventDefault();
+      e.stopPropagation();
       try {
         // Fire-and-forget the server toggle
         this.mcpClient.toggleTask(task.path, task.text).catch(err => {

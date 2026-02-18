@@ -8,6 +8,7 @@
 
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
+import { McpCache } from './cache';
 
 // Electron's renderer process may return a number from setTimeout (browser API),
 // but the MCP SDK expects a Node.js Timeout object with .unref().
@@ -485,9 +486,53 @@ export class FlywheelMcpClient {
   private client: Client | null = null;
   private transport: StdioClientTransport | null = null;
   private _connected = false;
+  private cache = new McpCache();
+
+  // Centralized health polling
+  private healthCallbacks = new Set<(h: McpHealthCheckResponse) => void>();
+  private healthTimer: ReturnType<typeof setInterval> | null = null;
+  lastHealth: McpHealthCheckResponse | null = null;
 
   get connected(): boolean {
     return this._connected;
+  }
+
+  /**
+   * Subscribe to centralized health updates. Returns unsubscribe function.
+   * If a cached health result exists, fires the callback immediately.
+   */
+  onHealthUpdate(cb: (h: McpHealthCheckResponse) => void): () => void {
+    this.healthCallbacks.add(cb);
+    if (this.lastHealth) cb(this.lastHealth);
+    return () => { this.healthCallbacks.delete(cb); };
+  }
+
+  /**
+   * Start the centralized health poll (3s interval).
+   * The poll bypasses cache and populates it for other callers.
+   */
+  startHealthPoll(): void {
+    if (this.healthTimer) return;
+    const poll = async () => {
+      try {
+        this.cache.invalidateTool('health_check');
+        const health = await this.healthCheck();
+        this.lastHealth = health;
+        for (const cb of this.healthCallbacks) { try { cb(health); } catch {} }
+      } catch {}
+    };
+    poll();
+    this.healthTimer = setInterval(poll, 3000);
+  }
+
+  /** Stop the centralized health poll. */
+  stopHealthPoll(): void {
+    if (this.healthTimer) { clearInterval(this.healthTimer); this.healthTimer = null; }
+  }
+
+  /** Invalidate cache entries related to a file path (for file-watcher driven invalidation). */
+  invalidateForPath(path: string): void {
+    this.cache.invalidatePath(path);
   }
 
   /**
@@ -589,6 +634,9 @@ export class FlywheelMcpClient {
   async disconnect(): Promise<void> {
     if (!this._connected) return;
 
+    this.stopHealthPoll();
+    this.cache.clear();
+
     try {
       await this.client?.close();
     } catch {
@@ -612,25 +660,27 @@ export class FlywheelMcpClient {
       throw new Error('MCP client not connected');
     }
 
-    const result = await this.client.callTool(
-      { name, arguments: args },
-      undefined,
-      timeout ? { timeout } : undefined,
-    );
+    return this.cache.get<T>(name, args, async () => {
+      const result = await this.client!.callTool(
+        { name, arguments: args },
+        undefined,
+        timeout ? { timeout } : undefined,
+      );
 
-    // The MCP SDK returns content as an array of content blocks.
-    const content = result.content as Array<{ type: string; text?: string }>;
-    const textBlock = content?.find(c => c.type === 'text');
-    if (!textBlock?.text) {
-      throw new Error(`No text response from tool ${name}`);
-    }
+      // The MCP SDK returns content as an array of content blocks.
+      const content = result.content as Array<{ type: string; text?: string }>;
+      const textBlock = content?.find(c => c.type === 'text');
+      if (!textBlock?.text) {
+        throw new Error(`No text response from tool ${name}`);
+      }
 
-    // Check for error responses (e.g. index still building)
-    if (result.isError) {
-      throw new Error(textBlock.text);
-    }
+      // Check for error responses (e.g. index still building)
+      if (result.isError) {
+        throw new Error(textBlock.text);
+      }
 
-    return JSON.parse(textBlock.text) as T;
+      return JSON.parse(textBlock.text) as T;
+    });
   }
 
   /**
@@ -766,7 +816,9 @@ export class FlywheelMcpClient {
    * Trigger a full index rebuild on the MCP server.
    */
   async refreshIndex(): Promise<McpRefreshIndexResponse> {
-    return this.callTool<McpRefreshIndexResponse>('refresh_index', {});
+    const result = await this.callTool<McpRefreshIndexResponse>('refresh_index', {});
+    this.cache.clear();
+    return result;
   }
 
   // -------------------------------------------------------------------------
@@ -810,10 +862,14 @@ export class FlywheelMcpClient {
    * Merge two entities: source note is absorbed into target note.
    */
   async mergeEntities(sourcePath: string, targetPath: string): Promise<McpMergeResult> {
-    return this.callTool<McpMergeResult>('merge_entities', {
+    const result = await this.callTool<McpMergeResult>('merge_entities', {
       source_path: sourcePath,
       target_path: targetPath,
     });
+    this.cache.invalidateTool('list_entities');
+    this.cache.invalidatePath(sourcePath);
+    this.cache.invalidatePath(targetPath);
+    return result;
   }
 
   // -------------------------------------------------------------------------
@@ -891,10 +947,13 @@ export class FlywheelMcpClient {
    * Toggle a task's completion status.
    */
   async toggleTask(path: string, task: string): Promise<McpToggleTaskResponse> {
-    return this.callTool<McpToggleTaskResponse>('vault_toggle_task', {
+    const result = await this.callTool<McpToggleTaskResponse>('vault_toggle_task', {
       path,
       task,
     });
+    this.cache.invalidateTool('tasks');
+    this.cache.invalidatePath(path);
+    return result;
   }
 
   // -------------------------------------------------------------------------
@@ -962,7 +1021,7 @@ export class FlywheelMcpClient {
     search: string,
     replacement: string,
   ): Promise<McpMutationResponse> {
-    return this.callTool<McpMutationResponse>('vault_replace_in_section', {
+    const result = await this.callTool<McpMutationResponse>('vault_replace_in_section', {
       path,
       section,
       search,
@@ -971,6 +1030,10 @@ export class FlywheelMcpClient {
       suggestOutgoingLinks: false,
       validate: false,
     });
+    this.cache.invalidatePath(path);
+    this.cache.invalidateTool('get_backlinks');
+    this.cache.invalidateTool('get_forward_links');
+    return result;
   }
 
   /**
@@ -1002,11 +1065,14 @@ export class FlywheelMcpClient {
     frontmatter: Record<string, unknown>,
     onlyIfMissing = false,
   ): Promise<McpMutationResponse> {
-    return this.callTool<McpMutationResponse>('vault_update_frontmatter', {
+    const result = await this.callTool<McpMutationResponse>('vault_update_frontmatter', {
       path,
       frontmatter,
       only_if_missing: onlyIfMissing,
     });
+    this.cache.invalidateTool('vault_schema');
+    this.cache.invalidatePath(path);
+    return result;
   }
 
   // -------------------------------------------------------------------------

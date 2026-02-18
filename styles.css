@@ -756,6 +756,33 @@
   white-space: nowrap;
 }
 
+/* Clickable value chips for missing frontmatter fields */
+.flywheel-graph-schema-field-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px;
+  margin-top: 2px;
+  padding-left: 20px;
+}
+
+.flywheel-graph-field-chip {
+  display: inline-block;
+  padding: 1px 6px;
+  margin: 1px 2px;
+  border-radius: 4px;
+  background: var(--background-modifier-hover);
+  cursor: pointer;
+  font-size: 11px;
+  opacity: 0.8;
+  transition: background 0.1s, color 0.1s, opacity 0.1s;
+}
+
+.flywheel-graph-field-chip:hover {
+  background: var(--interactive-accent);
+  color: var(--text-on-accent);
+  opacity: 1;
+}
+
 .flywheel-graph-section-count-warn {
   color: var(--text-warning, hsl(38 90% 60%)) !important;
 }
@@ -2404,9 +2431,6 @@
   font-size: var(--font-ui-medium);
   color: var(--text-normal);
   line-height: 1.5;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 
 .flywheel-task-text.is-completed {

@@ -280,12 +280,19 @@ export class GraphSidebarView extends ItemView {
             if (valStr) {
               row.createDiv('flywheel-graph-schema-field-value').setText(valStr);
             }
-          } else if (inferred?.common_values && inferred.common_values.length > 0) {
-            const values = inferred.common_values
-              .slice(0, 5)
-              .map(v => typeof v === 'string' ? v : JSON.stringify(v))
-              .join(' · ');
-            row.createDiv('flywheel-graph-schema-field-examples').setText(values);
+          } else if (!hasField && inferred?.common_values && inferred.common_values.length > 0) {
+            const valuesRow = row.createDiv('flywheel-graph-schema-field-actions');
+            for (const v of inferred.common_values.slice(0, 5)) {
+              const valStr = typeof v === 'string' ? v : JSON.stringify(v);
+              const chip = valuesRow.createSpan('flywheel-graph-field-chip');
+              chip.setText(valStr);
+              chip.setAttribute('aria-label', `Set ${name}: ${valStr}`);
+              chip.addEventListener('click', async (e) => {
+                e.stopPropagation();
+                await this.mcpClient.updateFrontmatter(file.path, { [name]: v });
+                this.refresh(true);
+              });
+            }
           }
         }
 

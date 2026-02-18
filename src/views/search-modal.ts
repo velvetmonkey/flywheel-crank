@@ -19,6 +19,7 @@ export class SearchModal extends Modal {
   private statusEl!: HTMLDivElement;
   private indexBarEl!: HTMLDivElement;
   private debounceTimer: number | null = null;
+  private healthUnsub: (() => void) | null = null;
 
   constructor(app: App, mcpClient: FlywheelMcpClient) {
     super(app);
@@ -61,13 +62,15 @@ export class SearchModal extends Modal {
       item.createSpan({ text: hint.label });
     }
 
-    // Show index status
+    // Show index status via centralized health subscription
     if (!this.mcpClient.connected) {
       this.statusEl.setText('MCP server not connected');
       this.statusEl.addClass('flywheel-search-status-warning');
       this.renderIndexBar(null);
     } else {
-      this.showIndexStatus();
+      this.healthUnsub = this.mcpClient.onHealthUpdate(health => {
+        this.renderIndexBar(health);
+      });
     }
 
     // Event handlers
@@ -138,25 +141,6 @@ export class SearchModal extends Modal {
     wrapper.style.gap = '5px';
     wrapper.createSpan({ cls: `flywheel-search-index-dot flywheel-search-index-dot-${state}` });
     wrapper.appendText(label);
-  }
-
-  private async showIndexStatus(): Promise<void> {
-    try {
-      const health = await this.mcpClient.healthCheck();
-      this.renderIndexBar(health);
-
-      // Only update text status if user hasn't started typing
-      if (this.inputEl.value.trim()) return;
-      this.statusEl.setText('');
-      this.statusEl.removeClass('flywheel-search-status-warning');
-
-      // Re-poll if any index still building
-      if (health.fts5_building || health.embeddings_building) {
-        setTimeout(() => this.showIndexStatus(), 3000);
-      }
-    } catch {
-      this.renderIndexBar(null);
-    }
   }
 
   private async performSearch(): Promise<void> {
@@ -343,6 +327,7 @@ export class SearchModal extends Modal {
 
   onClose(): void {
     if (this.debounceTimer) clearTimeout(this.debounceTimer);
+    if (this.healthUnsub) { this.healthUnsub(); this.healthUnsub = null; }
     this.contentEl.empty();
   }
 }
