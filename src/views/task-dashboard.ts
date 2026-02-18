@@ -219,8 +219,25 @@ export class TaskDashboardView extends ItemView {
     checkbox.addEventListener('click', async (e) => {
       e.preventDefault();
       try {
-        await this.mcpClient.toggleTask(task.path, task.text);
-        await this.fetchTasks();
+        // Fire-and-forget the server toggle
+        this.mcpClient.toggleTask(task.path, task.text).catch(err => {
+          console.error('Flywheel Tasks: toggle failed', err);
+        });
+
+        // Optimistic UI update — flip status locally and re-render immediately
+        task.status = task.status === 'completed' ? 'open' : 'completed';
+        if (task.status === 'completed') {
+          this.counts.open = Math.max(0, this.counts.open - 1);
+          this.counts.completed++;
+        } else {
+          this.counts.open++;
+          this.counts.completed = Math.max(0, this.counts.completed - 1);
+        }
+        // Re-filter: if viewing 'open' and task just completed, remove it (and vice versa)
+        if (this.filter !== 'all') {
+          this.tasks = this.tasks.filter(t => t.status === this.filter);
+        }
+        this.render();
       } catch (err) {
         console.error('Flywheel Tasks: toggle failed', err);
       }
