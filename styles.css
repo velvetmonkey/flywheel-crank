@@ -32,6 +32,33 @@
 }
 
 /* ===================================================================
+   Shared Splash (loading state for all panels)
+   =================================================================== */
+
+.flywheel-splash {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  padding: 48px 16px;
+  color: var(--text-faint);
+}
+
+.flywheel-splash-logo {
+  width: 64px;
+  height: 64px;
+  border: none;
+  opacity: 0.6;
+  animation: flywheel-spin 3s linear infinite;
+}
+
+.flywheel-splash-text {
+  font-size: var(--font-ui-small);
+  color: var(--text-faint);
+}
+
+/* ===================================================================
    Search Modal
    =================================================================== */
 
@@ -263,27 +290,7 @@
   padding: 0;
 }
 
-.flywheel-graph-empty {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 12px;
-  padding: 48px 16px;
-  color: var(--text-faint);
-}
-
-.flywheel-graph-logo {
-  width: 120px;
-  height: auto;
-  border: none;
-  opacity: 0.7;
-}
-
-.flywheel-graph-empty-text {
-  font-size: var(--font-ui-small);
-  color: var(--text-faint);
-}
+/* Graph empty/splash uses shared .flywheel-splash */
 
 .flywheel-graph-header {
   padding: 12px 16px;
@@ -323,7 +330,7 @@
   display: flex;
   align-items: center;
   gap: 6px;
-  padding: 8px 12px;
+  padding: 10px 14px;
   cursor: pointer;
   user-select: none;
   transition: background-color 0.1s ease;
@@ -348,7 +355,7 @@
 .flywheel-health-section-title,
 .flywheel-entity-section-title {
   flex: 1;
-  font-size: var(--font-small);
+  font-size: var(--font-ui-medium);
   font-weight: var(--font-semibold);
   color: var(--text-normal);
 }
@@ -356,7 +363,7 @@
 .flywheel-graph-section-count,
 .flywheel-health-section-count,
 .flywheel-entity-section-count {
-  font-size: var(--font-smallest);
+  font-size: var(--font-ui-smaller);
   color: var(--text-muted);
   background: var(--background-modifier-hover);
   padding: 1px 6px;
@@ -400,7 +407,7 @@
 
 /* Graph link items */
 .flywheel-graph-link-item {
-  padding: 5px 12px 5px 24px;
+  padding: 6px 14px 6px 24px;
   cursor: pointer;
   transition: background-color 0.1s ease;
 }
@@ -908,6 +915,57 @@
   border-top: 1px solid var(--background-modifier-border);
 }
 
+.flywheel-graph-intelligence-suggestion-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.flywheel-graph-intelligence-suggestion-applied {
+  opacity: 0.5;
+}
+
+/* Section info icon (?) — tooltip on hover */
+.flywheel-graph-section-info {
+  display: inline-flex;
+  align-items: center;
+  color: var(--text-faint);
+  flex-shrink: 0;
+  cursor: help;
+}
+
+.flywheel-graph-section-info .svg-icon {
+  width: 12px;
+  height: 12px;
+}
+
+/* Apply button — frontmatter suggestions */
+.flywheel-graph-apply-btn {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 4px;
+  border-radius: 3px;
+  cursor: pointer;
+  color: var(--text-faint);
+  transition: color 0.1s, background 0.1s;
+  margin-left: auto;
+  flex-shrink: 0;
+}
+
+.flywheel-graph-apply-btn .svg-icon {
+  width: 14px;
+  height: 14px;
+}
+
+.flywheel-graph-apply-btn:hover {
+  color: var(--interactive-accent);
+  background: var(--background-modifier-hover);
+}
+
+.flywheel-graph-apply-btn-done {
+  color: var(--text-success, hsl(135 50% 55%));
+}
+
 /* ===================================================================
    Vault Health
    =================================================================== */
@@ -972,8 +1030,24 @@
 
 /* Health items */
 .flywheel-health-item {
-  padding: 6px 16px 6px 28px;
+  padding: 8px 16px 8px 28px;
   transition: background-color 0.1s ease;
+}
+
+/* 2-column grid for orphan notes / dead ends */
+.flywheel-health-grid-2col {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0 12px;
+}
+
+.flywheel-health-grid-2col .flywheel-health-empty-msg,
+.flywheel-health-grid-2col .flywheel-health-more {
+  grid-column: 1 / -1;
+}
+
+.flywheel-health-grid-2col .flywheel-health-item {
+  padding: 6px 12px 6px 16px;
 }
 
 .flywheel-health-clickable {
@@ -1011,6 +1085,83 @@
   padding: 6px 16px 6px 28px;
   font-size: var(--font-smallest);
   color: var(--text-faint);
+}
+
+/* Broken link rows */
+.flywheel-health-broken-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: var(--font-small);
+}
+
+.flywheel-health-broken-source {
+  color: var(--text-accent);
+  cursor: pointer;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.flywheel-health-broken-source:hover {
+  text-decoration: underline;
+}
+
+.flywheel-health-broken-arrow {
+  color: var(--text-faint);
+  flex-shrink: 0;
+}
+
+.flywheel-health-broken-target {
+  color: var(--text-error);
+  text-decoration: line-through;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.flywheel-health-broken-fix-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 2px;
+  padding-left: 4px;
+}
+
+.flywheel-health-broken-suggestion {
+  font-size: var(--font-smallest);
+  color: var(--text-success);
+}
+
+.flywheel-health-fix-btn {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 4px;
+  border-radius: 3px;
+  cursor: pointer;
+  color: var(--text-faint);
+  transition: color 0.1s, background 0.1s;
+  flex-shrink: 0;
+}
+
+.flywheel-health-fix-btn .svg-icon {
+  width: 14px;
+  height: 14px;
+}
+
+.flywheel-health-fix-btn:hover {
+  color: var(--interactive-accent);
+  background: var(--background-modifier-hover);
+}
+
+.flywheel-health-fix-btn-done {
+  color: var(--text-success);
+  cursor: default;
+}
+
+.flywheel-health-fix-btn-label {
+  font-size: var(--font-smallest);
+  margin-left: 2px;
 }
 
 /* Dead link rows */
@@ -1067,7 +1218,7 @@
 
 .flywheel-health-badge-growth {
   background-color: hsl(135 50% 55% / 0.2);
-  color: hsl(135 50% 55%);
+  color: var(--text-success);
 }
 
 /* Growth section */
@@ -1145,11 +1296,191 @@
 }
 
 .flywheel-health-trend-up {
-  color: hsl(135 50% 55%);
+  color: var(--text-success);
 }
 
 .flywheel-health-trend-down {
-  color: hsl(0 60% 55%);
+  color: var(--text-error);
+}
+
+/* Health info rows (used in Vault Config / Stats / Technical Details) */
+.flywheel-health-info-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 3px 16px 3px 28px;
+  font-size: var(--font-ui-smaller);
+  line-height: 1.5;
+}
+
+.flywheel-health-info-label {
+  color: var(--text-muted);
+  flex-shrink: 0;
+}
+
+.flywheel-health-info-value {
+  color: var(--text-normal);
+  text-align: right;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+
+.flywheel-health-info-group {
+  margin-top: 6px;
+  padding-top: 4px;
+  border-top: 1px solid var(--background-modifier-border);
+}
+
+.flywheel-health-info-group-label {
+  padding: 4px 16px 2px 28px;
+  font-size: var(--font-ui-small);
+  font-weight: var(--font-semibold);
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  margin-bottom: 2px;
+}
+
+/* Health section info icon (same style as graph section info) */
+.flywheel-health-section-info {
+  display: inline-flex;
+  align-items: center;
+  color: var(--text-faint);
+  flex-shrink: 0;
+  cursor: help;
+}
+
+.flywheel-health-section-info .svg-icon {
+  width: 12px;
+  height: 12px;
+}
+
+/* Wikilink Feedback */
+.flywheel-health-feedback-entity-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 3px 16px 3px 28px;
+  font-size: var(--font-ui-smaller);
+}
+
+.flywheel-health-feedback-entity-name {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.flywheel-health-feedback-suppressed {
+  text-decoration: line-through;
+  color: var(--text-muted);
+}
+
+/* Activity Log */
+.flywheel-activity-log {
+  max-height: 300px;
+  overflow-y: auto;
+  padding: 4px 0;
+  font-family: var(--font-monospace);
+  font-size: var(--font-smallest);
+  line-height: 1.6;
+}
+
+.flywheel-activity-entry {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  padding: 1px 16px 1px 28px;
+}
+
+.flywheel-activity-entry:hover {
+  background-color: var(--background-modifier-hover);
+}
+
+.flywheel-activity-entry-error {
+  color: var(--text-error);
+}
+
+.flywheel-activity-entry-warn {
+  color: var(--text-warning, hsl(38 90% 60%));
+}
+
+.flywheel-activity-ts {
+  color: var(--text-faint);
+  flex-shrink: 0;
+  min-width: 50px;
+  text-align: right;
+}
+
+.flywheel-activity-badge {
+  font-size: 10px;
+  padding: 0 5px;
+  border-radius: 3px;
+  font-weight: var(--font-semibold);
+  line-height: 1.5;
+  flex-shrink: 0;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+  min-width: 52px;
+  text-align: center;
+}
+
+.flywheel-activity-badge-server {
+  background-color: var(--background-modifier-hover);
+  color: var(--text-muted);
+}
+
+.flywheel-activity-badge-index {
+  background-color: hsl(200 60% 50% / 0.15);
+  color: hsl(200 60% 50%);
+}
+
+.flywheel-activity-badge-fts5 {
+  background-color: hsl(135 50% 45% / 0.15);
+  color: hsl(135 50% 45%);
+}
+
+.flywheel-activity-badge-semantic {
+  background-color: hsl(280 50% 55% / 0.15);
+  color: hsl(280 50% 55%);
+}
+
+.flywheel-activity-badge-tasks {
+  background-color: hsl(30 70% 50% / 0.15);
+  color: hsl(30 70% 50%);
+}
+
+.flywheel-activity-badge-watcher {
+  background-color: hsl(45 75% 50% / 0.15);
+  color: hsl(45 75% 50%);
+}
+
+.flywheel-activity-badge-statedb {
+  background-color: hsl(340 55% 50% / 0.15);
+  color: hsl(340 55% 50%);
+}
+
+.flywheel-activity-badge-config {
+  background-color: hsl(160 55% 42% / 0.15);
+  color: hsl(160 55% 42%);
+}
+
+.flywheel-activity-msg {
+  color: var(--text-normal);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+
+.flywheel-activity-entry-error .flywheel-activity-msg {
+  color: var(--text-error);
+}
+
+.flywheel-activity-entry-warn .flywheel-activity-msg {
+  color: var(--text-warning, hsl(38 90% 60%));
 }
 
 
@@ -1211,9 +1542,16 @@
   padding: 0;
 }
 
+/* Entity list grid */
+.flywheel-entity-list {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+}
+
 /* Entity items */
 .flywheel-entity-item {
-  padding: 6px 16px 6px 28px;
+  position: relative;
+  padding: 8px 12px 8px 16px;
   transition: background-color 0.1s ease;
 }
 
@@ -1243,7 +1581,90 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  max-width: 200px;
+  max-width: 140px;
+}
+
+/* Entity name row — inline name + correct button */
+.flywheel-entity-name-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.flywheel-entity-actions {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  flex-shrink: 0;
+}
+
+/* Correct-category button — hidden until hover */
+.flywheel-entity-correct-btn {
+  display: none;
+  align-items: center;
+  padding: 2px;
+  border-radius: 3px;
+  cursor: pointer;
+  color: var(--text-faint);
+  flex-shrink: 0;
+  transition: color 0.1s, background 0.1s;
+}
+
+.flywheel-entity-correct-btn .svg-icon {
+  width: 12px;
+  height: 12px;
+}
+
+.flywheel-entity-item:hover .flywheel-entity-correct-btn {
+  display: inline-flex;
+}
+
+.flywheel-entity-correct-btn:hover {
+  color: var(--interactive-accent);
+  background: var(--background-modifier-hover);
+}
+
+/* Category picker dropdown */
+.flywheel-entity-category-picker {
+  position: absolute;
+  top: 100%;
+  right: 4px;
+  z-index: 100;
+  background: var(--background-primary);
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 6px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  max-height: 280px;
+  overflow-y: auto;
+  min-width: 160px;
+  padding: 4px 0;
+}
+
+.flywheel-entity-category-option {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 12px;
+  font-size: var(--font-ui-small);
+  color: var(--text-normal);
+  cursor: pointer;
+  transition: background 0.1s;
+}
+
+.flywheel-entity-category-option:hover {
+  background: var(--background-modifier-hover);
+}
+
+.flywheel-entity-category-option-icon {
+  display: flex;
+  align-items: center;
+  color: var(--text-muted);
+  flex-shrink: 0;
+}
+
+.flywheel-entity-category-option-icon .svg-icon {
+  width: 14px;
+  height: 14px;
 }
 
 .flywheel-entity-hub-badge {
@@ -1376,7 +1797,7 @@
 }
 
 .flywheel-task-filter-btn {
-  padding: 3px 10px;
+  padding: 4px 12px;
   font-size: var(--font-ui-smaller);
   border: 1px solid var(--background-modifier-border);
   border-radius: 4px;
@@ -1398,11 +1819,87 @@
 
 .flywheel-task-list { padding: 0; }
 
+/* Folder grouping */
+.flywheel-task-folder {
+  border-bottom: 1px solid var(--background-modifier-border);
+}
+
+.flywheel-task-folder-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 12px;
+  cursor: pointer;
+  user-select: none;
+  transition: background-color 0.1s ease;
+}
+
+.flywheel-task-folder-header:hover {
+  background-color: var(--background-modifier-hover);
+}
+
+.flywheel-task-folder-icon {
+  color: var(--text-muted);
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
+}
+
+.flywheel-task-folder-icon .svg-icon {
+  width: 14px;
+  height: 14px;
+}
+
+.flywheel-task-folder-name {
+  flex: 1;
+  font-size: var(--font-small);
+  font-weight: var(--font-semibold);
+  color: var(--text-normal);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.flywheel-task-folder-count {
+  font-size: var(--font-smallest);
+  color: var(--text-muted);
+  background: var(--background-modifier-hover);
+  padding: 1px 6px;
+  border-radius: 8px;
+  min-width: 20px;
+  text-align: center;
+}
+
+.flywheel-task-folder-chevron {
+  color: var(--text-faint);
+  display: flex;
+  align-items: center;
+  transition: transform 0.15s ease;
+}
+
+.flywheel-task-folder-chevron .svg-icon {
+  width: 12px;
+  height: 12px;
+}
+
+.is-collapsed .flywheel-task-folder-chevron {
+  transform: rotate(-90deg);
+}
+
+.flywheel-task-folder-content {
+  padding: 0;
+}
+
+.is-collapsed .flywheel-task-folder-content {
+  display: none;
+}
+
+/* Task items */
 .flywheel-task-item {
   display: flex;
   align-items: flex-start;
   gap: 8px;
-  padding: 8px 16px;
+  padding: 8px 14px 8px 22px;
   border-bottom: 1px solid var(--background-modifier-border);
   transition: background-color 0.1s ease;
 }
@@ -1419,10 +1916,39 @@
 
 .flywheel-task-content { flex: 1; min-width: 0; }
 
+.flywheel-task-wikilink {
+  color: var(--text-accent);
+  cursor: pointer;
+}
+
+.flywheel-task-wikilink:hover {
+  text-decoration: underline;
+}
+
+.flywheel-task-meta-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+}
+
+.flywheel-task-meta-icon {
+  display: flex;
+  align-items: center;
+  color: var(--text-faint);
+}
+
+.flywheel-task-meta-icon .svg-icon {
+  width: 12px;
+  height: 12px;
+}
+
 .flywheel-task-text {
   font-size: var(--font-ui-medium);
   color: var(--text-normal);
-  line-height: 1.4;
+  line-height: 1.5;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .flywheel-task-text.is-completed {
@@ -1430,27 +1956,28 @@
   color: var(--text-muted);
 }
 
-.flywheel-task-meta {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  margin-top: 3px;
-  flex-wrap: wrap;
-}
-
 .flywheel-task-note {
-  font-size: var(--font-ui-smaller);
+  font-size: 11px;
   color: var(--text-accent);
   cursor: pointer;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  max-width: 160px;
 }
 
 .flywheel-task-note:hover { text-decoration: underline; }
 
+.flywheel-task-meta {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 2px;
+  flex-wrap: wrap;
+}
+
 .flywheel-task-due {
-  font-size: 10px;
+  font-size: 11px;
   padding: 1px 6px;
   border-radius: 4px;
   background: hsl(38 90% 60% / 0.2);
@@ -1459,16 +1986,11 @@
 }
 
 .flywheel-task-tag {
-  font-size: 10px;
+  font-size: 11px;
   padding: 1px 5px;
   border-radius: 3px;
   background: var(--background-modifier-hover);
   color: var(--text-muted);
-}
-
-.flywheel-task-context {
-  font-size: var(--font-ui-smaller);
-  color: var(--text-faint);
 }
 
 .flywheel-task-summary {
@@ -1487,14 +2009,7 @@
   color: var(--text-faint);
 }
 
-.flywheel-task-loading {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 12px;
-  padding: 48px 16px;
-  color: var(--text-faint);
-}
+/* Task loading uses shared .flywheel-splash */
 
 
 /* ===================================================================

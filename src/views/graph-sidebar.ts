@@ -1,8 +1,8 @@
 /**
  * Graph Sidebar View — powered by flywheel-memory MCP
  *
- * Collapsible sections: Vault Info (always), Backlinks, Forward Links,
- * Related Notes (when a note is active). All data from MCP tool calls.
+ * Collapsible sections: Folder, Context Cloud, Backlinks, Forward Links,
+ * Note Intelligence (when a note is active). All data from MCP tool calls.
  */
 
 import { ItemView, WorkspaceLeaf, TFile, setIcon } from 'obsidian';
@@ -20,12 +20,11 @@ export const GRAPH_VIEW_TYPE = 'flywheel-graph';
 export class GraphSidebarView extends ItemView {
   private mcpClient: FlywheelMcpClient;
   private contentContainer!: HTMLDivElement;
-  /** Vault-level sections (Vault Info, Stats, etc.) — rendered once, persist across note changes. */
-  private vaultContainer!: HTMLDivElement;
   /** Note-level sections (Backlinks, Forward Links, etc.) — refreshed on active note change. */
   private noteContainer!: HTMLDivElement;
   private currentNotePath: string | null = null;
-  private vaultSectionsRendered = false;
+  /** Whether the index has been awaited at least once (avoids splash on every note change). */
+  private indexReady = false;
   /** Folder prefixes for periodic notes (daily-notes/, weekly-notes/, etc.) */
   private periodicPrefixes: string[] = [];
   /** Remember collapsed state per section title across note changes */
@@ -57,7 +56,6 @@ export class GraphSidebarView extends ItemView {
 
     this.contentContainer = container.createDiv('flywheel-graph-content');
     this.noteContainer = this.contentContainer.createDiv();
-    this.vaultContainer = this.contentContainer.createDiv();
     this.refresh();
   }
 
@@ -76,10 +74,10 @@ export class GraphSidebarView extends ItemView {
       return;
     }
 
-    // Show splash while index builds, then render everything once ready
-    if (!this.vaultSectionsRendered || force) {
+    // First load: show splash while index builds
+    if (!this.indexReady) {
       this.showSplash('Syncing vault index...');
-      this.waitForIndexThenRender(activeFile, force);
+      this.waitForIndexThenRender(activeFile);
       return;
     }
 
@@ -93,283 +91,30 @@ export class GraphSidebarView extends ItemView {
   }
 
   private showSplash(message: string): void {
-    this.vaultContainer.empty();
     this.noteContainer.empty();
-    this.vaultSectionsRendered = false;
 
-    const empty = this.vaultContainer.createDiv('flywheel-graph-empty');
+    const splash = this.noteContainer.createDiv('flywheel-splash');
     const imgPath = `${this.app.vault.configDir}/plugins/flywheel-crank/flywheel.png`;
-    const imgEl = empty.createEl('img', { cls: 'flywheel-graph-logo' });
+    const imgEl = splash.createEl('img', { cls: 'flywheel-splash-logo' });
     imgEl.src = this.app.vault.adapter.getResourcePath(imgPath);
     imgEl.alt = 'Flywheel';
-    empty.createDiv('flywheel-graph-empty-text').setText(message);
+    splash.createDiv('flywheel-splash-text').setText(message);
   }
 
-  private async waitForIndexThenRender(activeFile: TFile | null, force: boolean): Promise<void> {
+  private async waitForIndexThenRender(activeFile: TFile | null): Promise<void> {
     try {
       await this.mcpClient.waitForIndex();
     } catch {
       // Timed out — render what we can anyway
     }
 
-    // Render vault overview
-    this.vaultContainer.empty();
-    this.vaultSectionsRendered = true;
-    this.renderVaultOverview();
-
-    // Render note sections
+    this.indexReady = true;
     this.noteContainer.empty();
     const generation = ++this.renderGeneration;
     if (activeFile) {
       this.renderNoteHeader(activeFile);
       this.renderNoteSections(activeFile, generation);
     }
-  }
-
-  // ---------------------------------------------------------------------------
-  // Vault Overview section (merged Vault Info + Vault Stats)
-  // ---------------------------------------------------------------------------
-
-  private async renderVaultOverview(): Promise<void> {
-    const section = this.renderSection('Vault Overview', 'info', undefined, (container) => {
-      container.createDiv('flywheel-graph-info-row')
-        .createSpan('flywheel-graph-info-value').setText('loading...');
-    }, true, this.vaultContainer);
-
-    this.populateVaultOverview(section);
-  }
-
-  private async populateVaultOverview(section: HTMLDivElement): Promise<void> {
-    if (!section.isConnected) return;
-
-    try {
-      const health = await this.mcpClient.healthCheck();
-      const content = section.querySelector('.flywheel-graph-section-content') as HTMLDivElement;
-      if (!content) return;
-      content.empty();
-
-      // Counts row with status on the right
-      const countsRow = content.createDiv('flywheel-graph-counts-row');
-      this.renderCountBadge(countsRow, 'file-text', String(health.note_count), 'notes');
-      this.renderCountBadge(countsRow, 'users', String(health.entity_count), 'entities');
-      this.renderCountBadge(countsRow, 'tag', String(health.tag_count), 'tags');
-
-      // Status indicator on right of counts row
-      const statusEl = countsRow.createSpan('flywheel-graph-counts-status');
-      if (health.index_state === 'building') {
-        const icon = statusEl.createSpan('flywheel-graph-status-icon');
-        setIcon(icon, 'loader');
-        icon.addClass('flywheel-status-spin');
-        const progress = (health as any).index_progress;
-        if (progress?.total > 0) {
-          statusEl.createSpan().setText(` ${progress.parsed}/${progress.total}`);
-        } else {
-          statusEl.createSpan().setText(' syncing');
-        }
-      } else {
-        const icon = statusEl.createSpan('flywheel-graph-status-icon flywheel-graph-status-ok');
-        setIcon(icon, 'check-circle');
-        const age = health.index_age_seconds >= 0 ? this.formatAge(health.index_age_seconds) : '—';
-        statusEl.createSpan().setText(` indexed ${age} ago`);
-      }
-
-      // Periodic note locations + templates from inferred config — behind toggle
-      if (health.config && Object.keys(health.config).length > 0) {
-        const cfg = health.config as Record<string, any>;
-        const paths = cfg.paths as Record<string, string> | undefined;
-        const templates = cfg.templates as Record<string, string> | undefined;
-        const hasConfig = (paths && Object.keys(paths).length > 0) ||
-          (templates && Object.keys(templates).length > 0);
-
-        // Store periodic folder prefixes for cloud splitting
-        if (paths) {
-          this.periodicPrefixes = Object.values(paths)
-            .filter((p): p is string => !!p)
-            .map(p => p.endsWith('/') ? p : `${p}/`);
-        }
-
-        if (hasConfig) {
-          const configToggle = content.createDiv('flywheel-graph-more');
-          configToggle.setText('+ vault config');
-          const configGroup = content.createDiv('flywheel-graph-info-group flywheel-graph-details-hidden');
-
-          if (paths && Object.keys(paths).length > 0) {
-            const periodicGroup = configGroup.createDiv('flywheel-graph-info-group');
-            periodicGroup.createDiv('flywheel-graph-info-group-label').setText('Periodic Locations');
-            const labels: Record<string, string> = {
-              daily_notes: 'Daily', weekly_notes: 'Weekly', monthly_notes: 'Monthly',
-              quarterly_notes: 'Quarterly', yearly_notes: 'Yearly', templates: 'Templates',
-            };
-            for (const [key, path] of Object.entries(paths)) {
-              if (path) this.renderInfoRow(periodicGroup, labels[key] ?? key, path);
-            }
-          }
-
-          if (templates && Object.keys(templates).length > 0) {
-            const tplGroup = configGroup.createDiv('flywheel-graph-info-group');
-            tplGroup.createDiv('flywheel-graph-info-group-label').setText('Templates');
-            const tplLabels: Record<string, string> = {
-              daily: 'Daily', weekly: 'Weekly', monthly: 'Monthly',
-              quarterly: 'Quarterly', yearly: 'Yearly',
-            };
-            for (const [key, path] of Object.entries(templates)) {
-              if (path) this.renderInfoRow(tplGroup, tplLabels[key] ?? key, path);
-            }
-          }
-
-          configToggle.addEventListener('click', () => {
-            if (configGroup.hasClass('flywheel-graph-details-hidden')) {
-              configGroup.removeClass('flywheel-graph-details-hidden');
-              configToggle.setText('- vault config');
-            } else {
-              configGroup.addClass('flywheel-graph-details-hidden');
-              configToggle.setText('+ vault config');
-            }
-          });
-        }
-      }
-
-      // Lazy "more" toggle — loads vault stats on first expand
-      let statsLoaded = false;
-      const moreToggle = content.createDiv('flywheel-graph-more');
-      moreToggle.setText('+ vault stats');
-      const statsGroup = content.createDiv('flywheel-graph-info-group flywheel-graph-details-hidden');
-
-      moreToggle.addEventListener('click', async () => {
-        if (statsLoaded) {
-          // Toggle visibility
-          if (statsGroup.hasClass('flywheel-graph-details-hidden')) {
-            statsGroup.removeClass('flywheel-graph-details-hidden');
-            moreToggle.setText('- vault stats');
-          } else {
-            statsGroup.addClass('flywheel-graph-details-hidden');
-            moreToggle.setText('+ vault stats');
-          }
-          return;
-        }
-
-        statsLoaded = true;
-        statsGroup.removeClass('flywheel-graph-details-hidden');
-        moreToggle.setText('- vault stats');
-        statsGroup.createDiv('flywheel-graph-section-empty').setText('loading...');
-
-        try {
-          await this.mcpClient.waitForIndex();
-          const stats = await this.mcpClient.vaultStats();
-          statsGroup.empty();
-
-          this.renderInfoRow(statsGroup, 'Avg links/note', stats.average_links_per_note.toFixed(1));
-          if (stats.orphan_notes.total > 0) {
-            this.renderInfoRow(statsGroup, 'Orphans', `${stats.orphan_notes.content} content, ${stats.orphan_notes.periodic} periodic`);
-          }
-
-          // Most linked notes
-          if (stats.most_linked_notes.length > 0) {
-            const hubGroup = statsGroup.createDiv('flywheel-graph-info-group');
-            hubGroup.createDiv('flywheel-graph-info-group-label').setText('Most Linked');
-            for (const note of stats.most_linked_notes.slice(0, 5)) {
-              const name = note.path.replace(/\.md$/, '').split('/').pop() || note.path;
-              this.renderInfoRow(hubGroup, name, `${note.backlinks}`);
-            }
-          }
-
-          // Top tags
-          if (stats.top_tags.length > 0) {
-            const tagGroup = statsGroup.createDiv('flywheel-graph-info-group');
-            tagGroup.createDiv('flywheel-graph-info-group-label').setText('Top Tags');
-            for (const tag of stats.top_tags.slice(0, 5)) {
-              this.renderInfoRow(tagGroup, tag.tag, String(tag.count));
-            }
-          }
-        } catch (err) {
-          statsGroup.empty();
-          statsGroup.createDiv('flywheel-graph-section-empty')
-            .setText(err instanceof Error ? err.message : 'Failed to load stats');
-        }
-      });
-
-      // Technical details — hidden behind toggle
-      const detailsToggle = content.createDiv('flywheel-graph-more');
-      detailsToggle.setText('+ technical details');
-      const detailsGroup = content.createDiv('flywheel-graph-info-group flywheel-graph-details-hidden');
-
-      // Index statuses sub-group
-      const indexGroup = detailsGroup.createDiv('flywheel-graph-info-group');
-      indexGroup.createDiv('flywheel-graph-info-group-label').setText('Indexes');
-
-      const graphStatus = health.index_state === 'ready'
-        ? `ready · ${health.note_count} notes`
-        : health.index_state === 'building' ? 'building...' : 'error';
-      this.renderInfoRow(indexGroup, 'Graph index', graphStatus);
-
-      const fts5Status = health.fts5_building
-        ? 'building...'
-        : health.fts5_ready ? 'ready · full-text with stemming' : 'not built';
-      this.renderInfoRow(indexGroup, 'Keyword search', fts5Status);
-
-      const semanticStatus = health.embeddings_building
-        ? 'building...'
-        : health.embeddings_ready
-          ? `ready · ${health.embeddings_count} embeddings`
-          : 'not built';
-      this.renderInfoRow(indexGroup, 'Semantic search', semanticStatus);
-
-      // Server info sub-group
-      const serverGroup = detailsGroup.createDiv('flywheel-graph-info-group');
-      serverGroup.createDiv('flywheel-graph-info-group-label').setText('Server');
-      this.renderInfoRow(serverGroup, 'Vault path', health.vault_path);
-      this.renderInfoRow(serverGroup, 'StateDb', `${health.vault_path}/.flywheel/state.db`);
-      if (health.schema_version) {
-        this.renderInfoRow(serverGroup, 'Schema', `v${health.schema_version}`);
-      }
-      this.renderInfoRow(serverGroup, 'MCP', 'connected (stdio)');
-
-      detailsToggle.addEventListener('click', () => {
-        if (detailsGroup.hasClass('flywheel-graph-details-hidden')) {
-          detailsGroup.removeClass('flywheel-graph-details-hidden');
-          detailsToggle.setText('- technical details');
-        } else {
-          detailsGroup.addClass('flywheel-graph-details-hidden');
-          detailsToggle.setText('+ technical details');
-        }
-      });
-
-      // Update count badge
-      const countEl = section.querySelector('.flywheel-graph-section-count') as HTMLElement;
-      if (countEl) countEl.setText(`${health.note_count}`);
-
-      // Keep polling while any index is building or config not yet inferred
-      const configMissing = !health.config || Object.keys(health.config).length === 0;
-      const stillBuilding = health.index_state === 'building' || health.fts5_building || health.embeddings_building || configMissing;
-      if (stillBuilding) {
-        const delay = health.index_state === 'building' ? 5000 : 3000;
-        setTimeout(() => this.populateVaultOverview(section), delay);
-      }
-    } catch (err) {
-      const content = section.querySelector('.flywheel-graph-section-content') as HTMLDivElement;
-      if (content) {
-        content.empty();
-        this.renderInfoRow(content, 'Error', err instanceof Error ? err.message : 'Failed to load');
-      }
-    }
-  }
-
-  /** Format seconds into a human-readable age string. */
-  private formatAge(seconds: number): string {
-    if (seconds < 0) return 'unknown';
-    if (seconds < 60) return `${seconds}s`;
-    if (seconds < 3600) return `${Math.floor(seconds / 60)}m`;
-    const h = Math.floor(seconds / 3600);
-    const m = Math.floor((seconds % 3600) / 60);
-    return m > 0 ? `${h}h ${m}m` : `${h}h`;
-  }
-
-  private renderCountBadge(container: HTMLDivElement, icon: string, count: string, label: string): void {
-    const badge = container.createDiv('flywheel-graph-count-badge');
-    const iconEl = badge.createSpan('flywheel-graph-count-icon');
-    setIcon(iconEl, icon);
-    badge.createSpan('flywheel-graph-count-num').setText(count);
-    badge.createSpan('flywheel-graph-count-label').setText(label);
   }
 
   private renderInfoRow(container: HTMLDivElement, label: string, value: string): void {
@@ -450,9 +195,11 @@ export class GraphSidebarView extends ItemView {
     const folder = file.path.split('/').slice(0, -1).join('/') || '';
     const folderLabel = folder || '(root)';
 
+    const folderInfo = 'Shows frontmatter fields used in this folder and how this note compares. ' +
+      'Missing fields are common in sibling notes but absent here.';
     const section = this.renderSection(`Folder: ${folderLabel}`, 'folder', undefined, (container) => {
       container.createDiv('flywheel-graph-section-empty').setText('loading...');
-    }, true, undefined, 'Folder');
+    }, true, undefined, 'Folder', folderInfo);
 
     try {
       await this.mcpClient.waitForIndex();
@@ -691,11 +438,11 @@ export class GraphSidebarView extends ItemView {
         return true;
       });
 
-      // Context Cloud (rendered first) — unified view of all related notes
-      this.renderContextCloud(backlinksResp, forwardLinksResp, suggestResp, similarResp, semanticResp);
-
-      // Folder section (before links)
+      // Folder section (first — most actionable)
       await this.renderFolderSection(file, generation);
+
+      // Context Cloud — unified view of all related notes
+      this.renderContextCloud(backlinksResp, forwardLinksResp, suggestResp, similarResp, semanticResp);
 
       const MAX_ITEMS = 5;
 
@@ -714,6 +461,8 @@ export class GraphSidebarView extends ItemView {
       const blSorted = [...blGrouped.values()].sort((a, b) => b.count - a.count);
       const uniqueBacklinks = blSorted.length;
 
+      const backlinksInfo = 'Notes that link to this note. Grouped by source note \u2014 ' +
+        'the count shows how many times each note links here.';
       this.renderSection('Backlinks', 'arrow-left', uniqueBacklinks, (container) => {
         if (blSorted.length === 0) {
           container.createDiv('flywheel-graph-section-empty').setText('No backlinks');
@@ -731,9 +480,11 @@ export class GraphSidebarView extends ItemView {
             this.renderBacklinkGrouped(container, bl);
           });
         }
-      }, true);
+      }, true, undefined, undefined, backlinksInfo);
 
       // Forward links section
+      const forwardInfo = 'Outgoing wikilinks from this note. Dead links (marked \'missing\') ' +
+        'point to notes that don\'t exist yet.';
       this.renderSection('Forward Links', 'arrow-right', uniqueLinks.length, (container) => {
         if (uniqueLinks.length === 0) {
           container.createDiv('flywheel-graph-section-empty').setText('No outgoing links');
@@ -751,7 +502,7 @@ export class GraphSidebarView extends ItemView {
             this.renderForwardLink(container, link);
           });
         }
-      }, true);
+      }, true, undefined, undefined, forwardInfo);
 
       // Note Intelligence (lazy-loaded) — structural analysis, not related notes
       this.renderNoteIntelligence(file, generation);
@@ -855,6 +606,10 @@ export class GraphSidebarView extends ItemView {
     const unlinkedEntities = suggestResp?.scored_suggestions?.filter(s => s.confidence !== 'low') ?? [];
     if (unlinkedEntities.length === 0) return;
 
+    const unlinkedInfo = 'Entities in your vault that appear in this note\'s content but aren\'t linked yet. ' +
+      'The score reflects how relevant the entity is based on: content overlap, co-occurrence patterns, ' +
+      'entity importance (hub notes, people), cross-folder connections, recency, and semantic similarity.';
+
     this.renderSection('Unlinked Mentions', 'link-2', unlinkedEntities.length, (container) => {
       // Lazy-load: only fetch full mentions on first expand
       let loaded = false;
@@ -936,7 +691,7 @@ export class GraphSidebarView extends ItemView {
         loadMentions();
         observer.disconnect();
       }
-    }, true);
+    }, true, undefined, undefined, unlinkedInfo);
   }
 
   // ---------------------------------------------------------------------------
@@ -1026,6 +781,7 @@ export class GraphSidebarView extends ItemView {
   // ---------------------------------------------------------------------------
 
   private renderNoteIntelligence(file: TFile, generation: number): void {
+    const intelligenceInfo = 'Structural analysis of this note: suggested metadata and patterns found in the text.';
     this.renderSection('Note Intelligence', 'brain', undefined, (container) => {
       let loaded = false;
       const loadIntelligence = async () => {
@@ -1035,41 +791,12 @@ export class GraphSidebarView extends ItemView {
         container.empty();
 
         try {
-          const [proseResp, fmResp, crossResp] = await Promise.all([
+          const [proseResp, fmResp] = await Promise.all([
             this.mcpClient.noteIntelligence(file.path, 'prose_patterns').catch(() => null),
             this.mcpClient.noteIntelligence(file.path, 'suggest_frontmatter').catch(() => null),
-            this.mcpClient.noteIntelligence(file.path, 'cross_layer').catch(() => null),
           ]);
 
           let hasContent = false;
-
-          // Cross-layer analysis (shown first — most actionable)
-          // Server returns: { frontmatter_only: [...], prose_only: [...], consistent: [...] }
-          const fmOnly = (crossResp as any)?.frontmatter_only ?? [];
-          const proseOnly = (crossResp as any)?.prose_only ?? [];
-          const crossIssues = [...fmOnly, ...proseOnly];
-          if (crossIssues.length > 0) {
-            hasContent = true;
-            container.createDiv('flywheel-graph-info-group-label').setText('Cross-Layer Gaps');
-            if (fmOnly.length > 0) {
-              for (const item of fmOnly.slice(0, 3)) {
-                const row = container.createDiv('flywheel-graph-intelligence-issue');
-                const iconEl = row.createSpan('flywheel-graph-intelligence-issue-icon');
-                setIcon(iconEl, 'alert-triangle');
-                const desc = `Frontmatter links ${item.target}${item.field ? ` (${item.field})` : ''} but prose doesn't`;
-                row.createSpan('flywheel-graph-intelligence-issue-text').setText(desc);
-              }
-            }
-            if (proseOnly.length > 0) {
-              for (const item of proseOnly.slice(0, 3)) {
-                const row = container.createDiv('flywheel-graph-intelligence-issue');
-                const iconEl = row.createSpan('flywheel-graph-intelligence-issue-icon');
-                setIcon(iconEl, 'info');
-                const desc = `Prose mentions ${item.target}${item.pattern ? ` (${item.pattern})` : ''} but no frontmatter link`;
-                row.createSpan('flywheel-graph-intelligence-issue-text').setText(desc);
-              }
-            }
-          }
 
           // Suggested frontmatter
           // Server returns: { suggestions: [{ field, value, source_lines, confidence, preserveWikilink }] }
@@ -1079,11 +806,36 @@ export class GraphSidebarView extends ItemView {
             container.createDiv('flywheel-graph-info-group-label').setText('Suggested Frontmatter');
             for (const sug of suggestions.slice(0, 6)) {
               const row = container.createDiv('flywheel-graph-intelligence-suggestion');
-              const nameEl = row.createSpan('flywheel-graph-schema-field-name');
+              const headerRow = row.createDiv('flywheel-graph-intelligence-suggestion-header');
+              const nameEl = headerRow.createSpan('flywheel-graph-schema-field-name');
               nameEl.setText(sug.field ?? 'unknown');
-              const valueEl = row.createSpan('flywheel-graph-schema-field-value');
+
+              // Apply button
+              const applyBtn = headerRow.createSpan('flywheel-graph-apply-btn');
+              setIcon(applyBtn, 'plus');
+              const sugValStr = typeof sug.value === 'string' ? sug.value : JSON.stringify(sug.value);
+              applyBtn.setAttribute('aria-label', `Add frontmatter ${sug.field}: ${sugValStr} (only if field is missing)`);
+              applyBtn.addEventListener('click', async (e) => {
+                e.stopPropagation();
+                try {
+                  await this.mcpClient.updateFrontmatter(
+                    file.path,
+                    { [sug.field]: sug.value },
+                    true,
+                  );
+                  applyBtn.empty();
+                  setIcon(applyBtn, 'check');
+                  applyBtn.addClass('flywheel-graph-apply-btn-done');
+                  row.addClass('flywheel-graph-intelligence-suggestion-applied');
+                } catch (err) {
+                  console.error('Flywheel Crank: failed to apply frontmatter', err);
+                }
+              });
+
+              const valueEl = row.createDiv('flywheel-graph-schema-field-value');
               const val = sug.value ?? '';
-              valueEl.setText(typeof val === 'string' ? val : JSON.stringify(val));
+              const valStr = typeof val === 'string' ? val : JSON.stringify(val);
+              this.renderTextWithWikilinks(valueEl, valStr);
               if (sug.confidence != null) {
                 const pct = Math.round(sug.confidence * 100);
                 row.createDiv('flywheel-graph-link-snippet').setText(`${pct}% confidence`);
@@ -1098,9 +850,30 @@ export class GraphSidebarView extends ItemView {
             hasContent = true;
             container.createDiv('flywheel-graph-info-group-label').setText('Prose Patterns');
             for (const pat of patterns.slice(0, 8)) {
-              const row = container.createDiv('flywheel-graph-info-row');
-              row.createSpan('flywheel-graph-info-label').setText(pat.key ?? 'pattern');
-              row.createSpan('flywheel-graph-info-value').setText(pat.value ?? JSON.stringify(pat));
+              const row = container.createDiv('flywheel-graph-intelligence-suggestion');
+              const headerRow = row.createDiv('flywheel-graph-intelligence-suggestion-header');
+              headerRow.createSpan('flywheel-graph-schema-field-name').setText(pat.key ?? 'pattern');
+
+              // Apply button
+              const applyBtn = headerRow.createSpan('flywheel-graph-apply-btn');
+              setIcon(applyBtn, 'plus');
+              applyBtn.setAttribute('aria-label', `Set frontmatter ${pat.key}: ${pat.value}`);
+              applyBtn.addEventListener('click', async (e) => {
+                e.stopPropagation();
+                try {
+                  await this.mcpClient.updateFrontmatter(file.path, { [pat.key]: pat.value }, false);
+                  applyBtn.empty();
+                  setIcon(applyBtn, 'check');
+                  applyBtn.addClass('flywheel-graph-apply-btn-done');
+                  row.addClass('flywheel-graph-intelligence-suggestion-applied');
+                } catch (err) {
+                  console.error('Flywheel Crank: failed to apply prose pattern', err);
+                }
+              });
+
+              const valueEl = row.createDiv('flywheel-graph-schema-field-value');
+              const valStr = pat.value ?? JSON.stringify(pat);
+              this.renderTextWithWikilinks(valueEl, valStr);
             }
           }
 
@@ -1109,7 +882,7 @@ export class GraphSidebarView extends ItemView {
           }
 
           // Update count badge
-          const total = crossIssues.length + suggestions.length + patterns.length;
+          const total = suggestions.length + patterns.length;
           if (total > 0) {
             const section = container.parentElement!;
             const countEl = section.querySelector('.flywheel-graph-section-count') as HTMLElement;
@@ -1136,7 +909,7 @@ export class GraphSidebarView extends ItemView {
         loadIntelligence();
         observer.disconnect();
       }
-    }, true);
+    }, true, undefined, undefined, intelligenceInfo);
   }
 
   // ---------------------------------------------------------------------------
@@ -1304,6 +1077,11 @@ export class GraphSidebarView extends ItemView {
       .slice(0, MAX_PERIODIC)
       .sort((a, b) => b.name.localeCompare(a.name, undefined, { sensitivity: 'base' }));
 
+    const contextInfo = 'Each note\'s size reflects how strongly it relates to the current note. ' +
+      'Scoring factors: direct links (backlinks/forward), content similarity (BM25), ' +
+      'wikilink suggestion strength (11-layer entity scoring), and semantic similarity ' +
+      '(when embeddings are built). Hover individual items for a detailed breakdown.';
+
     this.renderSection('Context', 'cloud', mainEntries.length + periodicEntries.length, (container) => {
       // Main cloud
       if (mainEntries.length > 0) {
@@ -1316,7 +1094,7 @@ export class GraphSidebarView extends ItemView {
         periodicLabel.setText('periodic');
         this.renderCloudItems(container, periodicEntries, 11, 16);
       }
-    });
+    }, false, undefined, undefined, contextInfo);
   }
 
   private renderCloudItems(
@@ -1406,6 +1184,39 @@ export class GraphSidebarView extends ItemView {
   }
 
   // ---------------------------------------------------------------------------
+  // Wikilink rendering helper
+  // ---------------------------------------------------------------------------
+
+  /** Render text, converting [[wikilinks]] into clickable spans. */
+  private renderTextWithWikilinks(el: HTMLElement, text: string): void {
+    const wikiRe = /\[\[([^\]|]+?)(?:\|([^\]]+?))?\]\]/g;
+    let lastIndex = 0;
+    let match: RegExpExecArray | null;
+
+    while ((match = wikiRe.exec(text)) !== null) {
+      if (match.index > lastIndex) {
+        el.appendText(text.slice(lastIndex, match.index));
+      }
+      const target = match[1];
+      const display = match[2] || target.split('/').pop() || target;
+      const link = el.createSpan('flywheel-task-wikilink');
+      link.setText(display);
+      link.addEventListener('click', (e) => {
+        e.stopPropagation();
+        this.app.workspace.openLinkText(target, '', false);
+      });
+      lastIndex = match.index + match[0].length;
+    }
+
+    if (lastIndex < text.length) {
+      el.appendText(text.slice(lastIndex));
+    }
+    if (lastIndex === 0) {
+      el.setText(text);
+    }
+  }
+
+  // ---------------------------------------------------------------------------
   // Shared section renderer
   // ---------------------------------------------------------------------------
 
@@ -1417,6 +1228,7 @@ export class GraphSidebarView extends ItemView {
     collapsed = false,
     target?: HTMLDivElement,
     stateKey?: string,
+    info?: string,
   ): HTMLDivElement {
     const key = stateKey ?? title;
     const section = (target ?? this.noteContainer).createDiv('flywheel-graph-section');
@@ -1436,6 +1248,14 @@ export class GraphSidebarView extends ItemView {
     const iconEl = headerEl.createSpan('flywheel-graph-section-icon');
     setIcon(iconEl, icon);
     headerEl.createSpan('flywheel-graph-section-title').setText(title);
+
+    if (info) {
+      const infoIcon = headerEl.createSpan('flywheel-graph-section-info');
+      setIcon(infoIcon, 'info');
+      infoIcon.setAttribute('aria-label', info);
+      infoIcon.addEventListener('click', (e) => e.stopPropagation());
+    }
+
     if (count !== undefined) {
       headerEl.createSpan('flywheel-graph-section-count').setText(`${count}`);
     }

@@ -113,7 +113,7 @@ export class FlywheelCrankSettingTab extends PluginSettingTab {
         })
       );
 
-    // Exclude folders
+    // Indexing
     containerEl.createEl('h3', { text: 'Indexing' });
 
     new Setting(containerEl)
@@ -130,5 +130,41 @@ export class FlywheelCrankSettingTab extends PluginSettingTab {
           await this.plugin.saveSettings();
         })
       );
+
+    // Analysis
+    containerEl.createEl('h3', { text: 'Analysis' });
+
+    const excludeTagsSetting = new Setting(containerEl)
+      .setName('Exclude tags from analysis')
+      .setDesc('Notes with these tags are filtered from hub rankings and semantic link suggestions (comma-separated). Recurring tags like "habit" and "daily" are auto-detected on startup.');
+
+    // Load current value from MCP server, fall back to empty
+    if (this.plugin.mcpClient.connected) {
+      excludeTagsSetting.addTextArea(text => {
+        text.setPlaceholder('habit, daily, recurring');
+        text.inputEl.rows = 2;
+
+        // Load async
+        this.plugin.mcpClient.getFlywheelConfig().then(cfg => {
+          const tags = cfg.exclude_analysis_tags ?? [];
+          text.setValue(tags.join(', '));
+        }).catch(() => {
+          text.setPlaceholder('(connect to server to load)');
+        });
+
+        text.onChange(async (value) => {
+          const tags = value.split(',').map(s => s.trim()).filter(s => s.length > 0);
+          try {
+            await this.plugin.mcpClient.setFlywheelConfig('exclude_analysis_tags', tags);
+          } catch (err) {
+            console.error('Flywheel Crank: failed to save exclude_analysis_tags', err);
+          }
+        });
+
+        return text;
+      });
+    } else {
+      excludeTagsSetting.setDesc('Connect to MCP server to configure. ' + excludeTagsSetting.descEl.textContent);
+    }
   }
 }

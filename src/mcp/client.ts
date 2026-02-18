@@ -224,6 +224,40 @@ export interface McpSuggestWikilinksResponse {
   scored_suggestions?: McpScoredSuggestion[];
 }
 
+// Entity index (from list_entities)
+export interface McpEntityItem {
+  name: string;
+  path: string;
+  aliases: string[];
+  hubScore?: number;
+}
+
+export interface McpEntityIndexResponse {
+  technologies: McpEntityItem[];
+  acronyms: McpEntityItem[];
+  people: McpEntityItem[];
+  projects: McpEntityItem[];
+  organizations: McpEntityItem[];
+  locations: McpEntityItem[];
+  concepts: McpEntityItem[];
+  animals: McpEntityItem[];
+  media: McpEntityItem[];
+  events: McpEntityItem[];
+  documents: McpEntityItem[];
+  vehicles: McpEntityItem[];
+  health: McpEntityItem[];
+  finance: McpEntityItem[];
+  food: McpEntityItem[];
+  hobbies: McpEntityItem[];
+  other: McpEntityItem[];
+  _metadata: {
+    total_entities: number;
+    generated_at: string;
+    vault_path: string;
+    source: string;
+  };
+}
+
 // Graph analysis types
 export type GraphAnalysisMode =
   | 'orphans' | 'dead_ends' | 'sources' | 'hubs' | 'stale'
@@ -262,7 +296,7 @@ export interface McpUnlinkedMentionsResponse {
 // Note intelligence
 export type NoteIntelligenceMode =
   | 'prose_patterns' | 'suggest_frontmatter' | 'suggest_wikilinks'
-  | 'cross_layer' | 'compute' | 'semantic_links' | 'all';
+  | 'compute' | 'semantic_links' | 'all';
 
 export interface McpNoteIntelligenceResponse {
   path: string;
@@ -347,6 +381,73 @@ export interface McpVaultGrowthResponse {
   history?: Array<{ timestamp: number; metric: string; value: number }>;
   trends?: Array<{ metric: string; current: number; previous: number; delta: number; pct_change: number }>;
   index_activity?: { summary: Record<string, unknown>; recent_events: Array<Record<string, unknown>> };
+}
+
+// Broken links
+export interface McpBrokenLink {
+  source: string;
+  target: string;
+  line: number;
+  suggestion?: string;
+}
+
+export interface McpValidateLinksResponse {
+  scope: string;
+  total_links: number;
+  valid_links: number;
+  broken_links: number;
+  returned_count: number;
+  broken: McpBrokenLink[];
+}
+
+// Wikilink feedback
+export interface McpFeedbackEntry {
+  id: number;
+  entity: string;
+  context: string;
+  note_path: string;
+  correct: boolean;
+  created_at: string;
+}
+
+export interface McpEntityFeedbackStats {
+  entity: string;
+  total: number;
+  correct: number;
+  incorrect: number;
+  accuracy: number;
+  suppressed: boolean;
+}
+
+export interface McpWikilinkFeedbackResponse {
+  mode: 'list' | 'stats';
+  entries?: McpFeedbackEntry[];
+  stats?: McpEntityFeedbackStats[];
+  total_feedback?: number;
+  total_suppressed?: number;
+}
+
+// Server log
+export interface McpServerLogEntry {
+  ts: number;
+  component: string;
+  message: string;
+  level: 'info' | 'warn' | 'error';
+}
+
+export interface McpServerLogResponse {
+  entries: McpServerLogEntry[];
+  server_uptime_ms: number;
+}
+
+// Flywheel config
+export interface McpFlywheelConfigResponse {
+  vault_name?: string;
+  paths?: Record<string, string>;
+  templates?: Record<string, string>;
+  exclude_task_tags?: string[];
+  exclude_analysis_tags?: string[];
+  [key: string]: unknown;
 }
 
 // Write tool responses
@@ -648,6 +749,17 @@ export class FlywheelMcpClient {
   }
 
   // -------------------------------------------------------------------------
+  // Entities
+  // -------------------------------------------------------------------------
+
+  /**
+   * List all entities grouped by category with hub scores.
+   */
+  async listEntities(): Promise<McpEntityIndexResponse> {
+    return this.callTool<McpEntityIndexResponse>('list_entities', {});
+  }
+
+  // -------------------------------------------------------------------------
   // Graph analysis
   // -------------------------------------------------------------------------
 
@@ -802,5 +914,70 @@ export class FlywheelMcpClient {
       suggestOutgoingLinks: false,
       validate: false,
     });
+  }
+
+  /**
+   * Validate wikilinks across the vault — find broken links with optional typo suggestions.
+   */
+  async validateLinks(typosOnly = false, limit = 50): Promise<McpValidateLinksResponse> {
+    return this.callTool<McpValidateLinksResponse>('validate_links', {
+      typos_only: typosOnly,
+      limit,
+    });
+  }
+
+  /**
+   * Get wikilink feedback stats or entries.
+   */
+  async wikilinkFeedback(mode: 'list' | 'stats', entity?: string, limit?: number): Promise<McpWikilinkFeedbackResponse> {
+    return this.callTool<McpWikilinkFeedbackResponse>('wikilink_feedback', {
+      mode,
+      ...(entity ? { entity } : {}),
+      ...(limit ? { limit } : {}),
+    });
+  }
+
+  /**
+   * Update frontmatter fields on a note.
+   */
+  async updateFrontmatter(
+    path: string,
+    frontmatter: Record<string, unknown>,
+    onlyIfMissing = false,
+  ): Promise<McpMutationResponse> {
+    return this.callTool<McpMutationResponse>('vault_update_frontmatter', {
+      path,
+      frontmatter,
+      only_if_missing: onlyIfMissing,
+    });
+  }
+
+  // -------------------------------------------------------------------------
+  // Config
+  // -------------------------------------------------------------------------
+
+  /**
+   * Get the current FlywheelConfig from the MCP server.
+   */
+  async getFlywheelConfig(): Promise<McpFlywheelConfigResponse> {
+    return this.callTool<McpFlywheelConfigResponse>('flywheel_config', { mode: 'get' });
+  }
+
+  /**
+   * Update a single key in FlywheelConfig.
+   */
+  async setFlywheelConfig(key: string, value: unknown): Promise<McpFlywheelConfigResponse> {
+    return this.callTool<McpFlywheelConfigResponse>('flywheel_config', { mode: 'set', key, value });
+  }
+
+  // -------------------------------------------------------------------------
+  // Server log
+  // -------------------------------------------------------------------------
+
+  /**
+   * Query the server's in-memory activity log.
+   */
+  async getServerLog(options: { since?: number; component?: string; limit?: number } = {}): Promise<McpServerLogResponse> {
+    return this.callTool<McpServerLogResponse>('server_log', options);
   }
 }

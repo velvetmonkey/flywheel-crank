@@ -39,7 +39,7 @@ export default class FlywheelCrankPlugin extends Plugin {
 
     // Register views
     this.registerView(GRAPH_VIEW_TYPE, (leaf) => new GraphSidebarView(leaf, this.mcpClient));
-    this.registerView(ENTITY_BROWSER_VIEW_TYPE, (leaf) => new EntityBrowserView(leaf));
+    this.registerView(ENTITY_BROWSER_VIEW_TYPE, (leaf) => new EntityBrowserView(leaf, this.mcpClient));
     this.registerView(VAULT_HEALTH_VIEW_TYPE, (leaf) => new VaultHealthView(leaf, this.mcpClient));
     this.registerView(TASK_DASHBOARD_VIEW_TYPE, (leaf) => new TaskDashboardView(leaf, this.mcpClient));
 
@@ -221,7 +221,9 @@ export default class FlywheelCrankPlugin extends Plugin {
     const leaves = this.app.workspace.getLeavesOfType(GRAPH_VIEW_TYPE);
     for (const leaf of leaves) {
       const view = leaf.view as GraphSidebarView;
-      view.refresh(force);
+      if (typeof view.refresh === 'function') {
+        view.refresh(force);
+      }
     }
   }
 

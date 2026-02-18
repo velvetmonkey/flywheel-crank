@@ -3,14 +3,35 @@
  *
  * Shows vault-wide tasks (markdown checkboxes) from all notes,
  * with status filtering and direct toggle support via MCP.
+ * Tasks are grouped by folder with collapsible sections.
  */
 
-import { ItemView, WorkspaceLeaf, setIcon } from 'obsidian';
+import { ItemView, MarkdownView, WorkspaceLeaf, setIcon } from 'obsidian';
 import type { FlywheelMcpClient, McpTask } from '../mcp/client';
 
 export const TASK_DASHBOARD_VIEW_TYPE = 'flywheel-task-dashboard';
 
 type StatusFilter = 'open' | 'completed' | 'all';
+
+/** Group tasks by their parent folder path. Root-level notes go under "Notes". */
+function groupTasksByFolder(tasks: McpTask[]): Map<string, McpTask[]> {
+  const groups = new Map<string, McpTask[]>();
+  for (const task of tasks) {
+    const lastSlash = task.path.lastIndexOf('/');
+    const folder = lastSlash > 0 ? task.path.substring(0, lastSlash) : 'Notes';
+    const list = groups.get(folder);
+    if (list) list.push(task);
+    else groups.set(folder, [task]);
+  }
+  // Sort by folder name (Notes first, then alphabetical)
+  return new Map(
+    [...groups.entries()].sort((a, b) => {
+      if (a[0] === 'Notes') return -1;
+      if (b[0] === 'Notes') return 1;
+      return a[0].localeCompare(b[0]);
+    })
+  );
+}
 
 export class TaskDashboardView extends ItemView {
   private mcpClient: FlywheelMcpClient;
@@ -18,6 +39,7 @@ export class TaskDashboardView extends ItemView {
   private filter: StatusFilter = 'open';
   private counts = { open: 0, completed: 0, total: 0 };
   private loading = false;
+  private collapsedFolders = new Map<string, boolean>();
 
   constructor(leaf: WorkspaceLeaf, mcpClient: FlywheelMcpClient) {
     super(leaf);
@@ -63,9 +85,10 @@ export class TaskDashboardView extends ItemView {
 
     try {
       const statusParam = this.filter === 'all' ? 'all' : this.filter;
+      const limit = this.filter === 'completed' ? 100 : 200;
       const response = await this.mcpClient.queryTasks({
         status: statusParam,
-        limit: 200,
+        limit,
       });
 
       this.tasks = response.tasks;
@@ -87,6 +110,8 @@ export class TaskDashboardView extends ItemView {
     } catch (err) {
       console.error('Flywheel Tasks: failed to fetch tasks', err);
       this.tasks = [];
+      // Index may still be building — retry after a delay
+      setTimeout(() => this.fetchTasks(), 5000);
     } finally {
       this.loading = false;
       this.render();
@@ -120,7 +145,7 @@ export class TaskDashboardView extends ItemView {
     }
 
     if (this.loading) {
-      this.renderLoadingInto(container);
+      this.renderSplashInto(container);
       return;
     }
 
@@ -133,15 +158,53 @@ export class TaskDashboardView extends ItemView {
       return;
     }
 
-    for (const task of this.tasks) {
-      this.renderTask(list, task);
+    const groups = groupTasksByFolder(this.tasks);
+    for (const [folder, tasks] of groups) {
+      this.renderFolder(list, folder, tasks);
     }
 
     // Summary bar
     const summary = container.createDiv('flywheel-task-summary');
-    summary.setText(
+    summary.createSpan().setText(
       `${this.counts.open} open \u00B7 ${this.counts.completed} completed \u00B7 ${this.counts.total} total`
     );
+    const summaryInfo = summary.createSpan('flywheel-graph-section-info');
+    setIcon(summaryInfo, 'info');
+    summaryInfo.setAttribute('aria-label',
+      'Tasks extracted from markdown checkboxes across all notes. ' +
+      'Toggle status directly \u2014 changes are written back to the source note.');
+    summaryInfo.addEventListener('click', (e) => e.stopPropagation());
+  }
+
+  private renderFolder(container: HTMLElement, folder: string, tasks: McpTask[]): void {
+    const isCollapsed = this.collapsedFolders.get(folder) ?? false;
+    const section = container.createDiv(`flywheel-task-folder${isCollapsed ? ' is-collapsed' : ''}`);
+
+    // Header
+    const header = section.createDiv('flywheel-task-folder-header');
+    header.addEventListener('click', () => {
+      const nowCollapsed = !this.collapsedFolders.get(folder);
+      this.collapsedFolders.set(folder, nowCollapsed);
+      section.toggleClass('is-collapsed', nowCollapsed);
+    });
+
+    const iconEl = header.createDiv('flywheel-task-folder-icon');
+    setIcon(iconEl, 'folder');
+
+    const nameEl = header.createDiv('flywheel-task-folder-name');
+    nameEl.setText(folder);
+
+    const countEl = header.createDiv('flywheel-task-folder-count');
+    countEl.setText(String(tasks.length));
+
+    const chevron = header.createDiv('flywheel-task-folder-chevron');
+    setIcon(chevron, 'chevron-down');
+
+    // Content
+    const content = section.createDiv('flywheel-task-folder-content');
+    for (const task of tasks) {
+      this.renderTask(content, task);
+    }
   }
 
   private renderTask(container: HTMLElement, task: McpTask): void {
@@ -166,40 +229,83 @@ export class TaskDashboardView extends ItemView {
     // Content wrapper
     const content = item.createDiv('flywheel-task-content');
 
-    // Task text
+    // Line 1: task text with wikilinks rendered as clickable links
     const textEl = content.createDiv(
       `flywheel-task-text${task.status === 'completed' ? ' is-completed' : ''}`
     );
-    textEl.setText(task.text);
+    this.renderTextWithWikilinks(textEl, task.text);
 
-    // Meta row
-    const meta = content.createDiv('flywheel-task-meta');
-
-    // Source note link
+    // Line 2 (meta): note link + due date + tags — only if any exist
     const noteName = task.path.replace(/\.md$/, '').split('/').pop() || task.path;
-    const noteLink = meta.createSpan('flywheel-task-note');
-    noteLink.setText(noteName);
-    noteLink.addEventListener('click', (e) => {
-      e.stopPropagation();
-      this.app.workspace.openLinkText(task.path, '', false);
-    });
+    const hasMeta = noteName || task.due_date || task.tags.length > 0;
 
-    // Due date badge
-    if (task.due_date) {
-      const due = meta.createSpan('flywheel-task-due');
-      due.setText(task.due_date);
+    if (hasMeta) {
+      const meta = content.createDiv('flywheel-task-meta');
+
+      const noteWrap = meta.createSpan('flywheel-task-meta-item');
+      const noteIcon = noteWrap.createSpan('flywheel-task-meta-icon');
+      setIcon(noteIcon, 'file-text');
+      const noteLink = noteWrap.createSpan('flywheel-task-note');
+      noteLink.setText(noteName);
+      noteLink.addEventListener('click', async (e) => {
+        e.stopPropagation();
+        await this.app.workspace.openLinkText(task.path, '', false);
+        const view = this.app.workspace.getActiveViewOfType(MarkdownView);
+        if (view) {
+          const line = Math.max(0, task.line - 1);
+          view.editor.setCursor({ line, ch: 0 });
+          view.editor.scrollIntoView({ from: { line, ch: 0 }, to: { line, ch: 0 } }, true);
+        }
+      });
+
+      if (task.due_date) {
+        const dueWrap = meta.createSpan('flywheel-task-meta-item');
+        const dueIcon = dueWrap.createSpan('flywheel-task-meta-icon');
+        setIcon(dueIcon, 'calendar');
+        const due = dueWrap.createSpan('flywheel-task-due');
+        due.setText(task.due_date);
+      }
+
+      for (const tag of task.tags) {
+        const tagEl = meta.createSpan('flywheel-task-tag');
+        tagEl.setText(tag);
+      }
+    }
+  }
+
+  /** Render task text, converting [[wikilinks]] into clickable spans. */
+  private renderTextWithWikilinks(el: HTMLElement, text: string): void {
+    const wikiRe = /\[\[([^\]|]+?)(?:\|([^\]]+?))?\]\]/g;
+    let lastIndex = 0;
+    let match: RegExpExecArray | null;
+
+    while ((match = wikiRe.exec(text)) !== null) {
+      // Text before the link
+      if (match.index > lastIndex) {
+        el.appendText(text.slice(lastIndex, match.index));
+      }
+
+      const target = match[1];
+      const display = match[2] || target.split('/').pop() || target;
+
+      const link = el.createSpan('flywheel-task-wikilink');
+      link.setText(display);
+      link.addEventListener('click', (e) => {
+        e.stopPropagation();
+        this.app.workspace.openLinkText(target, '', false);
+      });
+
+      lastIndex = match.index + match[0].length;
     }
 
-    // Tags
-    for (const tag of task.tags) {
-      const tagEl = meta.createSpan('flywheel-task-tag');
-      tagEl.setText(tag);
+    // Remaining text after last link
+    if (lastIndex < text.length) {
+      el.appendText(text.slice(lastIndex));
     }
 
-    // Context
-    if (task.context) {
-      const ctx = content.createDiv('flywheel-task-context');
-      ctx.setText(task.context);
+    // No wikilinks at all — just set plain text
+    if (lastIndex === 0) {
+      el.setText(text);
     }
   }
 
@@ -223,15 +329,17 @@ export class TaskDashboardView extends ItemView {
       });
     }
 
-    this.renderLoadingInto(container);
+    this.renderSplashInto(container);
   }
 
-  private renderLoadingInto(container: HTMLElement): void {
-    const loading = container.createDiv('flywheel-task-loading');
-    const iconEl = loading.createDiv();
-    setIcon(iconEl, 'loader');
-    loading.createDiv().setText(
-      this.mcpClient.connected ? 'Loading tasks...' : 'Waiting for connection...'
+  private renderSplashInto(container: HTMLElement): void {
+    const splash = container.createDiv('flywheel-splash');
+    const imgPath = `${this.app.vault.configDir}/plugins/flywheel-crank/flywheel.png`;
+    const imgEl = splash.createEl('img', { cls: 'flywheel-splash-logo' });
+    imgEl.src = this.app.vault.adapter.getResourcePath(imgPath);
+    imgEl.alt = '';
+    splash.createDiv('flywheel-splash-text').setText(
+      this.mcpClient.connected ? 'Loading tasks...' : 'Connecting to flywheel-memory...'
     );
   }
 }
