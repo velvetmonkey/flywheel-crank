@@ -450,6 +450,27 @@ export interface McpFlywheelConfigResponse {
   [key: string]: unknown;
 }
 
+// Merge suggestions
+export interface McpMergeSuggestion {
+  source: { name: string; path: string; category: string; hubScore: number; aliases: string[] };
+  target: { name: string; path: string; category: string; hubScore: number; aliases: string[] };
+  reason: string;
+  confidence: number;
+}
+
+export interface McpMergeSuggestionsResponse {
+  suggestions: McpMergeSuggestion[];
+  total_candidates?: number;
+}
+
+export interface McpMergeResult {
+  success: boolean;
+  message: string;
+  path?: string;
+  preview?: string;
+  backlinks_updated?: number;
+}
+
 // Write tool responses
 export interface McpMutationResponse {
   success: boolean;
@@ -757,6 +778,42 @@ export class FlywheelMcpClient {
    */
   async listEntities(): Promise<McpEntityIndexResponse> {
     return this.callTool<McpEntityIndexResponse>('list_entities', {});
+  }
+
+  /**
+   * Get merge suggestions for potentially duplicate entities.
+   */
+  async suggestEntityMerges(limit = 50): Promise<McpMergeSuggestionsResponse> {
+    return this.callTool<McpMergeSuggestionsResponse>('suggest_entity_merges', { limit });
+  }
+
+  /**
+   * Permanently dismiss a merge suggestion so it never reappears.
+   */
+  async dismissMergeSuggestion(
+    sourcePath: string,
+    targetPath: string,
+    sourceName: string,
+    targetName: string,
+    reason: string
+  ): Promise<{ dismissed: boolean }> {
+    return this.callTool('dismiss_merge_suggestion', {
+      source_path: sourcePath,
+      target_path: targetPath,
+      source_name: sourceName,
+      target_name: targetName,
+      reason,
+    });
+  }
+
+  /**
+   * Merge two entities: source note is absorbed into target note.
+   */
+  async mergeEntities(sourcePath: string, targetPath: string): Promise<McpMergeResult> {
+    return this.callTool<McpMergeResult>('merge_entities', {
+      source_path: sourcePath,
+      target_path: targetPath,
+    });
   }
 
   // -------------------------------------------------------------------------

@@ -18,6 +18,10 @@ export class VaultHealthView extends ItemView {
   private sectionCollapsed = new Map<string, boolean>();
   /** Auto-refresh interval for the activity log section */
   private activityLogInterval: ReturnType<typeof setInterval> | null = null;
+  /** Whether the server index is confirmed ready */
+  private indexReady = false;
+  /** Poll timer for index readiness */
+  private indexPollTimer: ReturnType<typeof setInterval> | null = null;
 
   constructor(leaf: WorkspaceLeaf, mcpClient: FlywheelMcpClient) {
     super(leaf);
@@ -45,20 +49,34 @@ export class VaultHealthView extends ItemView {
     container.empty();
     container.addClass('flywheel-vault-health');
 
-    if (!this.mcpClient.connected) {
+    if (!this.mcpClient.connected || !this.indexReady) {
       const splash = container.createDiv('flywheel-splash');
       const imgPath = `${this.app.vault.configDir}/plugins/flywheel-crank/flywheel.png`;
       const imgEl = splash.createEl('img', { cls: 'flywheel-splash-logo' });
       imgEl.src = this.app.vault.adapter.getResourcePath(imgPath);
       imgEl.alt = '';
-      splash.createDiv('flywheel-splash-text').setText('Connecting to flywheel-memory...');
-      // Poll until connected, then re-render
-      const poll = setInterval(() => {
-        if (this.mcpClient.connected) {
-          clearInterval(poll);
-          this.render();
-        }
-      }, 2000);
+      splash.createDiv('flywheel-splash-text').setText(
+        this.mcpClient.connected ? 'Building vault index...' : 'Connecting to flywheel-memory...'
+      );
+      // Poll until index is ready, then re-render
+      if (!this.indexPollTimer) {
+        this.indexPollTimer = setInterval(async () => {
+          if (!this.mcpClient.connected) return;
+          try {
+            const health = await this.mcpClient.healthCheck();
+            if (health.index_state === 'ready') {
+              this.indexReady = true;
+              if (this.indexPollTimer) {
+                clearInterval(this.indexPollTimer);
+                this.indexPollTimer = null;
+              }
+              this.render();
+            }
+          } catch {
+            // health_check may fail during startup, keep polling
+          }
+        }, 2000);
+      }
       return;
     }
 
@@ -206,7 +224,7 @@ export class VaultHealthView extends ItemView {
 
     // Dead Ends section — lazy-loaded
     this.renderLazySection(content, 'Dead Ends', 'arrow-down-to-line', async (el) => {
-      el.addClass('flywheel-health-grid-2col');
+      el.addClass('flywheel-health-grid-3col');
       const resp = await this.mcpClient.graphAnalysis('dead_ends', { limit: 30 });
       const items = (resp as any).dead_ends ?? (resp as any).results ?? [];
       if (items.length === 0) {
@@ -230,7 +248,7 @@ export class VaultHealthView extends ItemView {
         el.createDiv('flywheel-health-more').setText(`+${total - 30} more`);
       }
       return total;
-    }, 'Notes with backlinks but no outgoing links \u2014 they receive attention but don\'t connect forward to other notes.');
+    }, 'Notes with backlinks but no outgoing links \u2014 they receive attention but don\'t connect forward. Sorted by backlink count (most referenced first).');
 
     // Broken Links section — lazy-loaded
     this.renderLazySection(content, 'Broken Links', 'unlink', async (el) => {
@@ -787,6 +805,10 @@ export class VaultHealthView extends ItemView {
     if (this.activityLogInterval) {
       clearInterval(this.activityLogInterval);
       this.activityLogInterval = null;
+    }
+    if (this.indexPollTimer) {
+      clearInterval(this.indexPollTimer);
+      this.indexPollTimer = null;
     }
   }
 }

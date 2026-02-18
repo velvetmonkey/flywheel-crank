@@ -29,6 +29,15 @@ const CATEGORY_EMOJI: Record<EntityCategory, string> = {
   organizations: 'building',
   locations: 'pin',
   concepts: 'bulb',
+  animals: 'paw-print',
+  media: 'film',
+  events: 'calendar',
+  documents: 'file-text',
+  vehicles: 'car',
+  health: 'heart-pulse',
+  finance: 'banknote',
+  food: 'utensils',
+  hobbies: 'palette',
   other: 'dot',
 };
 
@@ -69,7 +78,9 @@ export class WikilinkSuggest extends EditorSuggest<WikilinkSuggestion> {
 
     const categories: EntityCategory[] = [
       'technologies', 'acronyms', 'people', 'projects',
-      'organizations', 'locations', 'concepts', 'other',
+      'organizations', 'locations', 'concepts', 'animals',
+      'media', 'events', 'documents', 'vehicles',
+      'health', 'finance', 'food', 'hobbies', 'other',
     ];
 
     for (const category of categories) {

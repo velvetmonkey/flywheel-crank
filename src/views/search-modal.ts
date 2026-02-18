@@ -45,6 +45,22 @@ export class SearchModal extends Modal {
     this.statusEl = contentEl.createDiv('flywheel-search-status');
     this.resultsEl = contentEl.createDiv('flywheel-search-results');
 
+    // Shortcut hints
+    const hintsEl = contentEl.createDiv('flywheel-search-hints');
+    const mod = navigator.platform.includes('Mac') ? '\u2318' : 'Ctrl';
+    const hints = [
+      { keys: '\u21B5', label: 'open' },
+      { keys: `${mod}+\u21B5`, label: 'new tab' },
+      { keys: `${mod}+Alt+\u21B5`, label: 'split right' },
+      { keys: '\u2191\u2193', label: 'navigate' },
+      { keys: 'Esc', label: 'dismiss' },
+    ];
+    for (const hint of hints) {
+      const item = hintsEl.createSpan('flywheel-search-hint');
+      item.createEl('kbd', { text: hint.keys });
+      item.createSpan({ text: hint.label });
+    }
+
     // Show index status
     if (!this.mcpClient.connected) {
       this.statusEl.setText('MCP server not connected');
@@ -69,7 +85,15 @@ export class SearchModal extends Modal {
         this.selectPrev();
       } else if (e.key === 'Enter') {
         e.preventDefault();
-        this.openSelected();
+        if (e.metaKey || e.ctrlKey) {
+          if (e.altKey) {
+            this.openSelected('split-right');
+          } else {
+            this.openSelected('new-tab');
+          }
+        } else {
+          this.openSelected('current');
+        }
       }
     });
 
@@ -209,9 +233,17 @@ export class SearchModal extends Modal {
         cls: `flywheel-search-result-item ${i === this.selectedIndex ? 'is-selected' : ''}`,
       });
 
-      item.addEventListener('click', () => {
+      item.addEventListener('click', (e: MouseEvent) => {
         this.selectedIndex = i;
-        this.openSelected();
+        if (e.metaKey || e.ctrlKey) {
+          if (e.altKey) {
+            this.openSelected('split-right');
+          } else {
+            this.openSelected('new-tab');
+          }
+        } else {
+          this.openSelected('current');
+        }
       });
 
       item.addEventListener('mouseenter', () => {
@@ -294,12 +326,18 @@ export class SearchModal extends Modal {
     selected?.scrollIntoView({ block: 'nearest' });
   }
 
-  private openSelected(): void {
+  private openSelected(mode: 'current' | 'new-tab' | 'split-right' = 'current'): void {
     if (this.results.length === 0) return;
     const result = this.results[this.selectedIndex];
-    if (result) {
-      this.close();
-      this.app.workspace.openLinkText(result.path.replace(/\.md$/, ''), '', false);
+    if (!result) return;
+    this.close();
+    const path = result.path.replace(/\.md$/, '');
+    if (mode === 'split-right') {
+      this.app.workspace.getLeaf('split').openFile(
+        this.app.vault.getAbstractFileByPath(result.path) as any
+      );
+    } else {
+      this.app.workspace.openLinkText(path, '', mode === 'new-tab');
     }
   }
 

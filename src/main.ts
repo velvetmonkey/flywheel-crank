@@ -24,6 +24,7 @@ export default class FlywheelCrankPlugin extends Plugin {
   private wikilinkSuggest: WikilinkSuggest | null = null;
   private statusBarEl: HTMLElement | null = null;
   private indexing = false;
+  private wikilinkEntitiesLoaded = false;
 
   async onload(): Promise<void> {
     console.log('Flywheel Crank: loading plugin');
@@ -163,6 +164,12 @@ export default class FlywheelCrankPlugin extends Plugin {
       const health = await this.mcpClient.healthCheck();
 
       if (health.index_state === 'ready') {
+        // Load entities for wikilink suggest (once, when graph index first ready)
+        if (this.wikilinkSuggest && !this.wikilinkEntitiesLoaded) {
+          this.wikilinkEntitiesLoaded = true;
+          this.loadWikilinkEntities();
+        }
+
         const ago = health.last_rebuild?.ago_seconds ?? 0;
         const agoText = ago < 60 ? `${ago}s ago` : ago < 3600 ? `${Math.floor(ago / 60)}m ago` : `${Math.floor(ago / 3600)}h ago`;
 
@@ -215,6 +222,17 @@ export default class FlywheelCrankPlugin extends Plugin {
       // health check failed, keep current status
     }
     setTimeout(() => this.pollIndexState(), 3000);
+  }
+
+  private async loadWikilinkEntities(): Promise<void> {
+    try {
+      const entities = await this.mcpClient.listEntities();
+      this.wikilinkSuggest?.setEntityIndex(entities as any);
+      console.log('Flywheel Crank: wikilink suggest loaded', (entities as any)._metadata?.total_entities, 'entities');
+    } catch (err) {
+      this.wikilinkEntitiesLoaded = false; // allow retry on next poll
+      console.error('Flywheel Crank: failed to load entities for wikilink suggest', err);
+    }
   }
 
   private updateGraphSidebar(force = false): void {

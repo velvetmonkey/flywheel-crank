@@ -31,6 +31,10 @@ export class GraphSidebarView extends ItemView {
   private sectionCollapsed = new Map<string, boolean>();
   /** Monotonically increasing counter to detect stale renders */
   private renderGeneration = 0;
+  /** Whether a retry after render failure is already scheduled */
+  private _retried = false;
+  /** Whether waitForIndexThenRender is already in progress */
+  private _waitingForIndex = false;
 
   constructor(leaf: WorkspaceLeaf, mcpClient: FlywheelMcpClient) {
     super(leaf);
@@ -56,6 +60,7 @@ export class GraphSidebarView extends ItemView {
 
     this.contentContainer = container.createDiv('flywheel-graph-content');
     this.noteContainer = this.contentContainer.createDiv();
+    this._retried = false;
     this.refresh();
   }
 
@@ -102,18 +107,23 @@ export class GraphSidebarView extends ItemView {
   }
 
   private async waitForIndexThenRender(activeFile: TFile | null): Promise<void> {
+    if (this._waitingForIndex) return; // already waiting
+    this._waitingForIndex = true;
     try {
       await this.mcpClient.waitForIndex();
     } catch {
       // Timed out — render what we can anyway
     }
+    this._waitingForIndex = false;
 
     this.indexReady = true;
+    // Re-read active file (may have changed during wait)
+    const currentFile = this.app.workspace.getActiveFile();
     this.noteContainer.empty();
     const generation = ++this.renderGeneration;
-    if (activeFile) {
-      this.renderNoteHeader(activeFile);
-      this.renderNoteSections(activeFile, generation);
+    if (currentFile) {
+      this.renderNoteHeader(currentFile);
+      this.renderNoteSections(currentFile, generation);
     }
   }
 
@@ -403,14 +413,12 @@ export class GraphSidebarView extends ItemView {
     const notePath = file.path;
 
     try {
-      // Wait for the server index before calling graph tools
-      await this.mcpClient.waitForIndex();
       if (generation !== this.renderGeneration) return;
 
       const noteContent = await this.app.vault.cachedRead(file);
       const [backlinksResp, forwardLinksResp, suggestResp, similarResp, health, semanticResp] = await Promise.all([
-        this.mcpClient.getBacklinks(notePath),
-        this.mcpClient.getForwardLinks(notePath),
+        this.mcpClient.getBacklinks(notePath).catch(() => null),
+        this.mcpClient.getForwardLinks(notePath).catch(() => null),
         this.mcpClient.suggestWikilinks(noteContent, true).catch(() => null),
         this.mcpClient.findSimilar(notePath, 15).catch(() => null),
         this.mcpClient.healthCheck().catch(() => null),
@@ -431,7 +439,7 @@ export class GraphSidebarView extends ItemView {
 
       // Deduplicate forward links by resolved path (or target for dead links)
       const seen = new Set<string>();
-      const uniqueLinks = forwardLinksResp.forward_links.filter(link => {
+      const uniqueLinks = (forwardLinksResp?.forward_links ?? []).filter(link => {
         const key = link.resolved_path ?? link.target;
         if (seen.has(key)) return false;
         seen.add(key);
@@ -442,13 +450,15 @@ export class GraphSidebarView extends ItemView {
       await this.renderFolderSection(file, generation);
 
       // Context Cloud — unified view of all related notes
-      this.renderContextCloud(backlinksResp, forwardLinksResp, suggestResp, similarResp, semanticResp);
+      const safeBacklinks: McpBacklinksResponse = backlinksResp ?? { backlinks: [] };
+      const safeForwardLinks: McpForwardLinksResponse = forwardLinksResp ?? { forward_links: [] };
+      this.renderContextCloud(safeBacklinks, safeForwardLinks, suggestResp, similarResp, semanticResp);
 
       const MAX_ITEMS = 5;
 
       // Backlinks section — group by source, sorted by mention count desc
       const blGrouped = new Map<string, { source: string; count: number; lines: number[]; context?: string }>();
-      for (const bl of backlinksResp.backlinks) {
+      for (const bl of safeBacklinks.backlinks) {
         const existing = blGrouped.get(bl.source);
         if (existing) {
           existing.count++;
@@ -464,10 +474,15 @@ export class GraphSidebarView extends ItemView {
       const backlinksInfo = 'Notes that link to this note. Grouped by source note \u2014 ' +
         'the count shows how many times each note links here.';
       this.renderSection('Backlinks', 'arrow-left', uniqueBacklinks, (container) => {
+        if (!backlinksResp) {
+          container.createDiv('flywheel-graph-section-empty').setText('Failed to load backlinks');
+          return;
+        }
         if (blSorted.length === 0) {
           container.createDiv('flywheel-graph-section-empty').setText('No backlinks');
           return;
         }
+        container.addClass('flywheel-graph-grid-2col');
 
         const visible = blSorted.slice(0, MAX_ITEMS);
         for (const bl of visible) {
@@ -486,10 +501,15 @@ export class GraphSidebarView extends ItemView {
       const forwardInfo = 'Outgoing wikilinks from this note. Dead links (marked \'missing\') ' +
         'point to notes that don\'t exist yet.';
       this.renderSection('Forward Links', 'arrow-right', uniqueLinks.length, (container) => {
+        if (!forwardLinksResp) {
+          container.createDiv('flywheel-graph-section-empty').setText('Failed to load forward links');
+          return;
+        }
         if (uniqueLinks.length === 0) {
           container.createDiv('flywheel-graph-section-empty').setText('No outgoing links');
           return;
         }
+        container.addClass('flywheel-graph-grid-2col');
 
         const visible = uniqueLinks.slice(0, MAX_ITEMS);
         for (const link of visible) {
@@ -503,11 +523,16 @@ export class GraphSidebarView extends ItemView {
           });
         }
       }, true, undefined, undefined, forwardInfo);
-
-      // Note Intelligence (lazy-loaded) — structural analysis, not related notes
-      this.renderNoteIntelligence(file, generation);
     } catch (err) {
       console.error('Flywheel Crank: graph sidebar error', err);
+      // Retry once after 3s (server may still be starting)
+      if (!this._retried) {
+        this._retried = true;
+        setTimeout(() => {
+          this._retried = false;
+          this.refresh(true);
+        }, 3000);
+      }
     }
   }
 
@@ -780,138 +805,6 @@ export class GraphSidebarView extends ItemView {
   // Note Intelligence
   // ---------------------------------------------------------------------------
 
-  private renderNoteIntelligence(file: TFile, generation: number): void {
-    const intelligenceInfo = 'Structural analysis of this note: suggested metadata and patterns found in the text.';
-    this.renderSection('Note Intelligence', 'brain', undefined, (container) => {
-      let loaded = false;
-      const loadIntelligence = async () => {
-        if (loaded) return;
-        if (generation !== this.renderGeneration) return;
-        loaded = true;
-        container.empty();
-
-        try {
-          const [proseResp, fmResp] = await Promise.all([
-            this.mcpClient.noteIntelligence(file.path, 'prose_patterns').catch(() => null),
-            this.mcpClient.noteIntelligence(file.path, 'suggest_frontmatter').catch(() => null),
-          ]);
-
-          let hasContent = false;
-
-          // Suggested frontmatter
-          // Server returns: { suggestions: [{ field, value, source_lines, confidence, preserveWikilink }] }
-          const suggestions = (fmResp as any)?.suggestions ?? [];
-          if (suggestions.length > 0) {
-            hasContent = true;
-            container.createDiv('flywheel-graph-info-group-label').setText('Suggested Frontmatter');
-            for (const sug of suggestions.slice(0, 6)) {
-              const row = container.createDiv('flywheel-graph-intelligence-suggestion');
-              const headerRow = row.createDiv('flywheel-graph-intelligence-suggestion-header');
-              const nameEl = headerRow.createSpan('flywheel-graph-schema-field-name');
-              nameEl.setText(sug.field ?? 'unknown');
-
-              // Apply button
-              const applyBtn = headerRow.createSpan('flywheel-graph-apply-btn');
-              setIcon(applyBtn, 'plus');
-              const sugValStr = typeof sug.value === 'string' ? sug.value : JSON.stringify(sug.value);
-              applyBtn.setAttribute('aria-label', `Add frontmatter ${sug.field}: ${sugValStr} (only if field is missing)`);
-              applyBtn.addEventListener('click', async (e) => {
-                e.stopPropagation();
-                try {
-                  await this.mcpClient.updateFrontmatter(
-                    file.path,
-                    { [sug.field]: sug.value },
-                    true,
-                  );
-                  applyBtn.empty();
-                  setIcon(applyBtn, 'check');
-                  applyBtn.addClass('flywheel-graph-apply-btn-done');
-                  row.addClass('flywheel-graph-intelligence-suggestion-applied');
-                } catch (err) {
-                  console.error('Flywheel Crank: failed to apply frontmatter', err);
-                }
-              });
-
-              const valueEl = row.createDiv('flywheel-graph-schema-field-value');
-              const val = sug.value ?? '';
-              const valStr = typeof val === 'string' ? val : JSON.stringify(val);
-              this.renderTextWithWikilinks(valueEl, valStr);
-              if (sug.confidence != null) {
-                const pct = Math.round(sug.confidence * 100);
-                row.createDiv('flywheel-graph-link-snippet').setText(`${pct}% confidence`);
-              }
-            }
-          }
-
-          // Prose patterns
-          // Server returns: { patterns: [{ key, value, line, raw, isWikilink }] }
-          const patterns = (proseResp as any)?.patterns ?? [];
-          if (patterns.length > 0) {
-            hasContent = true;
-            container.createDiv('flywheel-graph-info-group-label').setText('Prose Patterns');
-            for (const pat of patterns.slice(0, 8)) {
-              const row = container.createDiv('flywheel-graph-intelligence-suggestion');
-              const headerRow = row.createDiv('flywheel-graph-intelligence-suggestion-header');
-              headerRow.createSpan('flywheel-graph-schema-field-name').setText(pat.key ?? 'pattern');
-
-              // Apply button
-              const applyBtn = headerRow.createSpan('flywheel-graph-apply-btn');
-              setIcon(applyBtn, 'plus');
-              applyBtn.setAttribute('aria-label', `Set frontmatter ${pat.key}: ${pat.value}`);
-              applyBtn.addEventListener('click', async (e) => {
-                e.stopPropagation();
-                try {
-                  await this.mcpClient.updateFrontmatter(file.path, { [pat.key]: pat.value }, false);
-                  applyBtn.empty();
-                  setIcon(applyBtn, 'check');
-                  applyBtn.addClass('flywheel-graph-apply-btn-done');
-                  row.addClass('flywheel-graph-intelligence-suggestion-applied');
-                } catch (err) {
-                  console.error('Flywheel Crank: failed to apply prose pattern', err);
-                }
-              });
-
-              const valueEl = row.createDiv('flywheel-graph-schema-field-value');
-              const valStr = pat.value ?? JSON.stringify(pat);
-              this.renderTextWithWikilinks(valueEl, valStr);
-            }
-          }
-
-          if (!hasContent) {
-            container.createDiv('flywheel-graph-section-empty').setText('No intelligence signals');
-          }
-
-          // Update count badge
-          const total = suggestions.length + patterns.length;
-          if (total > 0) {
-            const section = container.parentElement!;
-            const countEl = section.querySelector('.flywheel-graph-section-count') as HTMLElement;
-            if (countEl) countEl.setText(`${total}`);
-          }
-        } catch (err) {
-          container.createDiv('flywheel-graph-section-empty')
-            .setText(err instanceof Error ? err.message : 'Failed to load');
-        }
-      };
-
-      container.createDiv('flywheel-graph-section-empty').setText('Expand to analyze note...');
-
-      const section = container.parentElement!;
-      const observer = new MutationObserver(() => {
-        if (!section.hasClass('is-collapsed')) {
-          loadIntelligence();
-          observer.disconnect();
-        }
-      });
-      observer.observe(section, { attributes: true, attributeFilter: ['class'] });
-
-      if (!section.hasClass('is-collapsed')) {
-        loadIntelligence();
-        observer.disconnect();
-      }
-    }, true, undefined, undefined, intelligenceInfo);
-  }
-
   // ---------------------------------------------------------------------------
   // Context Cloud
   // ---------------------------------------------------------------------------
@@ -1085,14 +978,14 @@ export class GraphSidebarView extends ItemView {
     this.renderSection('Context', 'cloud', mainEntries.length + periodicEntries.length, (container) => {
       // Main cloud
       if (mainEntries.length > 0) {
-        this.renderCloudItems(container, mainEntries, 12, 24);
+        this.renderCloudItems(container, mainEntries, 11, 18);
       }
 
       // Periodic cloud — smaller, more compact
       if (periodicEntries.length > 0) {
         const periodicLabel = container.createDiv('flywheel-cloud-label');
         periodicLabel.setText('periodic');
-        this.renderCloudItems(container, periodicEntries, 11, 16);
+        this.renderCloudItems(container, periodicEntries, 10, 14);
       }
     }, false, undefined, undefined, contextInfo);
   }

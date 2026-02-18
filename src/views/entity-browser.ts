@@ -4,11 +4,15 @@
  * Shows all extracted entities grouped by 17 categories
  * with search/filter, hub scores, and click-to-navigate.
  * Fetches data via MCP list_entities tool.
+ *
+ * Features:
+ * - Bulk re-categorize (select multiple entities, move to another category)
+ * - Merge suggestions (find duplicate entities and merge them)
  */
 
-import { ItemView, WorkspaceLeaf, setIcon } from 'obsidian';
+import { ItemView, WorkspaceLeaf, setIcon, Notice } from 'obsidian';
 import type { EntityCategory, EntityWithAliases } from '../core/types';
-import type { FlywheelMcpClient, McpEntityIndexResponse, McpEntityItem } from '../mcp/client';
+import type { FlywheelMcpClient, McpEntityIndexResponse, McpEntityItem, McpMergeSuggestion } from '../mcp/client';
 
 export const ENTITY_BROWSER_VIEW_TYPE = 'flywheel-entity-browser';
 
@@ -179,6 +183,16 @@ export class EntityBrowserView extends ItemView {
   /** Active category picker element (if any). */
   private activePicker: HTMLElement | null = null;
 
+  // Bulk selection state
+  private selectionCategory: EntityCategory | null = null;
+  private selectedPaths = new Set<string>();
+  private bulkProgress: { total: number; done: number } | null = null;
+
+  // Merge suggestions state
+  private mergeSuggestions: McpMergeSuggestion[] | null = null;
+  private mergeExpanded = false;
+  private mergeLoading = false;
+
   constructor(leaf: WorkspaceLeaf, mcpClient: FlywheelMcpClient) {
     super(leaf);
     this.mcpClient = mcpClient;
@@ -270,6 +284,9 @@ export class EntityBrowserView extends ItemView {
     container.empty();
     if (!this.entityData) return;
 
+    // Merge suggestions section (at the top)
+    this.renderMergeSuggestions(container);
+
     const filterLower = this.filterText.toLowerCase();
 
     for (const category of ALL_CATEGORIES) {
@@ -287,11 +304,13 @@ export class EntityBrowserView extends ItemView {
       if (filtered.length === 0) continue;
 
       const isCollapsed = !this.expandedCategories.has(category);
-      const section = container.createDiv(`flywheel-entity-section${isCollapsed ? ' is-collapsed' : ''}`);
+      const isSelecting = this.selectionCategory === category;
+      const section = container.createDiv(`flywheel-entity-section${isCollapsed && !isSelecting ? ' is-collapsed' : ''}`);
 
       // Section header
       const headerEl = section.createDiv('flywheel-entity-section-header');
       headerEl.addEventListener('click', () => {
+        if (isSelecting) return; // Don't collapse during selection
         const nowCollapsed = !section.hasClass('is-collapsed');
         section.toggleClass('is-collapsed', nowCollapsed);
         if (nowCollapsed) {
@@ -309,17 +328,93 @@ export class EntityBrowserView extends ItemView {
       headerEl.createSpan('flywheel-entity-section-title').setText(CATEGORY_LABELS[category]);
       headerEl.createSpan('flywheel-entity-section-count').setText(`${filtered.length}`);
 
+      // Select button (between count and chevron) — hidden until hover
+      if (!isSelecting) {
+        const selectBtn = headerEl.createSpan('flywheel-entity-select-btn');
+        setIcon(selectBtn, 'check-square');
+        selectBtn.setAttribute('aria-label', 'Select entities');
+        selectBtn.addEventListener('click', (e) => {
+          e.stopPropagation();
+          this.enterSelectionMode(category);
+        });
+      }
+
       const chevron = headerEl.createSpan('flywheel-entity-section-chevron');
       setIcon(chevron, 'chevron-down');
 
+      // Action bar (shown during selection mode)
+      if (isSelecting) {
+        if (this.bulkProgress) {
+          // Progress bar
+          const progressEl = section.createDiv('flywheel-entity-progress');
+          const barOuter = progressEl.createDiv('flywheel-entity-progress-bar');
+          const barFill = barOuter.createDiv('flywheel-entity-progress-fill');
+          const pct = this.bulkProgress.total > 0
+            ? (this.bulkProgress.done / this.bulkProgress.total) * 100
+            : 0;
+          barFill.style.width = `${pct}%`;
+          progressEl.createDiv('flywheel-entity-progress-text')
+            .setText(`Moving ${this.bulkProgress.done}/${this.bulkProgress.total}...`);
+        } else {
+          const actionBar = section.createDiv('flywheel-entity-action-bar');
+
+          const selectAllEl = actionBar.createSpan('flywheel-entity-action-bar-select-all');
+          const allSelected = filtered.every(e => e.path && this.selectedPaths.has(e.path));
+          selectAllEl.setText(allSelected ? 'Deselect All' : 'Select All');
+          selectAllEl.addEventListener('click', () => {
+            if (allSelected) {
+              this.selectedPaths.clear();
+            } else {
+              for (const e of filtered) {
+                if (e.path) this.selectedPaths.add(e.path);
+              }
+            }
+            this.renderCategories(container);
+          });
+
+          actionBar.createSpan('flywheel-entity-action-bar-count')
+            .setText(`${this.selectedPaths.size} selected`);
+
+          const moveBtn = actionBar.createEl('button', { cls: 'flywheel-entity-action-bar-move' });
+          moveBtn.setText('Move to...');
+          moveBtn.disabled = this.selectedPaths.size === 0;
+          moveBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            if (this.selectedPaths.size > 0) {
+              this.showBulkCategoryPicker(category, moveBtn);
+            }
+          });
+
+          const cancelBtn = actionBar.createEl('button', { cls: 'flywheel-entity-action-bar-cancel' });
+          cancelBtn.setText('Cancel');
+          cancelBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            this.exitSelectionMode();
+          });
+        }
+      }
+
       // Entity items
       const listEl = section.createDiv('flywheel-entity-list');
+      if (isSelecting) listEl.addClass('flywheel-entity-selecting');
 
       for (const entity of filtered) {
         const item = listEl.createDiv('flywheel-entity-item');
         item.setAttribute('aria-label', getEntityCategoryReason(entity.name, category));
 
-        if (entity.path) {
+        if (isSelecting && entity.path) {
+          // Selection mode: click toggles selection
+          item.addEventListener('click', () => {
+            if (!entity.path) return;
+            if (this.selectedPaths.has(entity.path)) {
+              this.selectedPaths.delete(entity.path);
+            } else {
+              this.selectedPaths.add(entity.path);
+            }
+            this.renderCategories(container);
+          });
+          item.addClass('flywheel-entity-clickable');
+        } else if (entity.path) {
           item.addEventListener('click', () => {
             this.app.workspace.openLinkText(entity.path, '', false);
           });
@@ -327,11 +422,22 @@ export class EntityBrowserView extends ItemView {
         }
 
         const nameRow = item.createDiv('flywheel-entity-name-row');
+
+        // Checkbox inline with name (only during selection)
+        if (isSelecting && entity.path) {
+          const checkbox = nameRow.createDiv('flywheel-entity-checkbox');
+          if (this.selectedPaths.has(entity.path)) {
+            checkbox.addClass('is-checked');
+            const checkIcon = checkbox.createSpan();
+            setIcon(checkIcon, 'check');
+          }
+        }
+
         const nameEl = nameRow.createDiv('flywheel-entity-name');
         nameEl.setText(entity.name);
 
-        // Category action buttons (only for entities with a backing note)
-        if (entity.path) {
+        // Category action buttons (only for entities with a backing note, not during selection)
+        if (entity.path && !isSelecting) {
           const actions = nameRow.createDiv('flywheel-entity-actions');
 
           // Move to "other" (uncategorize) — only shown if not already in "other"
@@ -364,6 +470,7 @@ export class EntityBrowserView extends ItemView {
 
         if (entity.hubScore && entity.hubScore > 0) {
           const hubEl = meta.createSpan('flywheel-entity-hub-badge');
+          hubEl.setAttribute('aria-label', `${entity.hubScore} connections (incoming + outgoing links)`);
           const hubIcon = hubEl.createSpan();
           setIcon(hubIcon, 'link');
           hubEl.createSpan().setText(`${entity.hubScore}`);
@@ -371,6 +478,285 @@ export class EntityBrowserView extends ItemView {
       }
     }
   }
+
+  // ---------------------------------------------------------------------------
+  // Merge Suggestions
+  // ---------------------------------------------------------------------------
+
+  private renderMergeSuggestions(container: HTMLDivElement): void {
+    const section = container.createDiv(`flywheel-merge-section${this.mergeExpanded ? '' : ' is-collapsed'}`);
+
+    const headerEl = section.createDiv('flywheel-merge-header');
+    headerEl.addEventListener('click', () => {
+      this.mergeExpanded = !this.mergeExpanded;
+      section.toggleClass('is-collapsed', !this.mergeExpanded);
+      // Load suggestions on first expand
+      if (this.mergeExpanded && this.mergeSuggestions === null && !this.mergeLoading) {
+        this.loadMergeSuggestions(section);
+      }
+    });
+
+    const iconEl = headerEl.createSpan('flywheel-merge-icon');
+    setIcon(iconEl, 'git-merge');
+
+    headerEl.createSpan('flywheel-merge-title').setText('Merge Suggestions');
+
+    if (this.mergeSuggestions !== null) {
+      headerEl.createSpan('flywheel-merge-count').setText(`${this.mergeSuggestions.length}`);
+    }
+
+    const chevron = headerEl.createSpan('flywheel-merge-chevron');
+    setIcon(chevron, 'chevron-down');
+
+    const listEl = section.createDiv('flywheel-merge-list');
+
+    if (this.mergeLoading) {
+      listEl.createDiv('flywheel-merge-loading').setText('Loading suggestions...');
+    } else if (this.mergeSuggestions !== null && this.mergeSuggestions.length === 0) {
+      listEl.createDiv('flywheel-merge-empty').setText('No duplicate entities found');
+    } else if (this.mergeSuggestions) {
+      for (const suggestion of this.mergeSuggestions) {
+        this.renderMergeSuggestionItem(listEl, suggestion, container);
+      }
+    }
+  }
+
+  private renderMergeSuggestionItem(
+    listEl: HTMLElement,
+    suggestion: McpMergeSuggestion,
+    rootContainer: HTMLDivElement
+  ): void {
+    const item = listEl.createDiv('flywheel-merge-item');
+
+    const pair = item.createDiv('flywheel-merge-pair');
+
+    // Source entity
+    const sourceEl = pair.createDiv('flywheel-merge-entity');
+    const sourceIcon = sourceEl.createSpan('flywheel-merge-entity-icon');
+    const sourceCat = suggestion.source.category as EntityCategory;
+    setIcon(sourceIcon, CATEGORY_ICONS[sourceCat] || 'circle-dot');
+    sourceEl.createSpan('flywheel-merge-entity-name').setText(suggestion.source.name);
+
+    pair.createSpan('flywheel-merge-arrow').setText('\u2192');
+
+    // Target entity
+    const targetEl = pair.createDiv('flywheel-merge-entity');
+    const targetIcon = targetEl.createSpan('flywheel-merge-entity-icon');
+    const targetCat = suggestion.target.category as EntityCategory;
+    setIcon(targetIcon, CATEGORY_ICONS[targetCat] || 'circle-dot');
+    targetEl.createSpan('flywheel-merge-entity-name').setText(suggestion.target.name);
+
+    const meta = item.createDiv('flywheel-merge-meta');
+
+    const infoEl = meta.createDiv();
+    infoEl.createSpan('flywheel-merge-reason').setText(suggestion.reason);
+    infoEl.createSpan('flywheel-merge-confidence')
+      .setText(`${Math.round(suggestion.confidence * 100)}%`);
+
+    const actions = meta.createDiv('flywheel-merge-actions');
+
+    const mergeBtn = actions.createEl('button', { cls: 'flywheel-merge-btn flywheel-merge-btn-merge' });
+    mergeBtn.setText('Merge');
+    mergeBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      this.executeMerge(suggestion, rootContainer);
+    });
+
+    const dismissBtn = actions.createEl('button', { cls: 'flywheel-merge-btn flywheel-merge-btn-dismiss' });
+    dismissBtn.setText('Dismiss');
+    dismissBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      if (this.mergeSuggestions) {
+        // Optimistic removal from UI
+        this.mergeSuggestions = this.mergeSuggestions.filter(s => s !== suggestion);
+        this.renderCategories(rootContainer);
+        // Persist dismissal (fire-and-forget)
+        this.mcpClient.dismissMergeSuggestion(
+          suggestion.source.path,
+          suggestion.target.path,
+          suggestion.source.name,
+          suggestion.target.name,
+          suggestion.reason
+        ).catch(err => {
+          console.error('Flywheel Entities: failed to persist merge dismissal', err);
+        });
+        new Notice(`Dismissed merge: "${suggestion.source.name}" / "${suggestion.target.name}"`);
+      }
+    });
+  }
+
+  private async loadMergeSuggestions(sectionEl: HTMLElement): Promise<void> {
+    this.mergeLoading = true;
+    // Re-render the list area
+    const listEl = sectionEl.querySelector('.flywheel-merge-list');
+    if (listEl) {
+      listEl.innerHTML = '';
+      (listEl as HTMLElement).createDiv('flywheel-merge-loading').setText('Loading suggestions...');
+    }
+
+    try {
+      const response = await this.mcpClient.suggestEntityMerges(50);
+      this.mergeSuggestions = response.suggestions;
+    } catch (err) {
+      console.error('Flywheel Entities: failed to load merge suggestions', err);
+      this.mergeSuggestions = [];
+    }
+
+    this.mergeLoading = false;
+    // Re-render entire categories to update the section
+    const content = this.containerEl.querySelector('.flywheel-entity-content') as HTMLDivElement;
+    if (content) this.renderCategories(content);
+  }
+
+  private async executeMerge(
+    suggestion: McpMergeSuggestion,
+    rootContainer: HTMLDivElement
+  ): Promise<void> {
+    // Optimistic removal from suggestions list
+    if (this.mergeSuggestions) {
+      this.mergeSuggestions = this.mergeSuggestions.filter(s => s !== suggestion);
+      this.renderCategories(rootContainer);
+    }
+
+    try {
+      const result = await this.mcpClient.mergeEntities(
+        suggestion.source.path,
+        suggestion.target.path
+      );
+
+      if (result.success) {
+        new Notice(`Merged "${suggestion.source.name}" into "${suggestion.target.name}"`);
+        // Re-fetch entities after a short delay to let the file watcher catch up
+        setTimeout(() => this.fetchEntities(), 3000);
+      } else {
+        new Notice(`Merge failed: ${result.message}`);
+        await this.fetchEntities();
+      }
+    } catch (err) {
+      new Notice(`Merge failed: ${err instanceof Error ? err.message : String(err)}`);
+      await this.fetchEntities();
+    }
+  }
+
+  // ---------------------------------------------------------------------------
+  // Bulk Selection
+  // ---------------------------------------------------------------------------
+
+  private enterSelectionMode(category: EntityCategory): void {
+    this.selectionCategory = category;
+    this.selectedPaths.clear();
+    this.expandedCategories.add(category);
+    this.dismissPicker();
+    this.render();
+  }
+
+  private exitSelectionMode(): void {
+    this.selectionCategory = null;
+    this.selectedPaths.clear();
+    this.bulkProgress = null;
+    this.render();
+  }
+
+  private showBulkCategoryPicker(fromCategory: EntityCategory, anchorEl: HTMLElement): void {
+    this.dismissPicker();
+
+    const picker = createDiv('flywheel-entity-category-picker');
+    this.activePicker = picker;
+
+    const sortedCategories = ALL_CATEGORIES
+      .filter(cat => cat !== fromCategory)
+      .sort((a, b) => CATEGORY_LABELS[a].localeCompare(CATEGORY_LABELS[b]));
+
+    for (const cat of sortedCategories) {
+      const option = picker.createDiv('flywheel-entity-category-option');
+      const iconEl = option.createSpan('flywheel-entity-category-option-icon');
+      setIcon(iconEl, CATEGORY_ICONS[cat]);
+      option.createSpan().setText(CATEGORY_LABELS[cat]);
+
+      option.addEventListener('click', (e) => {
+        e.stopPropagation();
+        this.dismissPicker();
+        this.bulkMoveEntities(fromCategory, cat);
+      });
+    }
+
+    // Position relative to the action bar
+    const sectionEl = anchorEl.closest('.flywheel-entity-section') as HTMLElement;
+    if (sectionEl) {
+      sectionEl.style.position = 'relative';
+      sectionEl.appendChild(picker);
+    }
+
+    setTimeout(() => {
+      const dismiss = (e: MouseEvent) => {
+        if (!picker.contains(e.target as Node)) {
+          this.dismissPicker();
+          document.removeEventListener('click', dismiss, true);
+        }
+      };
+      document.addEventListener('click', dismiss, true);
+    }, 0);
+  }
+
+  private async bulkMoveEntities(fromCategory: EntityCategory, toCategory: EntityCategory): Promise<void> {
+    const paths = Array.from(this.selectedPaths);
+    if (paths.length === 0) return;
+
+    const frontmatterType = CATEGORY_TO_FRONTMATTER_TYPE[toCategory];
+    const total = paths.length;
+
+    // Optimistic: splice from source list, push to destination
+    if (this.entityData) {
+      const srcList = (this.entityData as any)[fromCategory] as McpEntityItem[] | undefined;
+      const dstList = ((this.entityData as any)[toCategory] ??= []) as McpEntityItem[];
+      if (srcList) {
+        for (const p of paths) {
+          const idx = srcList.findIndex(e => e.path === p);
+          if (idx !== -1) {
+            const [entity] = srcList.splice(idx, 1);
+            dstList.push(entity);
+          }
+        }
+        dstList.sort((a, b) => a.name.localeCompare(b.name));
+      }
+    }
+
+    // Show progress
+    this.bulkProgress = { total, done: 0 };
+    this.render();
+
+    // Sequential MCP calls
+    const errors: string[] = [];
+    for (const p of paths) {
+      try {
+        await this.mcpClient.updateFrontmatter(p, { type: frontmatterType }, false);
+      } catch (err) {
+        errors.push(p);
+        console.error(`Flywheel Entities: failed to move ${p}`, err);
+      }
+      this.bulkProgress.done++;
+      // Re-render to update progress bar
+      const content = this.containerEl.querySelector('.flywheel-entity-content') as HTMLDivElement;
+      if (content) this.renderCategories(content);
+    }
+
+    // Complete
+    if (errors.length > 0) {
+      new Notice(`Moved ${total - errors.length}/${total} entities to ${CATEGORY_LABELS[toCategory]}. ${errors.length} failed.`);
+      // Re-fetch to get authoritative state
+      await this.fetchEntities();
+    } else {
+      new Notice(`Moved ${total} entities to ${CATEGORY_LABELS[toCategory]}`);
+    }
+
+    this.exitSelectionMode();
+    // Re-fetch after delay to sync with server
+    setTimeout(() => this.fetchEntities(), 3000);
+  }
+
+  // ---------------------------------------------------------------------------
+  // Shared helpers
+  // ---------------------------------------------------------------------------
 
   private renderSplash(container: HTMLElement, message: string): void {
     const empty = container.createDiv('flywheel-entity-empty');
@@ -388,9 +774,11 @@ export class EntityBrowserView extends ItemView {
     const picker = createDiv('flywheel-entity-category-picker');
     this.activePicker = picker;
 
-    for (const cat of ALL_CATEGORIES) {
-      if (cat === currentCategory) continue;
+    const sortedCategories = ALL_CATEGORIES
+      .filter(cat => cat !== currentCategory)
+      .sort((a, b) => CATEGORY_LABELS[a].localeCompare(CATEGORY_LABELS[b]));
 
+    for (const cat of sortedCategories) {
       const option = picker.createDiv('flywheel-entity-category-option');
       const iconEl = option.createSpan('flywheel-entity-category-option-icon');
       setIcon(iconEl, CATEGORY_ICONS[cat]);
@@ -447,10 +835,12 @@ export class EntityBrowserView extends ItemView {
 
     try {
       await this.mcpClient.updateFrontmatter(entity.path, { type: frontmatterType }, false);
+      new Notice(`Moved "${entity.name}" to ${CATEGORY_LABELS[newCategory]}`);
       // File watcher will pick up the change — re-fetch after a short delay
       // to get the server-authoritative data without triggering a full re-index
       setTimeout(() => this.fetchEntities(), 3000);
     } catch (err) {
+      new Notice(`Failed to move "${entity.name}": ${err instanceof Error ? err.message : String(err)}`);
       console.error('Flywheel Entities: failed to correct category', err);
       // Revert: re-fetch from server
       await this.fetchEntities();
