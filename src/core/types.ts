@@ -288,6 +288,7 @@ export interface FlywheelCrankSettings {
   enableEntityBrowser: boolean;
   enableVaultHealth: boolean;
   enableTaskDashboard: boolean;
+  enableFeedbackDashboard: boolean;
   searchHotkey: string;
   excludeFolders: string[];
   maxSearchResults: number;
@@ -302,6 +303,7 @@ export const DEFAULT_SETTINGS: FlywheelCrankSettings = {
   enableEntityBrowser: true,
   enableVaultHealth: true,
   enableTaskDashboard: true,
+  enableFeedbackDashboard: true,
   searchHotkey: 'Ctrl+Shift+F',
   excludeFolders: ['daily-notes', 'templates', 'attachments', '.obsidian', '.trash'],
   maxSearchResults: 20,

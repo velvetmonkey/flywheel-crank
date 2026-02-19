@@ -602,17 +602,19 @@ export class FeedbackDashboardView extends ItemView {
     const h = this.healthData;
     const pipelines = this.getRecentPipelines();
 
-    // Recent batch cards — only render if batch has meaningful suggest changes
+    // Show only the most recent batch with meaningful suggest changes (avoids duplication)
     if (pipelines.length > 0) {
-      for (const pipeline of pipelines) {
+      const latest = pipelines.find(pipeline => {
         const hubStep = this.getStepFromPipeline(pipeline, 'hub_scores');
         const entEmbStep = this.getStepFromPipeline(pipeline, 'entity_embeddings');
         const hubDiffs = hubStep && !hubStep.skipped ? hubStep.output.diffs as Array<unknown> | undefined : undefined;
         const entEntities = entEmbStep && !entEmbStep.skipped ? entEmbStep.output.updated_entities as Array<unknown> | undefined : undefined;
-        if (!hubDiffs?.length && !entEntities?.length) continue;
+        return hubDiffs?.length || entEntities?.length;
+      });
+      if (latest) {
         const batchEl = panel.createDiv('flywheel-batch-section');
-        batchEl.createDiv('flywheel-batch-section-header').setText(this.formatBatchHeader(pipeline));
-        this.renderSuggestBatchDetail(batchEl, pipeline);
+        batchEl.createDiv('flywheel-batch-section-header').setText(this.formatBatchHeader(latest));
+        this.renderSuggestBatchDetail(batchEl, latest);
       }
     }
 

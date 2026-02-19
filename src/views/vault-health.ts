@@ -218,7 +218,7 @@ export class VaultHealthView extends ItemView {
       const resp = await this.mcpClient.graphAnalysis('dead_ends', { limit: 30 });
       const items = (resp as any).dead_ends ?? (resp as any).results ?? [];
       if (items.length === 0) {
-        el.createDiv('flywheel-health-empty-msg').setText('No dead ends found');
+        el.createDiv('flywheel-health-empty-msg').setText('No dead ends \u2014 all linked-to notes have outgoing connections.');
         return items.length;
       }
       for (const note of items.slice(0, 30)) {
@@ -238,7 +238,7 @@ export class VaultHealthView extends ItemView {
         el.createDiv('flywheel-health-more').setText(`+${total - 30} more`);
       }
       return total;
-    }, 'Notes with backlinks but no outgoing links \u2014 they receive attention but don\'t connect forward. Sorted by backlink count (most referenced first).');
+    }, 'Notes that other notes link to, but that contain no outgoing [[wikilinks]] themselves. They receive attention but don\'t connect readers forward. Add outgoing links to strengthen the graph.');
 
     // Broken Links section — lazy-loaded
     this.renderLazySection(content, 'Broken Links', 'unlink', async (el) => {
@@ -262,6 +262,10 @@ export class VaultHealthView extends ItemView {
 
         row.createSpan('flywheel-health-broken-arrow').setText('\u2192');
         row.createSpan('flywheel-health-broken-target').setText(broken.target);
+
+        // Show source path so user knows which file to check
+        const pathEl = item.createDiv('flywheel-health-item-path');
+        pathEl.setText(broken.source.replace(/\.md$/, ''));
 
         if (broken.suggestion) {
           const suggestionName = broken.suggestion.replace(/\.md$/, '').split('/').pop() || broken.suggestion;
@@ -302,14 +306,14 @@ export class VaultHealthView extends ItemView {
         el.createDiv('flywheel-health-more').setText(`+${total - 30} more`);
       }
       return total;
-    }, 'Wikilinks pointing to notes that don\'t exist. Suggestions show the closest matching note name.');
+    }, '[[Wikilinks]] pointing to notes that don\'t exist in the vault. The source note contains a link, but no matching note was found. Fix by creating the target note or correcting the link name.');
 
     // Stale Hubs section — lazy-loaded
     this.renderLazySection(content, 'Stale Hubs', 'clock', async (el) => {
       const resp = await this.mcpClient.graphAnalysis('stale', { days: 90, limit: 20 });
       const items = (resp as any).notes ?? (resp as any).stale_notes ?? [];
       if (items.length === 0) {
-        el.createDiv('flywheel-health-empty-msg').setText('No stale hubs found');
+        el.createDiv('flywheel-health-empty-msg').setText('No stale hubs \u2014 all highly-linked notes have been updated within 90 days.');
         return items.length;
       }
       for (const note of items.slice(0, 20)) {
@@ -334,10 +338,11 @@ export class VaultHealthView extends ItemView {
         el.createDiv('flywheel-health-more').setText(`+${total - 20} more`);
       }
       return total;
-    }, 'Highly-linked notes not modified in 90+ days. These are important notes that may need updating.');
+    }, 'Notes with many backlinks that haven\'t been updated in 90+ days. These are important notes (many others reference them) that may contain outdated information.');
 
     // Immature Notes section — lazy-loaded
     this.renderLazySection(content, 'Immature Notes', 'sprout', async (el) => {
+      el.addClass('flywheel-health-grid-2col');
       const resp = await this.mcpClient.graphAnalysis('immature', { limit: 20 });
       const items = (resp as any).notes ?? (resp as any).immature_notes ?? [];
       if (items.length === 0) {
@@ -373,7 +378,7 @@ export class VaultHealthView extends ItemView {
         el.createDiv('flywheel-health-more').setText(`+${total - 20} more`);
       }
       return total;
-    }, 'Notes that are short, have few links, or lack frontmatter. Expanding these would strengthen the graph.');
+    }, 'Notes scored by maturity: word count, outgoing links, frontmatter completeness vs folder peers, and backlinks. Low scores indicate stub or underdeveloped notes that would benefit from expansion.');
 
     // Emerging Hubs section — lazy-loaded
     this.renderLazySection(content, 'Emerging Hubs', 'trending-up', async (el) => {
@@ -514,7 +519,7 @@ export class VaultHealthView extends ItemView {
       }
 
       return totalFeedback;
-    }, 'Wikilink suggestion accuracy: how often suggested links were accepted or rejected, per entity.');
+    }, 'Tracks how often wikilink suggestions from the suggest_wikilinks tool were accepted vs rejected. Feedback accumulates as you use the wikilink suggestion feature in your notes.');
   }
 
   private renderStat(container: HTMLDivElement, icon: string, value: string, label: string): HTMLDivElement {
@@ -526,32 +531,25 @@ export class VaultHealthView extends ItemView {
     return stat;
   }
 
-  /** Populate the stats bar asynchronously — health + vaultStats in parallel. */
-  private async loadStatsBar(
+  /** Populate the stats bar from cached health data (no MCP calls). */
+  private loadStatsBar(
     notesStat: HTMLDivElement,
     entitiesStat: HTMLDivElement,
     tagsStat: HTMLDivElement,
     linksStat: HTMLDivElement,
-  ): Promise<void> {
-    try {
-      await this.mcpClient.waitForIndex();
-      const [health, stats] = await Promise.all([
-        this.mcpClient.healthCheck(),
-        this.mcpClient.vaultStats().catch(() => null),
-      ]);
+  ): void {
+    const health = this.mcpClient.lastHealth;
+    if (!health) return;
 
-      const setStatValue = (el: HTMLDivElement, value: string) => {
-        const valueEl = el.querySelector('.flywheel-health-stat-value');
-        if (valueEl) valueEl.setText(value);
-      };
+    const setStatValue = (el: HTMLDivElement, value: string) => {
+      const valueEl = el.querySelector('.flywheel-health-stat-value');
+      if (valueEl) valueEl.setText(value);
+    };
 
-      setStatValue(notesStat, `${health.note_count}`);
-      setStatValue(entitiesStat, `${health.entity_count}`);
-      setStatValue(tagsStat, `${health.tag_count}`);
-      setStatValue(linksStat, stats ? `${stats.total_links}` : '—');
-    } catch {
-      // Stats failed to load — placeholders remain as "..."
-    }
+    setStatValue(notesStat, `${health.note_count}`);
+    setStatValue(entitiesStat, `${health.entity_count}`);
+    setStatValue(tagsStat, `${health.tag_count}`);
+    setStatValue(linksStat, `${health.link_count ?? '—'}`);
   }
 
   private renderGrowthStat(container: HTMLDivElement, icon: string, value: string, label: string): void {
@@ -709,14 +707,6 @@ export class VaultHealthView extends ItemView {
           logContainer.scrollTop = logContainer.scrollHeight;
         }
 
-        // Stop auto-refresh when server seems settled (no new entries for a while)
-        // Check if the most recent entry is older than 10 seconds
-        const now = Date.now();
-        const mostRecentTs = entries.length > 0 ? entries[entries.length - 1].ts : 0;
-        if (mostRecentTs > 0 && now - mostRecentTs > 10_000 && this.activityLogInterval) {
-          clearInterval(this.activityLogInterval);
-          this.activityLogInterval = null;
-        }
       } catch (err) {
         // Server may not have the tool yet — silently ignore
       }

@@ -13,6 +13,7 @@ export const TASK_DASHBOARD_VIEW_TYPE = 'flywheel-task-dashboard';
 
 type StatusFilter = 'open' | 'upcoming' | 'completed' | 'all';
 type SortMode = 'due_date' | 'file' | 'recent';
+type SortDir = 'asc' | 'desc';
 
 /** Get today's date as YYYY-MM-DD for due date comparisons. */
 function todayStr(): string {
@@ -52,6 +53,7 @@ export class TaskDashboardView extends ItemView {
   private tasks: McpTask[] = [];
   private filter: StatusFilter = 'open';
   private sort: SortMode = 'due_date';
+  private sortDir: SortDir = 'asc';
   private counts = { open: 0, upcoming: 0, completed: 0, total: 0 };
   private cacheReady = false;
   private healthUnsub: (() => void) | null = null;
@@ -87,8 +89,8 @@ export class TaskDashboardView extends ItemView {
   }
 
   /**
-   * Subscribe to health updates. Once the index is ready, check server_log
-   * for task cache readiness, then fetch and render.
+   * Subscribe to health updates. Wait for both index ready AND task cache ready
+   * before fetching tasks, to avoid querying an empty cache mid-rebuild.
    */
   private waitForReady(): void {
     // If already ready from a previous open, just fetch
@@ -100,27 +102,13 @@ export class TaskDashboardView extends ItemView {
     this.healthUnsub = this.mcpClient.onHealthUpdate(async (health) => {
       if (this.cacheReady) return;
 
-      if (health.index_state === 'ready') {
-        // Check server_log for task cache readiness
-        try {
-          const log = await this.mcpClient.getServerLog({ component: 'tasks', limit: 20 });
-          const ready = log.entries.some(e =>
-            e.component === 'tasks' && (
-              e.message.toLowerCase().includes('task cache built') ||
-              e.message.toLowerCase().includes('task cache ready')
-            )
-          );
-          if (ready) {
-            this.cacheReady = true;
-            if (this.healthUnsub) { this.healthUnsub(); this.healthUnsub = null; }
-            await this.fetchTasks();
-          }
-        } catch {
-          // server_log not available, try fetching tasks directly
-          this.cacheReady = true;
-          if (this.healthUnsub) { this.healthUnsub(); this.healthUnsub = null; }
-          await this.fetchTasks();
-        }
+      if (health.index_state === 'ready' && health.tasks_ready) {
+        this.cacheReady = true;
+        if (this.healthUnsub) { this.healthUnsub(); this.healthUnsub = null; }
+        await this.fetchTasks();
+      } else if (health.index_state === 'ready' && !health.tasks_ready) {
+        // Index is ready but task cache still building — update splash text
+        this.renderSplash('Building task index\u2026');
       }
     });
   }
@@ -167,7 +155,7 @@ export class TaskDashboardView extends ItemView {
       }
     } catch (err) {
       console.error('Flywheel Tasks: failed to fetch tasks', err);
-      this.tasks = [];
+      // Keep existing tasks on error rather than showing empty state
     }
     this.render();
   }
@@ -201,8 +189,10 @@ export class TaskDashboardView extends ItemView {
         // Default to 'recent' sort for All/Done views, 'due_date' for Open/Upcoming
         if (opt.value === 'all' || opt.value === 'completed') {
           this.sort = 'recent';
+          this.sortDir = 'desc';
         } else if (this.sort === 'recent') {
           this.sort = 'due_date';
+          this.sortDir = 'asc';
         }
         this.fetchTasks();
       });
@@ -220,12 +210,24 @@ export class TaskDashboardView extends ItemView {
     ];
 
     for (const opt of sortOptions) {
+      const isActive = opt.value === this.sort;
       const btn = sorts.createEl('button', {
-        cls: `flywheel-task-sort-btn${opt.value === this.sort ? ' is-active' : ''}`,
-        text: opt.label,
+        cls: `flywheel-task-sort-btn${isActive ? ' is-active' : ''}`,
       });
+      btn.createSpan().setText(opt.label);
+      if (isActive) {
+        const dirIcon = btn.createSpan('flywheel-task-sort-dir');
+        setIcon(dirIcon, this.sortDir === 'asc' ? 'arrow-up' : 'arrow-down');
+      }
       btn.addEventListener('click', () => {
-        this.sort = opt.value;
+        if (this.sort === opt.value) {
+          // Toggle direction
+          this.sortDir = this.sortDir === 'asc' ? 'desc' : 'asc';
+        } else {
+          this.sort = opt.value;
+          // Sensible defaults: due_date/file asc, recent desc
+          this.sortDir = opt.value === 'recent' ? 'desc' : 'asc';
+        }
         this.render();
       });
     }
@@ -255,10 +257,10 @@ export class TaskDashboardView extends ItemView {
     const summaryInfo = summary.createSpan('flywheel-graph-section-info');
     setIcon(summaryInfo, 'info');
     const sortDesc = this.sort === 'due_date'
-      ? 'Sorted by due date (soonest first), then by file path.'
+      ? `Sorted by due date (${this.sortDir === 'asc' ? 'soonest' : 'latest'} first), then by file path.`
       : this.sort === 'recent'
-      ? 'Sorted by most recently modified file (recently toggled first).'
-      : 'Sorted alphabetically by file path.';
+      ? `Sorted by file modification time (${this.sortDir === 'desc' ? 'newest' : 'oldest'} first).`
+      : `Sorted alphabetically by file path (${this.sortDir === 'asc' ? 'A\u2013Z' : 'Z\u2013A'}).`;
     summaryInfo.setAttribute('aria-label',
       'Tasks extracted from markdown checkboxes across all notes. ' +
       'Toggle status directly \u2014 changes are written back to the source note. ' +
@@ -275,27 +277,28 @@ export class TaskDashboardView extends ItemView {
 
   private sortTasks(tasks: McpTask[]): McpTask[] {
     const sorted = [...tasks];
+    const dir = this.sortDir === 'asc' ? 1 : -1;
     switch (this.sort) {
       case 'due_date':
         sorted.sort((a, b) => {
-          // Tasks with due dates first
+          // Tasks with due dates first (regardless of direction)
           if (a.due_date && !b.due_date) return -1;
           if (!a.due_date && b.due_date) return 1;
-          if (a.due_date && b.due_date) return a.due_date.localeCompare(b.due_date);
+          if (a.due_date && b.due_date) return dir * a.due_date.localeCompare(b.due_date);
           return a.path.localeCompare(b.path);
         });
         break;
       case 'recent':
         sorted.sort((a, b) => {
-          // Most recently modified file first (proxy for most recently toggled)
           const mtimeA = this.getFileMtime(a.path);
           const mtimeB = this.getFileMtime(b.path);
-          if (mtimeA !== mtimeB) return mtimeB - mtimeA;
+          // Default desc = most recent first, asc = oldest first
+          if (mtimeA !== mtimeB) return dir * (mtimeA - mtimeB);
           return a.path.localeCompare(b.path);
         });
         break;
       case 'file':
-        sorted.sort((a, b) => a.path.localeCompare(b.path));
+        sorted.sort((a, b) => dir * a.path.localeCompare(b.path));
         break;
     }
     return sorted;
@@ -483,18 +486,18 @@ export class TaskDashboardView extends ItemView {
   }
 
   /** Full-panel splash shown while waiting for task cache to build. */
-  private renderSplash(): void {
+  private renderSplash(message?: string): void {
     const container = this.containerEl.children[1] as HTMLElement;
     container.empty();
     container.addClass('flywheel-task-dashboard');
 
-    const splash = container.createDiv('flywheel-task-splash');
+    const splash = container.createDiv('flywheel-splash');
     const imgPath = `${this.app.vault.configDir}/plugins/flywheel-crank/flywheel.png`;
-    const imgEl = splash.createEl('img', { cls: 'flywheel-task-splash-logo' });
+    const imgEl = splash.createEl('img', { cls: 'flywheel-splash-logo' });
     imgEl.src = this.app.vault.adapter.getResourcePath(imgPath);
     imgEl.alt = '';
-    splash.createDiv('flywheel-task-splash-text').setText(
-      this.mcpClient.connected ? 'Building task index\u2026' : 'Connecting to flywheel-memory\u2026'
-    );
+    const text = message
+      ?? (this.mcpClient.connected ? 'Building vault index\u2026' : 'Connecting to flywheel-memory\u2026');
+    splash.createDiv('flywheel-splash-text').setText(text);
   }
 }

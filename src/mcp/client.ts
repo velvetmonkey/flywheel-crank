@@ -83,6 +83,15 @@ export interface McpForwardLinksResponse {
   forward_links: McpForwardLink[];
 }
 
+export interface McpPipelineStep {
+  name: string;
+  duration_ms: number;
+  input: Record<string, unknown>;
+  output: Record<string, unknown>;
+  skipped?: boolean;
+  skip_reason?: string;
+}
+
 export interface McpHealthCheckResponse {
   status: 'healthy' | 'degraded' | 'unhealthy';
   schema_version?: number;
@@ -95,6 +104,7 @@ export interface McpHealthCheckResponse {
   note_count: number;
   entity_count: number;
   tag_count: number;
+  link_count?: number;
   config?: Record<string, unknown>;
   last_rebuild?: {
     trigger: string;
@@ -102,11 +112,29 @@ export interface McpHealthCheckResponse {
     duration_ms: number;
     ago_seconds: number;
   };
+  last_pipeline?: {
+    timestamp: number;
+    trigger: string;
+    duration_ms: number;
+    files_changed: number | null;
+    changed_paths: string[] | null;
+    steps: McpPipelineStep[];
+  };
+  recent_pipelines?: Array<{
+    timestamp: number;
+    trigger: string;
+    duration_ms: number;
+    files_changed: number | null;
+    changed_paths: string[] | null;
+    steps: McpPipelineStep[];
+  }>;
   fts5_ready?: boolean;
   fts5_building?: boolean;
   embeddings_building?: boolean;
   embeddings_ready?: boolean;
   embeddings_count?: number;
+  tasks_ready?: boolean;
+  tasks_building?: boolean;
   recommendations: string[];
 }
 
@@ -428,6 +456,35 @@ export interface McpWikilinkFeedbackResponse {
   total_suppressed?: number;
 }
 
+export interface McpFeedbackDashboardResponse {
+  mode: 'dashboard';
+  total_feedback: number;
+  total_suppressed: number;
+  dashboard: {
+    total_feedback: number;
+    total_correct: number;
+    total_incorrect: number;
+    overall_accuracy: number;
+    total_suppressed: number;
+    feedback_sources: {
+      explicit: { count: number; correct: number };
+      implicit: { count: number; correct: number };
+    };
+    applications: { applied: number; removed: number };
+    boost_tiers: Array<{
+      label: string;
+      boost: number;
+      min_accuracy: number;
+      min_samples: number;
+      entities: Array<{ entity: string; accuracy: number; total: number }>;
+    }>;
+    learning: Array<{ entity: string; accuracy: number; total: number }>;
+    suppressed: Array<{ entity: string; false_positive_rate: number }>;
+    recent: McpFeedbackEntry[];
+    timeline: Array<{ day: string; count: number; correct: number; incorrect: number }>;
+  };
+}
+
 // Server log
 export interface McpServerLogEntry {
   ts: number;
@@ -448,6 +505,7 @@ export interface McpFlywheelConfigResponse {
   templates?: Record<string, string>;
   exclude_task_tags?: string[];
   exclude_analysis_tags?: string[];
+  exclude_entities?: string[];
   [key: string]: unknown;
 }
 
@@ -470,6 +528,21 @@ export interface McpMergeResult {
   path?: string;
   preview?: string;
   backlinks_updated?: number;
+}
+
+// Alias suggestions
+export interface McpAliasSuggestion {
+  entity: string;
+  entity_path: string;
+  current_aliases: string[];
+  candidate: string;
+  type: 'acronym' | 'short_form';
+  mentions: number;
+}
+
+export interface McpAliasSuggestionsResponse {
+  suggestion_count: number;
+  suggestions: McpAliasSuggestion[];
 }
 
 // Write tool responses
@@ -562,7 +635,7 @@ export class FlywheelMcpClient {
         command = 'wsl';
         args = [
           'bash', '-c',
-          `VAULT_PATH="${wslVault}" FLYWHEEL_TOOLS="full" FLYWHEEL_WATCH="true" exec node "${serverPath}"`,
+          `VAULT_PATH="${wslVault}" FLYWHEEL_TOOLS="full" FLYWHEEL_WATCH="true" FLYWHEEL_WATCH_POLL="true" FLYWHEEL_POLL_INTERVAL="15000" exec node "${serverPath}"`,
         ];
         // Don't set effectiveVaultPath since it's baked into the command
         effectiveVaultPath = wslVault;
@@ -596,6 +669,8 @@ export class FlywheelMcpClient {
         VAULT_PATH: effectiveVaultPath,
         FLYWHEEL_TOOLS: 'full',
         FLYWHEEL_WATCH: 'true',
+        FLYWHEEL_WATCH_POLL: 'true',
+        FLYWHEEL_POLL_INTERVAL: '15000',
       },
     });
 
@@ -872,6 +947,15 @@ export class FlywheelMcpClient {
     return result;
   }
 
+  /**
+   * Suggest missing aliases (acronyms, short forms) for entities in a folder.
+   */
+  async suggestEntityAliases(folder?: string): Promise<McpAliasSuggestionsResponse> {
+    return this.callTool<McpAliasSuggestionsResponse>('suggest_entity_aliases', {
+      ...(folder ? { folder } : {}),
+    });
+  }
+
   // -------------------------------------------------------------------------
   // Graph analysis
   // -------------------------------------------------------------------------
@@ -1055,6 +1139,13 @@ export class FlywheelMcpClient {
       ...(entity ? { entity } : {}),
       ...(limit ? { limit } : {}),
     });
+  }
+
+  /**
+   * Get full feedback loop dashboard data.
+   */
+  async wikilinkFeedbackDashboard(): Promise<McpFeedbackDashboardResponse> {
+    return this.callTool<McpFeedbackDashboardResponse>('wikilink_feedback', { mode: 'dashboard' });
   }
 
   /**

@@ -15,6 +15,7 @@ import { GraphSidebarView, GRAPH_VIEW_TYPE } from './views/graph-sidebar';
 import { EntityBrowserView, ENTITY_BROWSER_VIEW_TYPE } from './views/entity-browser';
 import { VaultHealthView, VAULT_HEALTH_VIEW_TYPE } from './views/vault-health';
 import { TaskDashboardView, TASK_DASHBOARD_VIEW_TYPE } from './views/task-dashboard';
+import { FeedbackDashboardView, FEEDBACK_DASHBOARD_VIEW_TYPE } from './views/feedback-dashboard';
 import { WikilinkSuggest } from './suggest/wikilink-suggest';
 import { FlywheelMcpClient } from './mcp/client';
 
@@ -45,6 +46,7 @@ export default class FlywheelCrankPlugin extends Plugin {
     this.registerView(ENTITY_BROWSER_VIEW_TYPE, (leaf) => new EntityBrowserView(leaf, this.mcpClient));
     this.registerView(VAULT_HEALTH_VIEW_TYPE, (leaf) => new VaultHealthView(leaf, this.mcpClient));
     this.registerView(TASK_DASHBOARD_VIEW_TYPE, (leaf) => new TaskDashboardView(leaf, this.mcpClient));
+    this.registerView(FEEDBACK_DASHBOARD_VIEW_TYPE, (leaf) => new FeedbackDashboardView(leaf, this.mcpClient));
 
     // Settings tab
     this.addSettingTab(new FlywheelCrankSettingTab(this.app, this));
@@ -78,6 +80,12 @@ export default class FlywheelCrankPlugin extends Plugin {
       id: 'open-task-dashboard',
       name: 'Open task dashboard',
       callback: () => this.activateView(TASK_DASHBOARD_VIEW_TYPE),
+    });
+
+    this.addCommand({
+      id: 'open-feedback-dashboard',
+      name: 'Open feedback dashboard',
+      callback: () => this.activateView(FEEDBACK_DASHBOARD_VIEW_TYPE),
     });
 
     this.addCommand({
@@ -181,12 +189,15 @@ export default class FlywheelCrankPlugin extends Plugin {
       const semanticLabel = health.embeddings_building
         ? `building... (${health.embeddings_count ?? 0} embedded)`
         : health.embeddings_ready ? `ready (${health.embeddings_count} embeddings)` : 'not built';
+      const tasksLabel = health.tasks_building ? 'building...'
+        : health.tasks_ready ? 'ready' : 'waiting';
       const tooltip = [
         `Vault: ${health.note_count} notes · ${health.entity_count} entities · ${health.tag_count} tags`,
         '',
         `Graph index: ready (${agoText})`,
         `Keyword search: ${fts5Label}`,
         `Semantic search: ${semanticLabel}`,
+        `Task cache: ${tasksLabel}`,
       ].join('\n');
 
       // Still building secondary indexes

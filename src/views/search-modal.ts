@@ -86,19 +86,13 @@ export class SearchModal extends Modal {
       } else if (e.key === 'ArrowUp') {
         e.preventDefault();
         this.selectPrev();
-      } else if (e.key === 'Enter') {
-        e.preventDefault();
-        if (e.metaKey || e.ctrlKey) {
-          if (e.altKey) {
-            this.openSelected('split-right');
-          } else {
-            this.openSelected('new-tab');
-          }
-        } else {
-          this.openSelected('current');
-        }
       }
     });
+
+    // Register Enter via Obsidian scope (modal scopes can swallow raw keydown)
+    this.scope.register([], 'Enter', (e) => { e.preventDefault(); this.openSelected('current'); return false; });
+    this.scope.register(['Mod'], 'Enter', (e) => { e.preventDefault(); this.openSelected('new-tab'); return false; });
+    this.scope.register(['Mod', 'Alt'], 'Enter', (e) => { e.preventDefault(); this.openSelected('split-right'); return false; });
 
     this.inputEl.focus();
   }
@@ -232,7 +226,8 @@ export class SearchModal extends Modal {
 
       item.addEventListener('mouseenter', () => {
         this.selectedIndex = i;
-        this.renderResults();
+        this.resultsEl.querySelectorAll('.is-selected').forEach(el => el.removeClass('is-selected'));
+        item.addClass('is-selected');
       });
 
       // Title row

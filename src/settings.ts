@@ -82,6 +82,17 @@ export class FlywheelCrankSettingTab extends PluginSettingTab {
         })
       );
 
+    new Setting(containerEl)
+      .setName('Feedback dashboard')
+      .setDesc('Visualise the wikilink feedback loop: discover, suggest, apply, learn, adapt')
+      .addToggle(toggle => toggle
+        .setValue(this.plugin.settings.enableFeedbackDashboard)
+        .onChange(async (value) => {
+          this.plugin.settings.enableFeedbackDashboard = value;
+          await this.plugin.saveSettings();
+        })
+      );
+
     // Search settings
     containerEl.createEl('h3', { text: 'Search' });
 
@@ -165,6 +176,37 @@ export class FlywheelCrankSettingTab extends PluginSettingTab {
       });
     } else {
       excludeTagsSetting.setDesc('Connect to MCP server to configure. ' + excludeTagsSetting.descEl.textContent);
+    }
+
+    const excludeEntitiesSetting = new Setting(containerEl)
+      .setName('Exclude entities from analysis')
+      .setDesc('Entity names to filter from all graph analysis (comma-separated). Use for common entities that add noise, like "walk" or "vitamins".');
+
+    if (this.plugin.mcpClient.connected) {
+      excludeEntitiesSetting.addTextArea(text => {
+        text.setPlaceholder('walk, stretch, vitamins');
+        text.inputEl.rows = 2;
+
+        this.plugin.mcpClient.getFlywheelConfig().then(cfg => {
+          const entities = cfg.exclude_entities ?? [];
+          text.setValue(entities.join(', '));
+        }).catch(() => {
+          text.setPlaceholder('(connect to server to load)');
+        });
+
+        text.onChange(async (value) => {
+          const entities = value.split(',').map(s => s.trim()).filter(s => s.length > 0);
+          try {
+            await this.plugin.mcpClient.setFlywheelConfig('exclude_entities', entities);
+          } catch (err) {
+            console.error('Flywheel Crank: failed to save exclude_entities', err);
+          }
+        });
+
+        return text;
+      });
+    } else {
+      excludeEntitiesSetting.setDesc('Connect to MCP server to configure. ' + excludeEntitiesSetting.descEl.textContent);
     }
   }
 }
