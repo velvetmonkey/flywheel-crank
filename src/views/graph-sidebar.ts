@@ -5,7 +5,7 @@
  * Note Intelligence (when a note is active). All data from MCP tool calls.
  */
 
-import { ItemView, WorkspaceLeaf, TFile, setIcon } from 'obsidian';
+import { ItemView, WorkspaceLeaf, TFile, setIcon, MarkdownView } from 'obsidian';
 import type {
   FlywheelMcpClient,
   McpBacklinksResponse,
@@ -13,6 +13,7 @@ import type {
   McpSuggestWikilinksResponse,
   McpSimilarResponse,
   McpHealthCheckResponse,
+  McpAliasSuggestionsResponse,
 } from '../mcp/client';
 
 export const GRAPH_VIEW_TYPE = 'flywheel-graph';
@@ -86,12 +87,15 @@ export class GraphSidebarView extends ItemView {
       return;
     }
 
-    // Note sections: always refresh on note change
-    this.noteContainer.empty();
+    // Note sections: build into a fresh container, then swap when data is ready.
+    // This avoids flashing empty while async fetches are in progress.
     const generation = ++this.renderGeneration;
     if (activeFile) {
-      this.renderNoteHeader(activeFile);
-      this.renderNoteSections(activeFile, generation);
+      const freshContainer = document.createElement('div');
+      this.renderNoteHeader(activeFile, freshContainer);
+      this.renderNoteSections(activeFile, generation, freshContainer);
+    } else {
+      this.noteContainer.empty();
     }
   }
 
@@ -307,6 +311,71 @@ export class GraphSidebarView extends ItemView {
         }
       }
 
+      // Alias suggestions toggle (lazy-loaded)
+      let aliasSuggestionsLoaded = false;
+      const aliasToggle = content.createDiv('flywheel-graph-more');
+      aliasToggle.setText('+ alias suggestions');
+      const aliasGroup = content.createDiv('flywheel-graph-info-group flywheel-graph-details-hidden');
+
+      aliasToggle.addEventListener('click', async () => {
+        if (aliasSuggestionsLoaded) {
+          if (aliasGroup.hasClass('flywheel-graph-details-hidden')) {
+            aliasGroup.removeClass('flywheel-graph-details-hidden');
+            aliasToggle.setText('- alias suggestions');
+          } else {
+            aliasGroup.addClass('flywheel-graph-details-hidden');
+            aliasToggle.setText('+ alias suggestions');
+          }
+          return;
+        }
+
+        aliasSuggestionsLoaded = true;
+        aliasGroup.removeClass('flywheel-graph-details-hidden');
+        aliasToggle.setText('- alias suggestions');
+        aliasGroup.createDiv('flywheel-graph-section-empty').setText('loading...');
+
+        try {
+          const result = await this.mcpClient.suggestEntityAliases(folder);
+          aliasGroup.empty();
+
+          if (result.suggestions.length === 0) {
+            aliasGroup.createDiv('flywheel-graph-section-empty')
+              .setText('No alias suggestions for this folder');
+            return;
+          }
+
+          for (const s of result.suggestions) {
+            const row = aliasGroup.createDiv('flywheel-alias-suggestion');
+            row.createSpan('flywheel-alias-entity').setText(s.entity);
+            row.createSpan('flywheel-alias-arrow').setText('\u2192');
+            row.createSpan('flywheel-alias-candidate').setText(s.candidate);
+
+            if (s.mentions > 0) {
+              row.createSpan('flywheel-alias-mentions').setText(`${s.mentions}\u00d7`);
+            }
+
+            if (s.mentions > 0) {
+              const addBtn = row.createSpan('flywheel-alias-add');
+              setIcon(addBtn, 'plus');
+              addBtn.setAttribute('aria-label', `Add "${s.candidate}" as alias for ${s.entity}`);
+              addBtn.addEventListener('click', async (e) => {
+                e.stopPropagation();
+                const newAliases = [...s.current_aliases, s.candidate];
+                await this.mcpClient.updateFrontmatter(s.entity_path, { aliases: newAliases });
+                row.remove();
+                if (aliasGroup.querySelectorAll('.flywheel-alias-suggestion').length === 0) {
+                  aliasGroup.createDiv('flywheel-graph-section-empty').setText('All suggestions applied');
+                }
+              });
+            }
+          }
+        } catch (err) {
+          aliasGroup.empty();
+          aliasGroup.createDiv('flywheel-graph-section-empty')
+            .setText(err instanceof Error ? err.message : 'Failed to load');
+        }
+      });
+
       // Browse all folders toggle
       let browseFoldersLoaded = false;
       const browseToggle = content.createDiv('flywheel-graph-more');
@@ -411,12 +480,13 @@ export class GraphSidebarView extends ItemView {
   // Note header + sections
   // ---------------------------------------------------------------------------
 
-  private renderNoteHeader(file: TFile): void {
-    const header = this.noteContainer.createDiv('flywheel-graph-header');
+  private renderNoteHeader(file: TFile, target?: HTMLElement): void {
+    const container = target ?? this.noteContainer;
+    const header = container.createDiv('flywheel-graph-header');
     header.createDiv('flywheel-graph-note-title').setText(file.basename);
   }
 
-  private async renderNoteSections(file: TFile, generation: number): Promise<void> {
+  private async renderNoteSections(file: TFile, generation: number, freshContainer?: HTMLElement): Promise<void> {
     const notePath = file.path;
 
     try {
@@ -433,6 +503,14 @@ export class GraphSidebarView extends ItemView {
       ]);
 
       if (generation !== this.renderGeneration) return;
+
+      // Swap: replace old content with the fresh container now that data is ready
+      if (freshContainer) {
+        this.noteContainer.empty();
+        while (freshContainer.firstChild) {
+          this.noteContainer.appendChild(freshContainer.firstChild);
+        }
+      }
 
       // Ensure periodic prefixes are set for cloud splitting
       if (this.periodicPrefixes.length === 0 && health?.config) {
@@ -502,7 +580,7 @@ export class GraphSidebarView extends ItemView {
             this.renderBacklinkGrouped(container, bl);
           });
         }
-      }, true, undefined, undefined, backlinksInfo);
+      }, false, undefined, undefined, backlinksInfo);
 
       // Forward links section
       const forwardInfo = 'Outgoing wikilinks from this note. Dead links (marked \'missing\') ' +
@@ -529,7 +607,7 @@ export class GraphSidebarView extends ItemView {
             this.renderForwardLink(container, link);
           });
         }
-      }, true, undefined, undefined, forwardInfo);
+      }, false, undefined, undefined, forwardInfo);
     } catch (err) {
       console.error('Flywheel Crank: graph sidebar error', err);
       // Retry once after 3s (server may still be starting)
@@ -543,9 +621,32 @@ export class GraphSidebarView extends ItemView {
     }
   }
 
+  /** Open a note and scroll to a specific line with a brief flash highlight. */
+  private async navigateToLine(source: string, line: number): Promise<void> {
+    await this.app.workspace.openLinkText(source, '', false);
+    // Find the leaf with the target file — getActiveViewOfType returns null from sidebar context
+    const target = source.replace(/\.md$/, '');
+    const leaf = this.app.workspace.getLeavesOfType('markdown').find(l => {
+      const f = (l.view as MarkdownView).file;
+      return f && f.path.replace(/\.md$/, '') === target;
+    });
+    if (!leaf) return;
+    const view = leaf.view as MarkdownView;
+    this.app.workspace.setActiveLeaf(leaf, { focus: true });
+    // Small delay for focus to settle, then scroll and flash-select the line
+    setTimeout(() => {
+      if (!view.editor) return;
+      const ln = Math.max(0, line - 1);
+      const text = view.editor.getLine(ln);
+      view.editor.setSelection({ line: ln, ch: 0 }, { line: ln, ch: text.length });
+      view.editor.scrollIntoView({ from: { line: ln, ch: 0 }, to: { line: ln, ch: text.length } }, true);
+      setTimeout(() => view.editor.setCursor({ line: ln, ch: 0 }), 250);
+    }, 50);
+  }
+
   private renderBacklink(container: HTMLDivElement, bl: { source: string; line: number; context?: string }): void {
     const item = container.createDiv('flywheel-graph-link-item');
-    item.addEventListener('click', () => this.app.workspace.openLinkText(bl.source, '', false));
+    item.addEventListener('click', () => this.navigateToLine(bl.source, bl.line));
 
     const title = bl.source.replace(/\.md$/, '').split('/').pop() || bl.source;
     const nameRow = item.createDiv('flywheel-graph-link-name-row');
@@ -566,7 +667,9 @@ export class GraphSidebarView extends ItemView {
     bl: { source: string; count: number; lines: number[]; context?: string },
   ): void {
     const item = container.createDiv('flywheel-graph-link-item');
-    item.addEventListener('click', () => this.app.workspace.openLinkText(bl.source, '', false));
+    item.addEventListener('click', () => bl.lines.length > 0
+      ? this.navigateToLine(bl.source, bl.lines[0])
+      : this.app.workspace.openLinkText(bl.source, '', false));
 
     const title = bl.source.replace(/\.md$/, '').split('/').pop() || bl.source;
     const nameRow = item.createDiv('flywheel-graph-link-name-row');

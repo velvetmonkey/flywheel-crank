@@ -559,6 +559,8 @@ export class EntityBrowserView extends ItemView {
     mergeBtn.setText('Merge');
     mergeBtn.addEventListener('click', (e) => {
       e.stopPropagation();
+      mergeBtn.setText('Merging\u2026');
+      mergeBtn.disabled = true;
       this.executeMerge(suggestion, rootContainer);
     });
 
@@ -759,7 +761,7 @@ export class EntityBrowserView extends ItemView {
   // ---------------------------------------------------------------------------
 
   private renderSplash(container: HTMLElement, message: string): void {
-    const empty = container.createDiv('flywheel-entity-empty');
+    const empty = container.createDiv('flywheel-splash');
     const imgPath = `${this.app.vault.configDir}/plugins/flywheel-crank/flywheel.png`;
     const imgEl = empty.createEl('img', { cls: 'flywheel-splash-logo' });
     imgEl.src = this.app.vault.adapter.getResourcePath(imgPath);
