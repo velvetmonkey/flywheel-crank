@@ -608,6 +608,11 @@ export class FlywheelMcpClient {
     this.cache.invalidatePath(path);
   }
 
+  /** Invalidate all cached entries for a specific tool. */
+  invalidateTool(tool: string): void {
+    this.cache.invalidateTool(tool);
+  }
+
   /**
    * Connect to a flywheel-memory MCP server, spawning it as a child process.
    *

@@ -6,7 +6,7 @@
  */
 
 import { ItemView, WorkspaceLeaf, TFile, setIcon } from 'obsidian';
-import type { FlywheelMcpClient, McpServerLogEntry } from '../mcp/client';
+import type { FlywheelMcpClient, McpHealthCheckResponse, McpPipelineStep } from '../mcp/client';
 
 export const VAULT_HEALTH_VIEW_TYPE = 'flywheel-vault-health';
 
@@ -661,7 +661,7 @@ export class VaultHealthView extends ItemView {
   }
 
   /**
-   * Render the Activity Log section with auto-refresh while server is starting.
+   * Render the Activity Log section showing recent pipeline runs from health data.
    */
   private renderActivityLogSection(container: HTMLDivElement): void {
     const title = 'Activity Log';
@@ -675,7 +675,7 @@ export class VaultHealthView extends ItemView {
 
     const infoIcon = header.createSpan('flywheel-health-section-info');
     setIcon(infoIcon, 'info');
-    infoIcon.setAttribute('aria-label', 'Timestamped log of server startup stages, indexing progress, and runtime events.');
+    infoIcon.setAttribute('aria-label', 'Recent pipeline runs showing what changed in your vault — entities discovered, wikilinks applied, and feedback learned.');
     infoIcon.addEventListener('click', (e) => e.stopPropagation());
 
     const countBadge = header.createSpan('flywheel-health-section-count');
@@ -686,35 +686,42 @@ export class VaultHealthView extends ItemView {
 
     const contentEl = section.createDiv('flywheel-health-section-content');
 
-    let lastEntryTs = 0;
+    let lastPipelineTs = 0;
 
-    const populateLog = async () => {
-      try {
-        const result = await this.mcpClient.getServerLog({ limit: 100 });
-        const entries = result.entries;
+    const populateLog = () => {
+      const health = this.mcpClient.lastHealth;
+      if (!health) return;
 
-        // Only re-render if there are new entries
-        if (entries.length > 0 && entries[entries.length - 1].ts > lastEntryTs) {
+      const pipelines = health.recent_pipelines?.length
+        ? health.recent_pipelines
+        : health.last_pipeline ? [health.last_pipeline] : [];
+
+      if (pipelines.length === 0) {
+        if (lastPipelineTs === 0) {
           contentEl.empty();
-          const logContainer = contentEl.createDiv('flywheel-activity-log');
-          for (const entry of entries) {
-            this.renderLogEntry(logContainer, entry);
-          }
-          lastEntryTs = entries[entries.length - 1].ts;
-          countBadge.setText(`${entries.length}`);
-
-          // Scroll to bottom
-          logContainer.scrollTop = logContainer.scrollHeight;
+          contentEl.createDiv('flywheel-health-empty-msg').setText('No pipeline runs yet.');
         }
+        countBadge.setText('0');
+        return;
+      }
 
-      } catch (err) {
-        // Server may not have the tool yet — silently ignore
+      // Only re-render if there are new pipelines
+      const newestTs = pipelines[0]?.timestamp ?? 0;
+      if (newestTs <= lastPipelineTs) return;
+      lastPipelineTs = newestTs;
+
+      contentEl.empty();
+      const logContainer = contentEl.createDiv('flywheel-activity-log');
+      countBadge.setText(`${pipelines.length}`);
+
+      for (const pipeline of pipelines) {
+        this.renderPipelineEntry(logContainer, pipeline);
       }
     };
 
     const startAutoRefresh = () => {
       if (this.activityLogInterval) return;
-      this.activityLogInterval = setInterval(populateLog, 2000);
+      this.activityLogInterval = setInterval(populateLog, 3000);
     };
 
     const stopAutoRefresh = () => {
@@ -726,48 +733,103 @@ export class VaultHealthView extends ItemView {
 
     // Auto-load if section starts expanded
     if (!isCollapsed) {
-      const loadingDiv = contentEl.createDiv('flywheel-health-empty-msg');
-      loadingDiv.setText('Loading...');
-      populateLog().then(() => loadingDiv.remove());
+      populateLog();
       startAutoRefresh();
     }
 
-    header.addEventListener('click', async () => {
+    header.addEventListener('click', () => {
       const wasCollapsed = section.hasClass('is-collapsed');
       section.toggleClass('is-collapsed', !wasCollapsed);
       this.sectionCollapsed.set(title, !wasCollapsed);
 
       if (wasCollapsed) {
-        // Expanding
-        if (!this.loadedSections.has(title)) {
-          this.loadedSections.add(title);
-          contentEl.empty();
-          const loadingDiv = contentEl.createDiv('flywheel-health-empty-msg');
-          loadingDiv.setText('Loading...');
-          await populateLog();
-          loadingDiv.remove();
-        }
+        populateLog();
         startAutoRefresh();
       } else {
-        // Collapsing
         stopAutoRefresh();
       }
     });
   }
 
-  /** Render a single log entry row. */
-  private renderLogEntry(container: HTMLDivElement, entry: McpServerLogEntry): void {
+  /** Render a single pipeline run entry. */
+  private renderPipelineEntry(
+    container: HTMLDivElement,
+    pipeline: { timestamp: number; trigger: string; duration_ms: number; files_changed: number | null; changed_paths: string[] | null; steps: McpPipelineStep[] },
+  ): void {
     const row = container.createDiv('flywheel-activity-entry');
-    if (entry.level === 'error') row.addClass('flywheel-activity-entry-error');
-    else if (entry.level === 'warn') row.addClass('flywheel-activity-entry-warn');
 
+    // Timestamp
     const tsEl = row.createSpan('flywheel-activity-ts');
-    tsEl.setText(this.formatRelativeTime(entry.ts));
+    tsEl.setText(this.formatRelativeTime(pipeline.timestamp));
 
-    const badge = row.createSpan(`flywheel-activity-badge flywheel-activity-badge-${entry.component}`);
-    badge.setText(entry.component);
+    // Trigger badge
+    const badge = row.createSpan(`flywheel-activity-badge flywheel-activity-badge-${pipeline.trigger}`);
+    badge.setText(pipeline.trigger);
 
-    row.createSpan('flywheel-activity-msg').setText(entry.message);
+    // Summary: files changed + duration
+    const paths = pipeline.changed_paths ?? [];
+    const fileCount = pipeline.files_changed ?? paths.length;
+    const summary = paths.length === 1
+      ? this.shortenPath(paths[0])
+      : paths.length > 1
+        ? `${fileCount} files`
+        : fileCount > 0 ? `${fileCount} file${fileCount !== 1 ? 's' : ''}` : 'no changes';
+    row.createSpan('flywheel-activity-msg').setText(`${summary} \u00B7 ${pipeline.duration_ms}ms`);
+
+    // Step details (collapsible)
+    if (pipeline.steps.length > 0) {
+      const stepsEl = row.createDiv('flywheel-pipeline-steps');
+      for (const step of pipeline.steps) {
+        if (step.skipped) continue;
+        const stepRow = stepsEl.createDiv('flywheel-pipeline-step');
+        stepRow.createSpan('flywheel-pipeline-step-name').setText(step.name);
+        stepRow.createSpan('flywheel-pipeline-step-duration').setText(`${step.duration_ms}ms`);
+
+        // Render meaningful output summaries per step
+        const outputSummary = this.summarizeStepOutput(step);
+        if (outputSummary) {
+          stepRow.createSpan('flywheel-pipeline-step-detail').setText(outputSummary);
+        }
+      }
+    }
+  }
+
+  /** Summarize a pipeline step's output into a human-readable string. */
+  private summarizeStepOutput(step: McpPipelineStep): string | null {
+    const out = step.output;
+    switch (step.name) {
+      case 'discover': {
+        const added = out.added as unknown[] | undefined;
+        const removed = out.removed as unknown[] | undefined;
+        const parts: string[] = [];
+        if (added?.length) parts.push(`+${added.length} entities`);
+        if (removed?.length) parts.push(`-${removed.length} entities`);
+        return parts.length > 0 ? parts.join(', ') : null;
+      }
+      case 'apply': {
+        const tracked = out.tracked as unknown[] | undefined;
+        return tracked?.length ? `${tracked.length} file${tracked.length !== 1 ? 's' : ''} linked` : null;
+      }
+      case 'learn': {
+        const removals = out.removals as unknown[] | undefined;
+        return removals?.length ? `${removals.length} negative feedback` : null;
+      }
+      case 'hub_scores': {
+        const diffs = out.diffs as unknown[] | undefined;
+        return diffs?.length ? `${diffs.length} hub score${diffs.length !== 1 ? 's' : ''} changed` : null;
+      }
+      case 'entity_embeddings': {
+        const entities = out.updated_entities as string[] | undefined;
+        return entities?.length ? `${entities.length} embeddings updated` : null;
+      }
+      default:
+        return null;
+    }
+  }
+
+  /** Shorten a file path to just the note name. */
+  private shortenPath(p: string): string {
+    return p.replace(/\.md$/, '').split('/').pop() || p;
   }
 
   /** Format a timestamp as relative time (e.g., "2s ago", "1m ago"). */

@@ -28,6 +28,7 @@ export default class FlywheelCrankPlugin extends Plugin {
   private wikilinkEntitiesLoaded = false;
   private healthUnsub: (() => void) | null = null;
   private graphRefreshTimer: number | null = null;
+  private lastRebuildTimestamp = 0;
 
   async onload(): Promise<void> {
     console.log('Flywheel Crank: loading plugin');
@@ -126,7 +127,34 @@ export default class FlywheelCrankPlugin extends Plugin {
       await this.initialize();
     });
 
-    // Vault file events handled by flywheel-memory's file watcher via MCP.
+    // Invalidate plugin-side cache when Obsidian UI creates/deletes/renames notes.
+    // The MCP server has its own file watcher, but the plugin cache can serve stale
+    // data until the next health poll without these invalidations.
+    this.registerEvent(
+      this.app.vault.on('create', (file) => {
+        this.mcpClient.invalidateForPath(file.path);
+        this.mcpClient.invalidateTool('list_entities');
+        this.mcpClient.invalidateTool('get_folder_structure');
+        this.mcpClient.invalidateTool('health_check');
+      })
+    );
+    this.registerEvent(
+      this.app.vault.on('delete', (file) => {
+        this.mcpClient.invalidateForPath(file.path);
+        this.mcpClient.invalidateTool('list_entities');
+        this.mcpClient.invalidateTool('get_folder_structure');
+        this.mcpClient.invalidateTool('health_check');
+      })
+    );
+    this.registerEvent(
+      this.app.vault.on('rename', (file, oldPath) => {
+        this.mcpClient.invalidateForPath(file.path);
+        this.mcpClient.invalidateForPath(oldPath);
+        this.mcpClient.invalidateTool('list_entities');
+        this.mcpClient.invalidateTool('get_folder_structure');
+        this.mcpClient.invalidateTool('health_check');
+      })
+    );
 
     // Update graph sidebar on active note change
     this.registerEvent(
@@ -175,7 +203,16 @@ export default class FlywheelCrankPlugin extends Plugin {
   /** Handle health updates from the centralized health poller. */
   private handleHealthUpdate(health: import('./mcp/client').McpHealthCheckResponse): void {
     if (health.index_state === 'ready') {
-      // Load entities for wikilink suggest (once, when graph index first ready)
+      // Detect index rebuild and refresh entity cache for wikilink suggest
+      const rebuildTs = health.last_rebuild?.timestamp ?? 0;
+      if (rebuildTs > this.lastRebuildTimestamp && this.lastRebuildTimestamp > 0) {
+        // Rebuild happened — re-fetch entities and force-refresh views
+        this.wikilinkEntitiesLoaded = false;
+        this.updateGraphSidebar(true);
+      }
+      this.lastRebuildTimestamp = rebuildTs;
+
+      // Load entities for wikilink suggest (once, or after rebuild resets the flag)
       if (this.wikilinkSuggest && !this.wikilinkEntitiesLoaded) {
         this.wikilinkEntitiesLoaded = true;
         this.loadWikilinkEntities();
