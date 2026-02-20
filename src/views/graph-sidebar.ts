@@ -34,8 +34,8 @@ export class GraphSidebarView extends ItemView {
   private renderGeneration = 0;
   /** Whether a retry after render failure is already scheduled */
   private _retried = false;
-  /** Whether waitForIndexThenRender is already in progress */
-  private _waitingForIndex = false;
+  /** Unsubscribe from health updates (used while waiting for index) */
+  private healthUnsub: (() => void) | null = null;
 
   constructor(leaf: WorkspaceLeaf, mcpClient: FlywheelMcpClient) {
     super(leaf);
@@ -80,10 +80,18 @@ export class GraphSidebarView extends ItemView {
       return;
     }
 
-    // First load: show splash while index builds
+    // First load: show splash while index builds, subscribe to health updates
     if (!this.indexReady) {
       this.showSplash('Syncing vault index...');
-      this.waitForIndexThenRender(activeFile);
+      if (!this.healthUnsub) {
+        this.healthUnsub = this.mcpClient.onHealthUpdate((health) => {
+          if (health.index_state === 'ready' && !this.indexReady) {
+            this.indexReady = true;
+            if (this.healthUnsub) { this.healthUnsub(); this.healthUnsub = null; }
+            this.refresh(true);
+          }
+        });
+      }
       return;
     }
 
@@ -108,27 +116,6 @@ export class GraphSidebarView extends ItemView {
     imgEl.src = this.app.vault.adapter.getResourcePath(imgPath);
     imgEl.alt = 'Flywheel';
     splash.createDiv('flywheel-splash-text').setText(message);
-  }
-
-  private async waitForIndexThenRender(activeFile: TFile | null): Promise<void> {
-    if (this._waitingForIndex) return; // already waiting
-    this._waitingForIndex = true;
-    try {
-      await this.mcpClient.waitForIndex();
-    } catch {
-      // Timed out — render what we can anyway
-    }
-    this._waitingForIndex = false;
-
-    this.indexReady = true;
-    // Re-read active file (may have changed during wait)
-    const currentFile = this.app.workspace.getActiveFile();
-    this.noteContainer.empty();
-    const generation = ++this.renderGeneration;
-    if (currentFile) {
-      this.renderNoteHeader(currentFile);
-      this.renderNoteSections(currentFile, generation);
-    }
   }
 
   private renderInfoRow(container: HTMLDivElement, label: string, value: string): void {
@@ -216,7 +203,6 @@ export class GraphSidebarView extends ItemView {
     }, true, undefined, 'Folder', folderInfo);
 
     try {
-      await this.mcpClient.waitForIndex();
       if (generation !== this.renderGeneration) return;
       const conv = await this.mcpClient.folderConventions(folder);
       if (generation !== this.renderGeneration) return;
@@ -1273,6 +1259,7 @@ export class GraphSidebarView extends ItemView {
   }
 
   async onClose(): Promise<void> {
+    if (this.healthUnsub) { this.healthUnsub(); this.healthUnsub = null; }
     this.contentContainer?.empty();
   }
 }
