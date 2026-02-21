@@ -81,7 +81,12 @@ export class FeedbackDashboardView extends ItemView {
 
   // Pipeline subjects — entities from edited files that flow through all gates
   private pipelineSubjects: string[] = [];
-  private subjectCache = new Map<number, string[]>(); // keyed by pipeline timestamp
+  private deadLinkSubjects = new Set<string>();
+  private subjectCache = new Map<number, { subjects: string[]; deadLinks: Set<string> }>(); // keyed by pipeline timestamp
+
+  // Elapsed time auto-refresh
+  private agoTimerId: ReturnType<typeof setInterval> | null = null;
+  private subtitleEl: HTMLElement | null = null;
 
   // Skeleton DOM refs
   private headerEl: HTMLElement | null = null;
@@ -195,6 +200,8 @@ export class FeedbackDashboardView extends ItemView {
     this.scoreEl = lc.createDiv('flywheel-pipeline-score');
 
     this.skeletonBuilt = true;
+    this.stopAgoTimer();
+    this.agoTimerId = setInterval(() => this.refreshAgoText(), 10_000);
     await this.renderContent();
   }
 
@@ -211,7 +218,7 @@ export class FeedbackDashboardView extends ItemView {
       this.healthData = this.mcpClient.lastHealth;
       this.dashboardData = null;
     }
-    await this.buildSubjects();
+    try { await this.buildSubjects(); } catch { /* subjects stay as-is */ }
     this.fillContent();
   }
 
@@ -220,23 +227,26 @@ export class FeedbackDashboardView extends ItemView {
     this.isRefreshing = true;
 
     try {
-      const feedback = await this.mcpClient.wikilinkFeedbackDashboard();
-      this.dashboardData = feedback.dashboard;
-    } catch { /* keep existing */ }
+      try {
+        const feedback = await this.mcpClient.wikilinkFeedbackDashboard();
+        this.dashboardData = feedback.dashboard;
+      } catch { /* keep existing */ }
 
-    await this.buildSubjects();
-    this.fillContent();
+      try { await this.buildSubjects(); } catch { /* subjects stay as-is */ }
+      this.fillContent();
 
-    // Flash gates
-    for (const [, els] of this.gateEls) {
-      const gate = els.summary.parentElement?.parentElement;
-      if (gate) {
-        gate.removeClass('is-fresh');
-        void gate.offsetWidth;
-        gate.addClass('is-fresh');
+      // Flash gates
+      for (const [, els] of this.gateEls) {
+        const gate = els.summary.parentElement?.parentElement;
+        if (gate) {
+          gate.removeClass('is-fresh');
+          void gate.offsetWidth;
+          gate.addClass('is-fresh');
+        }
       }
+    } finally {
+      this.isRefreshing = false;
     }
-    this.isRefreshing = false;
   }
 
   // =========================================================================
@@ -247,34 +257,52 @@ export class FeedbackDashboardView extends ItemView {
     const pipeline = this.getActivePipeline();
     if (!pipeline) {
       this.pipelineSubjects = [];
+      this.deadLinkSubjects = new Set();
       return;
     }
 
     // Check cache
     const cached = this.subjectCache.get(pipeline.timestamp);
     if (cached) {
-      this.pipelineSubjects = cached;
+      this.pipelineSubjects = cached.subjects;
+      this.deadLinkSubjects = cached.deadLinks;
       return;
     }
 
     const subjects = new Set<string>();
+    const deadLinks = new Set<string>();
 
-    // 1. Forward links from changed files — entities referenced in the edited note
-    const paths = pipeline.changed_paths ?? [];
-    const fetchPaths = paths.slice(0, 5); // limit to avoid hammering MCP
-    try {
-      const results = await Promise.all(
-        fetchPaths.map(p => this.mcpClient.getForwardLinks(p).catch(() => null))
-      );
-      for (const result of results) {
-        if (!result) continue;
-        for (const link of result.forward_links) {
-          // Use the target name (strip path, strip .md)
-          const name = link.target.replace(/\.md$/, '').split('/').pop() || link.target;
+    // 1. Forward links from pipeline step output (no MCP round-trip needed)
+    const flStep = pipeline.steps.find(s => s.name === 'forward_links');
+    if (flStep && !flStep.skipped) {
+      const links = (flStep.output.links as Array<{ file: string; resolved: string[]; dead: string[] }>) ?? [];
+      for (const entry of links) {
+        for (const name of entry.resolved ?? []) subjects.add(name);
+        for (const name of entry.dead ?? []) {
           subjects.add(name);
+          deadLinks.add(name);
         }
       }
-    } catch { /* ignore */ }
+    } else {
+      // Fallback for older pipelines without the step — timeout to avoid blocking UI
+      const paths = pipeline.changed_paths ?? [];
+      const fetchPaths = paths.slice(0, 5);
+      try {
+        const timeout = new Promise<null[]>(r => setTimeout(() => r(fetchPaths.map(() => null)), 3000));
+        const results = await Promise.race([
+          Promise.all(fetchPaths.map(p => this.mcpClient.getForwardLinks(p).catch(() => null))),
+          timeout,
+        ]);
+        for (const result of results) {
+          if (!result) continue;
+          for (const link of result.forward_links) {
+            const name = link.target.replace(/\.md$/, '').split('/').pop() || link.target;
+            subjects.add(name);
+            if (!link.exists) deadLinks.add(name);
+          }
+        }
+      } catch { /* ignore */ }
+    }
 
     // 2. Entities from entity_scan (added/removed)
     const entityStep = pipeline.steps.find(s => s.name === 'entity_scan');
@@ -292,7 +320,7 @@ export class FeedbackDashboardView extends ItemView {
     // 4. Entities from wikilink_check tracked
     const wlStep = pipeline.steps.find(s => s.name === 'wikilink_check');
     const tracked = (wlStep?.output.tracked as Array<{ entities: string[] }>) ?? [];
-    for (const t of tracked) for (const e of t.entities) subjects.add(e);
+    for (const t of tracked) for (const e of t.entities ?? []) subjects.add(e);
 
     // 5. Entities from implicit_feedback removals
     const fbStep = pipeline.steps.find(s => s.name === 'implicit_feedback');
@@ -300,9 +328,10 @@ export class FeedbackDashboardView extends ItemView {
     for (const r of removals) subjects.add(r.entity);
 
     this.pipelineSubjects = Array.from(subjects);
+    this.deadLinkSubjects = deadLinks;
 
     // Cache (keep max 10 entries)
-    this.subjectCache.set(pipeline.timestamp, this.pipelineSubjects);
+    this.subjectCache.set(pipeline.timestamp, { subjects: this.pipelineSubjects, deadLinks });
     if (this.subjectCache.size > 10) {
       const oldest = this.subjectCache.keys().next().value;
       if (oldest !== undefined) this.subjectCache.delete(oldest);
@@ -378,7 +407,8 @@ export class FeedbackDashboardView extends ItemView {
     if (subjectCount > 0) parts.push(`${subjectCount} entities`);
     parts.push(`${dur}ms`);
 
-    this.headerEl.createDiv('flywheel-pipeline-subtitle').setText(parts.join(' \u00B7 '));
+    this.subtitleEl = this.headerEl.createDiv('flywheel-pipeline-subtitle');
+    this.subtitleEl.setText(parts.join(' \u00B7 '));
   }
 
   // =========================================================================
@@ -407,7 +437,7 @@ export class FeedbackDashboardView extends ItemView {
       const idx = i;
       item.addEventListener('click', async () => {
         this.selectedPipelineIndex = idx;
-        await this.buildSubjects();
+        try { await this.buildSubjects(); } catch { /* use existing subjects */ }
         this.fillContent();
       });
     }
@@ -446,6 +476,33 @@ export class FeedbackDashboardView extends ItemView {
 
   private createPassthroughLine(container: HTMLElement, text: string): void {
     container.createDiv('flywheel-gate-passthrough').setText(text);
+  }
+
+  /**
+   * Show pass-through entities as individual clickable items (dimmed) instead of
+   * a count. Caps visible names at `maxShow`; remainder shown as "+N more" line.
+   */
+  private createPassthroughEntities(
+    container: HTMLElement,
+    entities: string[],
+    suffix: string,
+    maxShow = 12,
+  ): void {
+    if (entities.length === 0) return;
+    const show = entities.slice(0, maxShow);
+    const remaining = entities.length - show.length;
+
+    const chipContainer = container.createDiv('flywheel-gate-chips');
+    for (const name of show) {
+      const chip = chipContainer.createSpan('flywheel-gate-chip flywheel-viz-entity-link');
+      chip.setText(name);
+      chip.dataset.entity = name;
+      chip.setAttribute('aria-label', suffix);
+      chip.title = name;
+    }
+    if (remaining > 0) {
+      chipContainer.createSpan('flywheel-gate-chips-more').setText(`+${remaining}`);
+    }
   }
 
   // =========================================================================
@@ -499,19 +556,21 @@ export class FeedbackDashboardView extends ItemView {
 
     // Pass-through: subjects that existed already (not added/removed)
     const passthrough = this.pipelineSubjects.filter(s => !activeNames.has(s));
-    if (passthrough.length > 0) {
-      this.createPassthroughLine(itemsEl,
-        `${passthrough.length} entit${passthrough.length === 1 ? 'y' : 'ies'} already indexed`);
-    }
+    const resolvedPT = passthrough.filter(s => !this.deadLinkSubjects.has(s));
+    const deadPT = passthrough.filter(s => this.deadLinkSubjects.has(s));
 
     if (activeCount === 0 && passthrough.length === 0) {
       summaryEl.setText('scanned');
     } else if (activeCount === 0) {
-      summaryEl.setText(`${passthrough.length} indexed`);
+      const parts: string[] = [];
+      if (resolvedPT.length > 0) parts.push(`${resolvedPT.length} indexed`);
+      if (deadPT.length > 0) parts.push(`${deadPT.length} dead`);
+      summaryEl.setText(parts.join(', '));
     } else {
       const parts: string[] = [];
       if (added?.length) parts.push(`+${added.length}`);
       if (removed?.length) parts.push(`-${removed.length}`);
+      if (deadPT.length > 0) parts.push(`${deadPT.length} dead`);
       summaryEl.setText(parts.join(', ') || `${activeCount} changes`);
     }
   }
@@ -526,10 +585,7 @@ export class FeedbackDashboardView extends ItemView {
 
     if (!hubStep || hubStep.skipped) {
       summaryEl.setText('skipped');
-      if (this.pipelineSubjects.length > 0) {
-        this.createPassthroughLine(itemsEl,
-          `${this.pipelineSubjects.length} entit${this.pipelineSubjects.length === 1 ? 'y' : 'ies'} \u2014 skipped`);
-      }
+      this.createPassthroughEntities(itemsEl, this.pipelineSubjects, 'Skipped');
       return;
     }
 
@@ -567,26 +623,22 @@ export class FeedbackDashboardView extends ItemView {
     }
 
     // Pass-through: subjects with no hub changes
-    const unchangedCount = this.pipelineSubjects.filter(s => !diffMap.has(s)).length;
-    if (unchangedCount > 0) {
-      this.createPassthroughLine(itemsEl,
-        `${unchangedCount} entit${unchangedCount === 1 ? 'y' : 'ies'} \u2014 scores unchanged`);
-    }
-
-    // Ripple effects: hub changes for entities outside the edited files
-    if (rippleDiffs.length > 0) {
-      this.createPassthroughLine(itemsEl,
-        `${rippleDiffs.length} ripple effect${rippleDiffs.length === 1 ? '' : 's'}`);
-    }
+    const unchanged = this.pipelineSubjects.filter(s => !diffMap.has(s));
+    const unchangedResolved = unchanged.filter(s => !this.deadLinkSubjects.has(s));
+    const unchangedDead = unchanged.filter(s => this.deadLinkSubjects.has(s));
 
     // Summary
     const totalActive = primaryDiffs.length + rippleDiffs.length;
     if (totalActive === 0) {
-      summaryEl.setText('no changes');
-    } else if (primaryDiffs.length > 0) {
-      summaryEl.setText(`${primaryDiffs.length} recalculated`);
+      const parts: string[] = ['no changes'];
+      if (unchangedDead.length > 0) parts.push(`${unchangedDead.length} dead`);
+      summaryEl.setText(parts.join(', '));
     } else {
-      summaryEl.setText(`${rippleDiffs.length} ripple`);
+      const parts: string[] = [];
+      if (primaryDiffs.length > 0) parts.push(`${primaryDiffs.length} recalculated`);
+      if (rippleDiffs.length > 0) parts.push(`${rippleDiffs.length} ripple`);
+      if (unchangedDead.length > 0) parts.push(`${unchangedDead.length} dead`);
+      summaryEl.setText(parts.join(', '));
     }
   }
 
@@ -616,15 +668,17 @@ export class FeedbackDashboardView extends ItemView {
 
     // Pass-through: subjects not tracked
     const passthrough = this.pipelineSubjects.filter(s => !trackedNames.has(s));
-    if (passthrough.length > 0) {
-      this.createPassthroughLine(itemsEl,
-        `${passthrough.length} entit${passthrough.length === 1 ? 'y' : 'ies'} \u2014 no auto-links`);
-    }
+    const resolvedPT = passthrough.filter(s => !this.deadLinkSubjects.has(s));
+    const deadPT = passthrough.filter(s => this.deadLinkSubjects.has(s));
 
     if (total > 0) {
-      summaryEl.setText(`${total} tracked`);
+      const parts = [`${total} tracked`];
+      if (deadPT.length > 0) parts.push(`${deadPT.length} dead`);
+      summaryEl.setText(parts.join(', '));
     } else if (passthrough.length > 0) {
-      summaryEl.setText('checked');
+      const parts = ['checked'];
+      if (deadPT.length > 0) parts.push(`${deadPT.length} dead`);
+      summaryEl.setText(parts.join(', '));
     } else {
       summaryEl.setText('pass');
     }
@@ -652,15 +706,17 @@ export class FeedbackDashboardView extends ItemView {
 
     // Pass-through: subjects with no feedback signals
     const passthrough = this.pipelineSubjects.filter(s => !signalNames.has(s));
-    if (passthrough.length > 0) {
-      this.createPassthroughLine(itemsEl,
-        `${passthrough.length} entit${passthrough.length === 1 ? 'y' : 'ies'} \u2014 no signals`);
-    }
+    const resolvedPT = passthrough.filter(s => !this.deadLinkSubjects.has(s));
+    const deadPT = passthrough.filter(s => this.deadLinkSubjects.has(s));
 
     if (signalNames.size > 0) {
-      summaryEl.setText(`${signalNames.size} signal${signalNames.size !== 1 ? 's' : ''}`);
+      const parts = [`${signalNames.size} signal${signalNames.size !== 1 ? 's' : ''}`];
+      if (deadPT.length > 0) parts.push(`${deadPT.length} dead`);
+      summaryEl.setText(parts.join(', '));
     } else if (passthrough.length > 0) {
-      summaryEl.setText('checked');
+      const parts = ['checked'];
+      if (deadPT.length > 0) parts.push(`${deadPT.length} dead`);
+      summaryEl.setText(parts.join(', '));
     } else {
       summaryEl.setText('no signals');
     }
@@ -698,6 +754,7 @@ export class FeedbackDashboardView extends ItemView {
 
     let shown = 0;
     let newCount = 0;
+    let deadCount = 0;
 
     for (const name of subjects) {
       if (suppressedMap.has(name)) {
@@ -723,20 +780,21 @@ export class FeedbackDashboardView extends ItemView {
           `Need ${Math.max(1, 5 - l.total)} more samples`, name);
         shown++;
       } else {
-        newCount++;
+        if (this.deadLinkSubjects.has(name)) deadCount++;
+        else newCount++;
       }
     }
 
-    // Pass-through: entities with no feedback history
-    if (newCount > 0) {
-      this.createPassthroughLine(itemsEl,
-        `${newCount} entit${newCount === 1 ? 'y' : 'ies'} \u2014 new (no feedback yet)`);
-    }
-
     if (shown === 0) {
-      summaryEl.setText(`${subjects.length} new`);
+      const parts: string[] = [];
+      if (newCount > 0) parts.push(`${newCount} new`);
+      if (deadCount > 0) parts.push(`${deadCount} dead`);
+      summaryEl.setText(parts.join(', ') || 'no data');
     } else {
-      summaryEl.setText(`${shown} adapted`);
+      const parts = [`${shown} adapted`];
+      if (newCount > 0) parts.push(`${newCount} new`);
+      if (deadCount > 0) parts.push(`${deadCount} dead`);
+      summaryEl.setText(parts.join(', '));
     }
   }
 
@@ -1053,7 +1111,24 @@ export class FeedbackDashboardView extends ItemView {
     return `${Math.floor(ago / 3600)}h ago`;
   }
 
+  private refreshAgoText(): void {
+    const pipeline = this.getActivePipeline();
+    if (!pipeline || !this.subtitleEl) return;
+    const ago = this.formatTimestampAgo(pipeline.timestamp);
+    const subjectCount = this.pipelineSubjects.length;
+    const dur = Math.round(pipeline.duration_ms);
+    const parts: string[] = [ago];
+    if (subjectCount > 0) parts.push(`${subjectCount} entities`);
+    parts.push(`${dur}ms`);
+    this.subtitleEl.setText(parts.join(' \u00B7 '));
+  }
+
+  private stopAgoTimer(): void {
+    if (this.agoTimerId) { clearInterval(this.agoTimerId); this.agoTimerId = null; }
+  }
+
   async onClose(): Promise<void> {
+    this.stopAgoTimer();
     if (this.healthUnsub) {
       this.healthUnsub();
       this.healthUnsub = null;
