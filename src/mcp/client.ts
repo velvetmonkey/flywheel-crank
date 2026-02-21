@@ -482,7 +482,52 @@ export interface McpFeedbackDashboardResponse {
     suppressed: Array<{ entity: string; false_positive_rate: number }>;
     recent: McpFeedbackEntry[];
     timeline: Array<{ day: string; count: number; correct: number; incorrect: number }>;
+    // Phase 4.4 extended fields (optional — present when server supports them)
+    layerHealth?: Array<{ layer: string; status: 'contributing' | 'dormant' | 'zero-data'; avgContribution: number; eventCount: number }>;
+    topEntities?: Array<{ entity: string; suggestionCount: number; avgScore: number; passRate: number }>;
+    feedbackTrend?: Array<{ day: string; count: number }>;
+    suppressionChanges?: Array<{ entity: string; falsePositiveRate: number; updatedAt: string }>;
   };
+}
+
+// Phase 4 API response types
+
+export interface McpEntityScoreTimelineEntry {
+  timestamp: number;
+  score: number;
+  breakdown: Record<string, number>;
+  notePath: string;
+  passed: boolean;
+  threshold: number;
+}
+
+export interface McpEntityTimelineResponse {
+  mode: 'entity_timeline';
+  entity: string;
+  timeline: McpEntityScoreTimelineEntry[];
+  count: number;
+}
+
+export interface McpLayerContributionBucket {
+  bucket: string;
+  layers: Record<string, number>;
+}
+
+export interface McpLayerTimeseriesResponse {
+  mode: 'layer_timeseries';
+  granularity: 'day' | 'week';
+  timeseries: McpLayerContributionBucket[];
+  buckets: number;
+}
+
+export interface McpSnapshotDiff {
+  metricChanges: Array<{ metric: string; before: number; after: number; delta: number; deltaPercent: number }>;
+  hubScoreChanges: Array<{ entity: string; before: number; after: number; delta: number }>;
+}
+
+export interface McpSnapshotDiffResponse {
+  mode: 'snapshot_diff';
+  diff: McpSnapshotDiff;
 }
 
 // Server log
@@ -1198,5 +1243,43 @@ export class FlywheelMcpClient {
    */
   async getServerLog(options: { since?: number; component?: string; limit?: number } = {}): Promise<McpServerLogResponse> {
     return this.callTool<McpServerLogResponse>('server_log', options);
+  }
+
+  // -------------------------------------------------------------------------
+  // Phase 4 observability APIs
+  // -------------------------------------------------------------------------
+
+  /**
+   * Get an entity's score timeline over time.
+   */
+  async entityScoreTimeline(entity: string, daysBack = 30, limit = 100): Promise<McpEntityTimelineResponse> {
+    return this.callTool<McpEntityTimelineResponse>('wikilink_feedback', {
+      mode: 'entity_timeline',
+      entity,
+      days_back: daysBack,
+      limit,
+    });
+  }
+
+  /**
+   * Get layer contribution timeseries data.
+   */
+  async layerContributionTimeseries(granularity: 'day' | 'week' = 'day', daysBack = 30): Promise<McpLayerTimeseriesResponse> {
+    return this.callTool<McpLayerTimeseriesResponse>('wikilink_feedback', {
+      mode: 'layer_timeseries',
+      granularity,
+      days_back: daysBack,
+    });
+  }
+
+  /**
+   * Compare two graph snapshots and get the diff.
+   */
+  async snapshotDiff(timestampBefore: number, timestampAfter: number): Promise<McpSnapshotDiffResponse> {
+    return this.callTool<McpSnapshotDiffResponse>('wikilink_feedback', {
+      mode: 'snapshot_diff',
+      timestamp_before: timestampBefore,
+      timestamp_after: timestampAfter,
+    });
   }
 }

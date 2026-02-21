@@ -2752,7 +2752,7 @@
 }
 
 /* ===================================================================
-   Feedback Loop Dashboard
+   Feedback Loop Dashboard — Pipeline Waterfall
    =================================================================== */
 
 .flywheel-feedback-dashboard {
@@ -2762,154 +2762,290 @@
 /* Loop visual container */
 .flywheel-loop {
   position: relative;
-  padding: 20px 24px 20px 40px;
-}
-
-/* Vertical timeline line */
-.flywheel-loop::before {
-  content: '';
-  position: absolute;
-  left: 28px;
-  top: 34px;
-  bottom: 34px;
-  width: 2px;
-  background: var(--background-modifier-border);
-}
-
-/* SVG return arc */
-.flywheel-loop-arc {
-  position: absolute;
-  top: 0;
-  left: 0;
-  pointer-events: none;
-  overflow: visible;
-}
-
-.flywheel-loop-arc path {
-  fill: none;
-  stroke: var(--text-faint);
-  stroke-width: 1.5;
-  opacity: 0.5;
-  stroke-dasharray: 6 4;
-  animation: flywheel-flow 2s linear infinite;
+  padding: 16px 20px;
 }
 
 @keyframes flywheel-flow {
   to { stroke-dashoffset: -20; }
 }
 
-/* Stage accordion wrapper */
-.flywheel-loop-stage-accordion {
-  margin-bottom: 2px;
+/* Pipeline header */
+.flywheel-pipeline-header {
+  padding: 16px 0 12px;
+  border-bottom: 1px solid var(--background-modifier-border);
 }
 
-/* Stage row (header) */
-.flywheel-loop-stage {
-  position: relative;
-  display: flex !important;
-  flex-direction: row !important;
+.flywheel-pipeline-title {
+  font-size: var(--font-ui-medium);
+  font-weight: var(--font-bold);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.flywheel-pipeline-subtitle {
+  font-size: var(--font-ui-smaller);
+  color: var(--text-muted);
+  margin-top: 2px;
+}
+
+/* Pipeline history (horizontal pills) */
+.flywheel-pipeline-history {
+  display: flex;
+  flex-direction: row;
+  flex-wrap: wrap;
+  gap: 4px;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--background-modifier-border);
+}
+
+.flywheel-pipeline-history:empty {
+  display: none;
+}
+
+.flywheel-history-item {
+  display: flex;
   align-items: center;
-  gap: 10px;
-  padding: 10px 12px;
-  border-radius: 6px;
+  gap: 4px;
+  padding: 3px 8px;
+  font-size: 11px;
+  border-radius: 12px;
   cursor: pointer;
-  transition: background 0.15s;
+  border: 1px solid var(--background-modifier-border);
+  background: transparent;
+  transition: background 0.15s ease;
 }
 
-.flywheel-loop-stage:hover {
+.flywheel-history-item:hover {
   background: var(--background-modifier-hover);
 }
 
-/* Chevron */
-.flywheel-loop-stage-chevron {
-  flex-shrink: 0;
+.flywheel-history-item.is-active {
+  background: var(--interactive-accent);
+  color: var(--text-on-accent);
+  border-color: var(--interactive-accent);
+}
+
+.flywheel-history-item.is-active .flywheel-history-item-time {
+  color: var(--text-on-accent);
+  opacity: 0.8;
+}
+
+.flywheel-history-item-file {
+  font-weight: var(--font-medium);
+  color: var(--text-normal);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 120px;
+}
+
+.flywheel-history-item-time {
   color: var(--text-faint);
-  display: inline-flex;
-  align-items: center;
-  transition: transform 0.15s;
+  white-space: nowrap;
 }
 
-.flywheel-loop-stage-chevron .svg-icon {
-  width: 12px;
-  height: 12px;
+
+/* Gate connector (dashed line between gates) */
+.flywheel-pipeline-connector {
+  height: 16px;
+  position: relative;
+  margin-left: 16px;
 }
 
-.flywheel-loop-stage-accordion.is-expanded > .flywheel-loop-stage > .flywheel-loop-stage-chevron {
-  transform: rotate(90deg);
-}
-
-/* Stage dot */
-.flywheel-loop-stage::before {
+.flywheel-pipeline-connector::before {
   content: '';
   position: absolute;
-  left: -22px;
-  top: 50%;
-  transform: translateY(-50%);
-  width: 10px;
-  height: 10px;
-  border-radius: 50%;
-  border: 2px solid var(--text-muted);
-  background: var(--background-primary);
-  z-index: 1;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 2px;
+  border-left: 2px dashed var(--background-modifier-border);
+  animation: flywheel-flow 2s linear infinite;
 }
 
-.flywheel-loop-stage[data-stage="discover"]::before { border-color: hsl(210, 70%, 55%); }
-.flywheel-loop-stage[data-stage="suggest"]::before  { border-color: hsl(270, 60%, 60%); }
-.flywheel-loop-stage[data-stage="apply"]::before    { border-color: hsl(145, 60%, 45%); }
-.flywheel-loop-stage[data-stage="learn"]::before    { border-color: hsl(38, 90%, 55%); }
-.flywheel-loop-stage[data-stage="adapt"]::before    { border-color: hsl(180, 50%, 45%); }
-
-.flywheel-loop-stage-accordion.is-expanded > .flywheel-loop-stage[data-stage="discover"]::before { background: hsl(210, 70%, 55%); }
-.flywheel-loop-stage-accordion.is-expanded > .flywheel-loop-stage[data-stage="suggest"]::before  { background: hsl(270, 60%, 60%); }
-.flywheel-loop-stage-accordion.is-expanded > .flywheel-loop-stage[data-stage="apply"]::before    { background: hsl(145, 60%, 45%); }
-.flywheel-loop-stage-accordion.is-expanded > .flywheel-loop-stage[data-stage="learn"]::before    { background: hsl(38, 90%, 55%); }
-.flywheel-loop-stage-accordion.is-expanded > .flywheel-loop-stage[data-stage="adapt"]::before    { background: hsl(180, 50%, 45%); }
-
-/* Collapsible content area */
-.flywheel-loop-stage-content {
-  display: none;
-  padding: 4px 12px 12px 38px;
+/* Gate */
+.flywheel-pipeline-gate {
+  border-left: 3px solid var(--text-faint);
+  padding: 8px 0 8px 14px;
+  margin-left: 15px;
 }
 
-.flywheel-loop-stage-accordion.is-expanded > .flywheel-loop-stage-content {
-  display: block;
+.flywheel-pipeline-gate[data-stage="discover"] { border-left-color: hsl(210, 70%, 55%); }
+.flywheel-pipeline-gate[data-stage="suggest"]  { border-left-color: hsl(270, 60%, 60%); }
+.flywheel-pipeline-gate[data-stage="apply"]    { border-left-color: hsl(145, 60%, 45%); }
+.flywheel-pipeline-gate[data-stage="learn"]    { border-left-color: hsl(38, 90%, 55%); }
+.flywheel-pipeline-gate[data-stage="adapt"]    { border-left-color: hsl(180, 50%, 45%); }
+
+/* Gate header */
+.flywheel-gate-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 0;
 }
 
-/* Stage content */
-.flywheel-loop-stage-icon {
+.flywheel-gate-icon {
   flex-shrink: 0;
   color: var(--text-muted);
   display: inline-flex;
   align-items: center;
 }
 
-.flywheel-loop-stage-icon .svg-icon {
+.flywheel-gate-icon .svg-icon {
   width: 16px;
   height: 16px;
 }
 
-.flywheel-loop-stage-name {
+.flywheel-gate-name {
   font-weight: var(--font-semibold);
   font-size: var(--font-ui-small);
-  white-space: nowrap;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
 }
 
-.flywheel-loop-stage-stat {
+.flywheel-gate-summary {
   margin-left: auto;
   font-size: var(--font-ui-smaller);
   color: var(--text-muted);
-  white-space: nowrap;
 }
 
-/* Batch delta (right-aligned after stat) */
-.flywheel-loop-stage-delta {
+/* Gate items (+/- results) */
+.flywheel-gate-items {
+  padding: 4px 0;
+}
+
+/* Pass-through summary (dim line showing entities that flowed through with no action) */
+.flywheel-gate-passthrough {
   font-size: var(--font-ui-smaller);
   color: var(--text-faint);
+  padding: 2px 0;
+  font-style: italic;
+}
+
+.flywheel-gate-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 0;
+  font-size: var(--font-ui-smaller);
+}
+
+.flywheel-gate-item[aria-label] {
+  cursor: help;
+}
+
+.flywheel-gate-item[aria-label]:hover {
+  background: var(--background-modifier-hover);
+  border-radius: 3px;
+}
+
+.flywheel-gate-item-icon {
+  width: 14px;
+  text-align: center;
+  font-size: 12px;
+}
+
+.flywheel-gate-item-name {
+  flex: 1;
+  color: var(--text-normal);
+}
+
+.flywheel-gate-item-delta {
+  font-weight: var(--font-semibold);
   white-space: nowrap;
 }
 
-.flywheel-loop-stage-delta:empty {
+.flywheel-gate-item-delta.is-positive {
+  color: hsl(145, 60%, 45%);
+}
+
+.flywheel-gate-item-delta.is-negative {
+  color: hsl(0, 65%, 55%);
+}
+
+.flywheel-gate-item-delta.is-neutral {
+  color: var(--text-faint);
+}
+
+/* Gate detail (always visible, no accordion) */
+.flywheel-gate-detail {
+  padding: 8px 0;
+  border-top: 1px solid var(--background-modifier-border);
+  margin-top: 6px;
+}
+
+.flywheel-gate-detail:empty {
   display: none;
+}
+
+/* Vault score */
+.flywheel-pipeline-score {
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 2px solid var(--background-modifier-border);
+}
+
+.flywheel-pipeline-score-title {
+  font-size: var(--font-ui-smaller);
+  font-weight: var(--font-bold);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-muted);
+  margin-bottom: 6px;
+}
+
+/* Compact vault score (horizontal stats) */
+.flywheel-score-compact {
+  display: flex;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+.flywheel-score-stat {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1px;
+}
+
+.flywheel-score-stat-value {
+  font-weight: var(--font-bold);
+  font-size: var(--font-ui-small);
+  color: var(--text-normal);
+}
+
+.flywheel-score-stat-delta {
+  font-size: 10px;
+  font-weight: var(--font-semibold);
+}
+
+.flywheel-score-stat-delta.is-positive {
+  color: hsl(145, 60%, 45%);
+}
+
+.flywheel-score-stat-delta.is-negative {
+  color: hsl(0, 65%, 55%);
+}
+
+.flywheel-score-stat-delta.is-neutral {
+  color: var(--text-faint);
+}
+
+.flywheel-score-stat-label {
+  font-size: 10px;
+  color: var(--text-faint);
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+/* Gate pulse animation on new pipeline */
+.flywheel-pipeline-gate.is-fresh {
+  animation: flywheel-gate-flash 1s ease-out;
+}
+
+@keyframes flywheel-gate-flash {
+  0% { background: hsla(var(--interactive-accent-hsl), 0.1); }
+  100% { background: transparent; }
 }
 
 .flywheel-loop-detail-note {
@@ -3113,47 +3249,460 @@
   color: var(--text-faint);
 }
 
-/* Compact batch caption (replaces bordered banner) */
-.flywheel-loop-caption {
-  font-size: var(--font-smallest);
-  color: var(--text-faint);
-  padding: 0 12px 4px;
+/* ===================================================================
+   Flywheel Visualization Styles (Tiers 1-5)
+   =================================================================== */
+
+/* --- Tier 2: Score breakdown cards --- */
+
+.flywheel-viz-score-card {
+  margin: 8px 0;
+  padding: 8px 10px;
+  background: var(--background-secondary);
+  border-radius: 6px;
+  border: 1px solid var(--background-modifier-border);
 }
 
-/* Batch section (processing story at top of expanded content) */
-.flywheel-batch-section {
-  padding-bottom: 8px;
-  margin-bottom: 8px;
-  border-bottom: 1px solid var(--background-modifier-border);
+.flywheel-viz-score-card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 6px;
 }
 
-.flywheel-batch-section-header {
-  font-size: var(--font-ui-smaller);
+.flywheel-viz-score-badge {
+  padding: 1px 6px;
+  border-radius: 3px;
+  font-size: 11px;
   font-weight: var(--font-semibold);
-  color: var(--text-muted);
-  margin-bottom: 4px;
-}
-
-.flywheel-batch-change {
-  font-size: var(--font-ui-smaller);
-  padding: 1px 0;
   font-family: var(--font-monospace);
 }
 
-.flywheel-batch-change-added {
-  color: hsl(145 60% 45%);
+.flywheel-viz-score-badge.is-passed {
+  background: hsla(145, 60%, 45%, 0.15);
+  color: hsl(145, 60%, 45%);
 }
 
-.flywheel-batch-change-removed {
-  color: hsl(0 65% 55%);
+.flywheel-viz-score-badge.is-failed {
+  background: hsla(0, 65%, 55%, 0.15);
+  color: hsl(0, 65%, 55%);
 }
 
-.flywheel-batch-change-alias {
-  color: hsl(38 90% 55%);
+.flywheel-viz-score-bar {
+  display: flex;
+  height: 16px;
+  border-radius: 4px;
+  overflow: hidden;
+  margin-bottom: 6px;
 }
 
-.flywheel-batch-change-more {
+.flywheel-viz-score-segment {
+  height: 100%;
+  min-width: 2px;
+  transition: opacity 0.15s;
+  cursor: default;
+}
+
+.flywheel-viz-score-segment:hover {
+  opacity: 1 !important;
+  filter: brightness(1.2);
+}
+
+.flywheel-viz-score-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  font-size: 10px;
   color: var(--text-faint);
-  font-style: italic;
-  font-family: var(--font-interface);
+}
+
+.flywheel-viz-score-legend-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+}
+
+.flywheel-viz-score-legend-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 2px;
+  flex-shrink: 0;
+}
+
+/* --- Tier 2: Top entities list --- */
+
+.flywheel-viz-top-entities {
+  margin-top: 12px;
+}
+
+.flywheel-viz-entity-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 3px 0;
+  font-size: var(--font-ui-smaller);
+}
+
+.flywheel-viz-entity-meta {
+  color: var(--text-faint);
+  font-size: 11px;
+}
+
+/* --- Clickable entity names (all tiers) --- */
+
+.flywheel-viz-entity-link {
+  cursor: pointer;
+  color: var(--text-normal);
+  font-weight: var(--font-medium);
+  text-decoration: none;
+  border-bottom: 1px dashed transparent;
+  transition: border-color 0.15s, color 0.15s;
+}
+
+.flywheel-viz-entity-link:hover {
+  color: var(--interactive-accent);
+  border-bottom-color: var(--interactive-accent);
+}
+
+/* --- Tier 3: Entity drill-down --- */
+
+.flywheel-viz-breadcrumb {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 8px 12px;
+  font-size: var(--font-ui-smaller);
+  color: var(--text-muted);
+  border-bottom: 1px solid var(--background-modifier-border);
+}
+
+.flywheel-viz-breadcrumb-back {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  cursor: pointer;
+  color: var(--interactive-accent);
+}
+
+.flywheel-viz-breadcrumb-back:hover {
+  text-decoration: underline;
+}
+
+.flywheel-viz-breadcrumb-back .svg-icon {
+  width: 14px;
+  height: 14px;
+}
+
+.flywheel-viz-breadcrumb-sep {
+  color: var(--text-faint);
+}
+
+.flywheel-viz-breadcrumb-current {
+  font-weight: var(--font-semibold);
+  color: var(--text-normal);
+}
+
+.flywheel-viz-entity-drilldown {
+  padding: 12px 16px;
+  overflow-y: auto;
+}
+
+/* --- Tier 3: Entity timeline chart --- */
+
+.flywheel-viz-timeline-chart {
+  position: relative;
+  margin: 8px 0;
+  background: var(--background-secondary);
+  border-radius: 6px;
+  padding: 4px;
+}
+
+.flywheel-viz-timeline-chart svg {
+  display: block;
+}
+
+.flywheel-viz-threshold-line {
+  stroke: var(--text-faint);
+  stroke-width: 1;
+  stroke-dasharray: 4 3;
+  opacity: 0.6;
+}
+
+.flywheel-viz-timeline-line {
+  fill: none;
+  stroke: var(--interactive-accent);
+  stroke-width: 1.5;
+  opacity: 0.6;
+}
+
+.flywheel-viz-timeline-label {
+  font-size: 10px;
+  fill: var(--text-faint);
+}
+
+.flywheel-viz-timeline-dot {
+  cursor: pointer;
+  transition: r 0.15s;
+}
+
+.flywheel-viz-timeline-dot:hover {
+  r: 6;
+}
+
+.flywheel-viz-timeline-dot.is-passed {
+  fill: hsl(145, 60%, 45%);
+}
+
+.flywheel-viz-timeline-dot.is-failed {
+  fill: hsl(0, 65%, 55%);
+}
+
+.flywheel-viz-timeline-details {
+  margin-top: 8px;
+}
+
+.flywheel-viz-timeline-entry-label {
+  font-size: 11px;
+  color: var(--text-faint);
+  margin-top: 8px;
+  margin-bottom: 2px;
+}
+
+/* --- Tier 3: Entity journey stages --- */
+
+.flywheel-viz-journey {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin-top: 8px;
+}
+
+.flywheel-viz-journey-stage {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 8px;
+  border-radius: 4px;
+  font-size: var(--font-ui-smaller);
+}
+
+.flywheel-viz-journey-stage:hover {
+  background: var(--background-modifier-hover);
+}
+
+.flywheel-viz-journey-icon {
+  flex-shrink: 0;
+  color: var(--text-muted);
+  display: inline-flex;
+  align-items: center;
+}
+
+.flywheel-viz-journey-icon .svg-icon {
+  width: 14px;
+  height: 14px;
+}
+
+.flywheel-viz-journey-label {
+  font-weight: var(--font-semibold);
+  color: var(--text-normal);
+  width: 80px;
+  flex-shrink: 0;
+}
+
+.flywheel-viz-journey-detail {
+  color: var(--text-muted);
+}
+
+/* --- Tier 5: Layer contribution heatmap --- */
+
+.flywheel-viz-heatmap-section {
+  margin-top: 16px;
+}
+
+.flywheel-viz-heatmap {
+  display: grid;
+  gap: 1px;
+  margin: 8px 0;
+}
+
+.flywheel-viz-heatmap-label {
+  font-size: 10px;
+  color: var(--text-muted);
+  padding: 2px 4px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.flywheel-viz-heatmap-col-label {
+  font-size: 9px;
+  color: var(--text-faint);
+  text-align: center;
+  padding: 1px;
+}
+
+.flywheel-viz-heatmap-cell {
+  min-height: 14px;
+  border-radius: 2px;
+  cursor: default;
+  transition: opacity 0.15s;
+}
+
+.flywheel-viz-heatmap-cell:hover {
+  outline: 1px solid var(--text-muted);
+}
+
+/* --- Tier 5: Layer sparklines --- */
+
+.flywheel-viz-sparkline-section {
+  margin-top: 12px;
+}
+
+.flywheel-viz-sparkline-row {
+  display: flex;
+  align-items: flex-end;
+  gap: 8px;
+  padding: 3px 0;
+  font-size: var(--font-ui-smaller);
+}
+
+.flywheel-viz-sparkline-label {
+  width: 100px;
+  flex-shrink: 0;
+  color: var(--text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.flywheel-viz-sparkline {
+  display: flex;
+  align-items: flex-end;
+  gap: 1px;
+  height: 24px;
+  flex: 1;
+}
+
+.flywheel-viz-sparkline-bar {
+  flex: 1;
+  min-width: 2px;
+  border-radius: 1px 1px 0 0;
+  opacity: 0.7;
+}
+
+/* --- Tier 4: Graph diff --- */
+
+.flywheel-viz-graph-diff-section {
+  margin-top: 16px;
+}
+
+.flywheel-viz-snapshot-picker {
+  display: flex;
+  gap: 6px;
+  margin-bottom: 10px;
+}
+
+.flywheel-viz-snapshot-btn {
+  padding: 3px 10px;
+  border-radius: 4px;
+  font-size: var(--font-ui-smaller);
+  background: var(--background-modifier-hover);
+  border: 1px solid var(--background-modifier-border);
+  color: var(--text-muted);
+  cursor: pointer;
+}
+
+.flywheel-viz-snapshot-btn:hover {
+  background: var(--interactive-accent);
+  color: var(--text-on-accent);
+}
+
+.flywheel-viz-diff-results {
+  margin-top: 8px;
+}
+
+.flywheel-viz-diff-table {
+  display: grid;
+  grid-template-columns: 1fr 60px 60px 100px;
+  gap: 2px 8px;
+  font-size: var(--font-ui-smaller);
+  margin-bottom: 12px;
+}
+
+.flywheel-viz-diff-table-header {
+  display: contents;
+}
+
+.flywheel-viz-diff-table-header > span {
+  font-weight: var(--font-semibold);
+  color: var(--text-muted);
+  padding-bottom: 4px;
+  border-bottom: 1px solid var(--background-modifier-border);
+}
+
+.flywheel-viz-diff-table-row {
+  display: contents;
+}
+
+.flywheel-viz-diff-table-row > span {
+  padding: 2px 0;
+  color: var(--text-normal);
+}
+
+.flywheel-viz-delta {
+  font-family: var(--font-monospace);
+  font-size: 11px;
+}
+
+.flywheel-viz-delta.is-positive {
+  color: hsl(145, 60%, 45%);
+}
+
+.flywheel-viz-delta.is-negative {
+  color: hsl(0, 65%, 55%);
+}
+
+/* --- Tier 4: Hub score changes --- */
+
+.flywheel-viz-hub-change {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 3px 0;
+  font-size: var(--font-ui-smaller);
+}
+
+.flywheel-viz-hub-before,
+.flywheel-viz-hub-after {
+  font-family: var(--font-monospace);
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.flywheel-viz-hub-arrow {
+  color: var(--text-faint);
+  font-size: 11px;
+}
+
+/* --- Entity tags (used in Apply gate detail) --- */
+
+.flywheel-connected-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 6px;
+}
+
+.flywheel-entity-tag {
+  display: inline-block;
+  padding: 2px 8px;
+  background: var(--background-modifier-hover);
+  border-radius: 4px;
+  font-size: var(--font-ui-smaller);
+  transition: background 0.15s;
+}
+
+.flywheel-entity-tag:hover {
+  background: var(--interactive-accent);
+  color: var(--text-on-accent);
 }

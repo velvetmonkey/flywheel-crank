@@ -178,9 +178,12 @@ export default class FlywheelCrankPlugin extends Plugin {
     }
   }
 
-  private async initialize(): Promise<void> {
+  private async initialize(attempt = 1): Promise<void> {
+    const MAX_RETRIES = 3;
+    const RETRY_DELAY_MS = 3000;
+
     try {
-      this.setStatus('connecting...', true);
+      this.setStatus(attempt > 1 ? `reconnecting (${attempt}/${MAX_RETRIES})...` : 'connecting...', true);
 
       // Connect MCP client to flywheel-memory server
       const vaultBase = (this.app.vault.adapter as any).basePath;
@@ -194,7 +197,16 @@ export default class FlywheelCrankPlugin extends Plugin {
       this.healthUnsub = this.mcpClient.onHealthUpdate(health => this.handleHealthUpdate(health));
       this.mcpClient.startHealthPoll();
     } catch (err) {
-      console.error('Flywheel Crank: initialization failed', err);
+      console.error(`Flywheel Crank: initialization failed (attempt ${attempt}/${MAX_RETRIES})`, err);
+
+      if (attempt < MAX_RETRIES) {
+        this.setStatus(`retrying in ${RETRY_DELAY_MS / 1000}s...`, true);
+        await new Promise(resolve => setTimeout(resolve, RETRY_DELAY_MS));
+        // Ensure clean state before retry
+        try { await this.mcpClient.disconnect(); } catch { /* ignore */ }
+        return this.initialize(attempt + 1);
+      }
+
       this.setStatus('error', false);
       new Notice(`Flywheel Crank: ${err instanceof Error ? err.message : 'Connection failed'}`);
     }
