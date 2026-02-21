@@ -2837,14 +2837,13 @@
 }
 
 .flywheel-history-item.is-active {
-  background: var(--interactive-accent);
-  color: var(--text-on-accent);
+  background: var(--background-secondary-alt);
+  color: var(--text-normal);
   border-color: var(--interactive-accent);
 }
 
 .flywheel-history-item.is-active .flywheel-history-item-time {
-  color: var(--text-on-accent);
-  opacity: 0.8;
+  color: var(--text-muted);
 }
 
 .flywheel-history-item-file {
@@ -2939,11 +2938,51 @@
   font-style: italic;
 }
 
+.flywheel-gate-passthrough.is-dead-links {
+  color: var(--text-faint);
+  font-style: italic;
+}
+
+.flywheel-gate-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 3px;
+  padding: 4px 0 2px;
+}
+
+.flywheel-gate-chip {
+  display: inline-block;
+  padding: 1px 6px;
+  border-radius: 3px;
+  background: var(--background-modifier-hover);
+  font-size: 11px;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: background 0.1s, color 0.1s;
+  max-width: 140px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.flywheel-gate-chip:hover {
+  background: var(--background-modifier-active-hover);
+  color: var(--text-normal);
+}
+
+.flywheel-gate-chips-more {
+  display: inline-block;
+  padding: 1px 6px;
+  font-size: 11px;
+  color: var(--text-faint);
+  font-style: italic;
+}
+
 .flywheel-gate-item {
   display: flex;
   align-items: center;
-  gap: 6px;
-  padding: 2px 0;
+  gap: 4px;
+  padding: 1px 0;
   font-size: var(--font-ui-smaller);
 }
 
@@ -2957,9 +2996,9 @@
 }
 
 .flywheel-gate-item-icon {
-  width: 14px;
+  width: 12px;
   text-align: center;
-  font-size: 12px;
+  font-size: 11px;
 }
 
 .flywheel-gate-item-name {
@@ -2981,6 +3020,14 @@
 }
 
 .flywheel-gate-item-delta.is-neutral {
+  color: var(--text-faint);
+}
+
+.flywheel-gate-item.is-passthrough .flywheel-gate-item-name {
+  color: var(--text-muted);
+}
+
+.flywheel-gate-item.is-passthrough .flywheel-gate-item-icon {
   color: var(--text-faint);
 }
 
