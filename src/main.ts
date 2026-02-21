@@ -124,6 +124,7 @@ export default class FlywheelCrankPlugin extends Plugin {
 
     // Initialize on layout ready
     this.app.workspace.onLayoutReady(async () => {
+      this.mcpClient.onRetryRequest(() => this.initialize());
       await this.initialize();
     });
 

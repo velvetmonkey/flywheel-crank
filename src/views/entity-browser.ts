@@ -761,12 +761,21 @@ export class EntityBrowserView extends ItemView {
   // ---------------------------------------------------------------------------
 
   private renderSplash(container: HTMLElement, message: string): void {
+    const isError = this.mcpClient.connectionState === 'error';
     const empty = container.createDiv('flywheel-splash');
     const imgPath = `${this.app.vault.configDir}/plugins/flywheel-crank/flywheel.png`;
-    const imgEl = empty.createEl('img', { cls: 'flywheel-splash-logo' });
+    const imgEl = empty.createEl('img', { cls: isError ? 'flywheel-splash-logo flywheel-splash-logo-static' : 'flywheel-splash-logo' });
     imgEl.src = this.app.vault.adapter.getResourcePath(imgPath);
     imgEl.alt = '';
-    empty.createDiv('flywheel-splash-text').setText(message);
+    if (isError) {
+      empty.createDiv('flywheel-splash-error').setText(this.mcpClient.lastError ?? 'Connection failed');
+      const retryBtn = empty.createEl('button', { cls: 'flywheel-splash-retry' });
+      retryBtn.setText('Retry');
+      retryBtn.addEventListener('click', () => this.mcpClient.requestRetry());
+    } else {
+      empty.createDiv('flywheel-splash-text').setText(message);
+    }
+    this.register(this.mcpClient.onConnectionStateChange(() => this.render()));
   }
 
   private showCategoryPicker(entity: McpEntityItem, currentCategory: EntityCategory, anchorEl: HTMLElement): void {

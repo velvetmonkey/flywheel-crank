@@ -58,6 +58,23 @@
   color: var(--text-faint);
 }
 
+.flywheel-splash-logo-static {
+  animation: none;
+}
+
+.flywheel-splash-error {
+  font-size: var(--font-ui-small);
+  color: var(--text-error);
+  text-align: center;
+  max-width: 300px;
+  white-space: pre-wrap;
+  margin-bottom: 12px;
+}
+
+.flywheel-splash-retry {
+  cursor: pointer;
+}
+
 /* ===================================================================
    Search Modal
    =================================================================== */

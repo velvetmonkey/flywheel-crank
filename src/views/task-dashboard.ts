@@ -491,13 +491,22 @@ export class TaskDashboardView extends ItemView {
     container.empty();
     container.addClass('flywheel-task-dashboard');
 
+    const isError = this.mcpClient.connectionState === 'error';
     const splash = container.createDiv('flywheel-splash');
     const imgPath = `${this.app.vault.configDir}/plugins/flywheel-crank/flywheel.png`;
-    const imgEl = splash.createEl('img', { cls: 'flywheel-splash-logo' });
+    const imgEl = splash.createEl('img', { cls: isError ? 'flywheel-splash-logo flywheel-splash-logo-static' : 'flywheel-splash-logo' });
     imgEl.src = this.app.vault.adapter.getResourcePath(imgPath);
     imgEl.alt = '';
-    const text = message
-      ?? (this.mcpClient.connected ? 'Building vault index\u2026' : 'Connecting to flywheel-memory\u2026');
-    splash.createDiv('flywheel-splash-text').setText(text);
+    if (isError) {
+      splash.createDiv('flywheel-splash-error').setText(this.mcpClient.lastError ?? 'Connection failed');
+      const retryBtn = splash.createEl('button', { cls: 'flywheel-splash-retry' });
+      retryBtn.setText('Retry');
+      retryBtn.addEventListener('click', () => this.mcpClient.requestRetry());
+    } else {
+      const text = message
+        ?? (this.mcpClient.connected ? 'Building vault index\u2026' : 'Connecting to flywheel-memory\u2026');
+      splash.createDiv('flywheel-splash-text').setText(text);
+    }
+    this.register(this.mcpClient.onConnectionStateChange(() => this.renderSplash()));
   }
 }

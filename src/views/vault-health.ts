@@ -50,14 +50,22 @@ export class VaultHealthView extends ItemView {
     container.addClass('flywheel-vault-health');
 
     if (!this.mcpClient.connected || !this.indexReady) {
+      const isError = this.mcpClient.connectionState === 'error';
       const splash = container.createDiv('flywheel-splash');
       const imgPath = `${this.app.vault.configDir}/plugins/flywheel-crank/flywheel.png`;
-      const imgEl = splash.createEl('img', { cls: 'flywheel-splash-logo' });
+      const imgEl = splash.createEl('img', { cls: isError ? 'flywheel-splash-logo flywheel-splash-logo-static' : 'flywheel-splash-logo' });
       imgEl.src = this.app.vault.adapter.getResourcePath(imgPath);
       imgEl.alt = '';
-      splash.createDiv('flywheel-splash-text').setText(
-        this.mcpClient.connected ? 'Building vault index...' : 'Connecting to flywheel-memory...'
-      );
+      if (isError) {
+        splash.createDiv('flywheel-splash-error').setText(this.mcpClient.lastError ?? 'Connection failed');
+        const retryBtn = splash.createEl('button', { cls: 'flywheel-splash-retry' });
+        retryBtn.setText('Retry');
+        retryBtn.addEventListener('click', () => this.mcpClient.requestRetry());
+      } else {
+        splash.createDiv('flywheel-splash-text').setText(
+          this.mcpClient.connected ? 'Building vault index...' : 'Connecting to flywheel-memory...'
+        );
+      }
       // Subscribe to health updates — re-render when index is ready
       if (!this.healthUnsub) {
         this.healthUnsub = this.mcpClient.onHealthUpdate(health => {
@@ -67,6 +75,11 @@ export class VaultHealthView extends ItemView {
           }
         });
       }
+      this.register(this.mcpClient.onConnectionStateChange(() => {
+        if (this.mcpClient.connectionState === 'error' || this.mcpClient.connectionState === 'connected') {
+          this.render();
+        }
+      }));
       return;
     }
 

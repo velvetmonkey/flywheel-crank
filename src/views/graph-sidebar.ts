@@ -110,12 +110,21 @@ export class GraphSidebarView extends ItemView {
   private showSplash(message: string): void {
     this.noteContainer.empty();
 
+    const isError = this.mcpClient.connectionState === 'error';
     const splash = this.noteContainer.createDiv('flywheel-splash');
     const imgPath = `${this.app.vault.configDir}/plugins/flywheel-crank/flywheel.png`;
-    const imgEl = splash.createEl('img', { cls: 'flywheel-splash-logo' });
+    const imgEl = splash.createEl('img', { cls: isError ? 'flywheel-splash-logo flywheel-splash-logo-static' : 'flywheel-splash-logo' });
     imgEl.src = this.app.vault.adapter.getResourcePath(imgPath);
     imgEl.alt = 'Flywheel';
-    splash.createDiv('flywheel-splash-text').setText(message);
+    if (isError) {
+      splash.createDiv('flywheel-splash-error').setText(this.mcpClient.lastError ?? 'Connection failed');
+      const retryBtn = splash.createEl('button', { cls: 'flywheel-splash-retry' });
+      retryBtn.setText('Retry');
+      retryBtn.addEventListener('click', () => this.mcpClient.requestRetry());
+    } else {
+      splash.createDiv('flywheel-splash-text').setText(message);
+    }
+    this.register(this.mcpClient.onConnectionStateChange(() => this.refresh()));
   }
 
   private renderInfoRow(container: HTMLDivElement, label: string, value: string): void {
