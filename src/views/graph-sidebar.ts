@@ -62,6 +62,7 @@ export class GraphSidebarView extends ItemView {
     this.contentContainer = container.createDiv('flywheel-graph-content');
     this.noteContainer = this.contentContainer.createDiv();
     this._retried = false;
+    this.register(this.mcpClient.onConnectionStateChange(() => this.refresh()));
     this.refresh();
   }
 
@@ -124,7 +125,6 @@ export class GraphSidebarView extends ItemView {
     } else {
       splash.createDiv('flywheel-splash-text').setText(message);
     }
-    this.register(this.mcpClient.onConnectionStateChange(() => this.refresh()));
   }
 
   private renderInfoRow(container: HTMLDivElement, label: string, value: string): void {

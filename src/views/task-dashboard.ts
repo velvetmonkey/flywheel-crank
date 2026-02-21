@@ -77,6 +77,7 @@ export class TaskDashboardView extends ItemView {
   }
 
   async onOpen(): Promise<void> {
+    this.register(this.mcpClient.onConnectionStateChange(() => this.renderSplash()));
     this.renderSplash();
     this.waitForReady();
   }
@@ -507,6 +508,5 @@ export class TaskDashboardView extends ItemView {
         ?? (this.mcpClient.connected ? 'Building vault index\u2026' : 'Connecting to flywheel-memory\u2026');
       splash.createDiv('flywheel-splash-text').setText(text);
     }
-    this.register(this.mcpClient.onConnectionStateChange(() => this.renderSplash()));
   }
 }

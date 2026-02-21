@@ -22,6 +22,7 @@ export class VaultHealthView extends ItemView {
   private indexReady = false;
   /** Unsubscribe from health updates */
   private healthUnsub: (() => void) | null = null;
+  private _connStateUnsub: (() => void) | null = null;
 
   constructor(leaf: WorkspaceLeaf, mcpClient: FlywheelMcpClient) {
     super(leaf);
@@ -75,11 +76,14 @@ export class VaultHealthView extends ItemView {
           }
         });
       }
-      this.register(this.mcpClient.onConnectionStateChange(() => {
-        if (this.mcpClient.connectionState === 'error' || this.mcpClient.connectionState === 'connected') {
-          this.render();
-        }
-      }));
+      if (!this._connStateUnsub) {
+        this._connStateUnsub = this.mcpClient.onConnectionStateChange(() => {
+          if (this.mcpClient.connectionState === 'error' || this.mcpClient.connectionState === 'connected') {
+            this.render();
+          }
+        });
+        this.register(this._connStateUnsub);
+      }
       return;
     }
 

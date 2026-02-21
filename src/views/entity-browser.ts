@@ -211,6 +211,7 @@ export class EntityBrowserView extends ItemView {
   }
 
   async onOpen(): Promise<void> {
+    this.register(this.mcpClient.onConnectionStateChange(() => this.render()));
     this.render();
     await this.fetchEntities();
   }
@@ -775,7 +776,6 @@ export class EntityBrowserView extends ItemView {
     } else {
       empty.createDiv('flywheel-splash-text').setText(message);
     }
-    this.register(this.mcpClient.onConnectionStateChange(() => this.render()));
   }
 
   private showCategoryPicker(entity: McpEntityItem, currentCategory: EntityCategory, anchorEl: HTMLElement): void {

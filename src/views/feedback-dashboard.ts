@@ -70,6 +70,7 @@ export class FeedbackDashboardView extends ItemView {
   private healthData: McpHealthCheckResponse | null = null;
   private indexReady = false;
   private healthUnsub: (() => void) | null = null;
+  private _connStateUnsub: (() => void) | null = null;
   private pipelineTimestamp = 0;
   private pipelineCount = 0;
   private loopContainer: HTMLElement | null = null;
@@ -135,11 +136,14 @@ export class FeedbackDashboardView extends ItemView {
           }
         });
       }
-      this.register(this.mcpClient.onConnectionStateChange(() => {
-        if (this.mcpClient.connectionState === 'error' || this.mcpClient.connectionState === 'connected') {
-          this.render();
-        }
-      }));
+      if (!this._connStateUnsub) {
+        this._connStateUnsub = this.mcpClient.onConnectionStateChange(() => {
+          if (this.mcpClient.connectionState === 'error' || this.mcpClient.connectionState === 'connected') {
+            this.render();
+          }
+        });
+        this.register(this._connStateUnsub);
+      }
       return;
     }
 
