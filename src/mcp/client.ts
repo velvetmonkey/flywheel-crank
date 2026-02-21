@@ -638,10 +638,9 @@ export class FlywheelMcpClient {
     return [...this._stderrLines];
   }
 
-  /** Subscribe to connection state changes. Returns unsubscribe function. Fires immediately with current state. */
+  /** Subscribe to connection state changes. Returns unsubscribe function. */
   onConnectionStateChange(cb: () => void): () => void {
     this.connectionStateCallbacks.add(cb);
-    cb();
     return () => { this.connectionStateCallbacks.delete(cb); };
   }
 
