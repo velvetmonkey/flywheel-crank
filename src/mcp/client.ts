@@ -600,11 +600,22 @@ export interface McpMutationResponse {
 // Client
 // ---------------------------------------------------------------------------
 
+export type ConnectionState = 'disconnected' | 'connecting' | 'connected' | 'error';
+
 export class FlywheelMcpClient {
   private client: Client | null = null;
   private transport: StdioClientTransport | null = null;
   private _connected = false;
   private cache = new McpCache();
+
+  // Connection state tracking
+  private _connectionState: ConnectionState = 'disconnected';
+  private _lastError: string | null = null;
+  private _stderrLines: string[] = [];
+  private connectionStateCallbacks = new Set<() => void>();
+
+  // Retry callbacks
+  private retryCallbacks = new Set<() => void>();
 
   // Centralized health polling
   private healthCallbacks = new Set<(h: McpHealthCheckResponse) => void>();
@@ -613,6 +624,41 @@ export class FlywheelMcpClient {
 
   get connected(): boolean {
     return this._connected;
+  }
+
+  get connectionState(): ConnectionState {
+    return this._connectionState;
+  }
+
+  get lastError(): string | null {
+    return this._lastError;
+  }
+
+  get stderrOutput(): string[] {
+    return [...this._stderrLines];
+  }
+
+  /** Subscribe to connection state changes. Returns unsubscribe function. Fires immediately with current state. */
+  onConnectionStateChange(cb: () => void): () => void {
+    this.connectionStateCallbacks.add(cb);
+    cb();
+    return () => { this.connectionStateCallbacks.delete(cb); };
+  }
+
+  /** Subscribe to retry requests. Returns unsubscribe function. */
+  onRetryRequest(cb: () => void): () => void {
+    this.retryCallbacks.add(cb);
+    return () => { this.retryCallbacks.delete(cb); };
+  }
+
+  /** Request a retry — fires all retry callbacks. */
+  requestRetry(): void {
+    for (const cb of this.retryCallbacks) { try { cb(); } catch {} }
+  }
+
+  private setConnectionState(state: ConnectionState): void {
+    this._connectionState = state;
+    for (const cb of this.connectionStateCallbacks) { try { cb(); } catch {} }
   }
 
   /**
@@ -668,6 +714,10 @@ export class FlywheelMcpClient {
    */
   async connect(vaultPath: string, serverPath = ''): Promise<void> {
     if (this._connected) return;
+
+    this.setConnectionState('connecting');
+    this._lastError = null;
+    this._stderrLines = [];
 
     const isWindows = process.platform === 'win32';
     const isUnixPath = (p: string) => p.startsWith('/');
@@ -725,11 +775,17 @@ export class FlywheelMcpClient {
       },
     });
 
-    // Forward server stderr to console for debugging
+    // Forward server stderr to console for debugging; accumulate in ring buffer
     if (this.transport.stderr) {
       this.transport.stderr.on('data', (chunk: Buffer) => {
         const lines = chunk.toString().trim();
-        if (lines) console.log(`[flywheel-memory] ${lines}`);
+        if (lines) {
+          console.log(`[flywheel-memory] ${lines}`);
+          for (const line of lines.split('\n')) {
+            this._stderrLines.push(line);
+            if (this._stderrLines.length > 50) this._stderrLines.shift();
+          }
+        }
       });
     }
 
@@ -738,11 +794,32 @@ export class FlywheelMcpClient {
       version: '0.1.0',
     });
 
-    // The server initializes StateDb + entity index before accepting the MCP
-    // handshake. Over WSL/cross-fs this can exceed the default 60s timeout.
-    await this.client.connect(this.transport, { timeout: 120_000 });
-    this._connected = true;
-    console.log('Flywheel Crank: MCP client connected');
+    // Hook transport close/error events before connecting
+    this.transport.onclose = () => {
+      if (this._connectionState === 'connected') {
+        this._connected = false;
+        this.setConnectionState('disconnected');
+      }
+    };
+    this.transport.onerror = (err: Error) => {
+      console.error('Flywheel Crank: transport error', err);
+    };
+
+    try {
+      // The server initializes StateDb + entity index before accepting the MCP
+      // handshake. Over WSL/cross-fs this can exceed the default 60s timeout.
+      await this.client.connect(this.transport, { timeout: 120_000 });
+      this._connected = true;
+      this.setConnectionState('connected');
+      console.log('Flywheel Crank: MCP client connected');
+    } catch (err) {
+      const stderrTail = this._stderrLines.slice(-10).join('\n');
+      this._lastError = err instanceof Error
+        ? (stderrTail ? `${err.message}\n\nServer output:\n${stderrTail}` : err.message)
+        : String(err);
+      this.setConnectionState('error');
+      throw err;
+    }
   }
 
   /**
@@ -774,6 +851,7 @@ export class FlywheelMcpClient {
     this.client = null;
     this.transport = null;
     this._connected = false;
+    this.setConnectionState('disconnected');
     console.log('Flywheel Crank: MCP client disconnected');
   }
 
