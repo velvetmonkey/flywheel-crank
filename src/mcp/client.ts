@@ -682,9 +682,10 @@ export class FlywheelMcpClient {
         // Unix path on Windows → spawn via WSL.
         // WSL doesn't forward custom env vars, so inline them via bash -c.
         const wslVault = this.toWslPath(vaultPath);
-        command = 'wsl';
+        const systemRoot = process.env.SYSTEMROOT || process.env.SystemRoot || 'C:\\Windows';
+        command = `${systemRoot}\\System32\\wsl.exe`;
         args = [
-          'bash', '-c',
+          'bash', '-lc',
           `VAULT_PATH="${wslVault}" FLYWHEEL_TOOLS="full" FLYWHEEL_WATCH="true" FLYWHEEL_WATCH_POLL="true" FLYWHEEL_POLL_INTERVAL="15000" exec node "${serverPath}"`,
         ];
         // Don't set effectiveVaultPath since it's baked into the command
