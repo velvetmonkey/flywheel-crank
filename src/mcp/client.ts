@@ -758,8 +758,6 @@ export class FlywheelMcpClient {
    * Disconnect from the MCP server and kill the child process.
    */
   async disconnect(): Promise<void> {
-    if (!this._connected) return;
-
     this.stopHealthPoll();
     this.cache.clear();
 
@@ -767,6 +765,11 @@ export class FlywheelMcpClient {
       await this.client?.close();
     } catch {
       // ignore close errors
+    }
+    try {
+      await this.transport?.close();
+    } catch {
+      // ignore transport close errors
     }
     this.client = null;
     this.transport = null;
