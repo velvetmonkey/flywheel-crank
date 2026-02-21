@@ -40,6 +40,10 @@ export default class FlywheelCrankPlugin extends Plugin {
     this.statusBarEl.addClass('flywheel-status-bar');
     const statusBar = this.statusBarEl.parentElement;
     if (statusBar) statusBar.prepend(this.statusBarEl);
+    this.statusBarEl.style.cursor = 'pointer';
+    this.statusBarEl.addEventListener('click', () => {
+      if (this.mcpClient.connectionState === 'error') this.initialize();
+    });
     this.setStatus('connecting...', true);
 
     // Register views
@@ -208,7 +212,7 @@ export default class FlywheelCrankPlugin extends Plugin {
         return this.initialize(attempt + 1);
       }
 
-      this.setStatus('error', false);
+      this.setStatus('connection failed', false, this.mcpClient.lastError ?? undefined);
       new Notice(`Flywheel Crank: ${err instanceof Error ? err.message : 'Connection failed'}`);
     }
   }
