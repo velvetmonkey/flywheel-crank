@@ -746,6 +746,38 @@ export class FeedbackDashboardView extends ItemView {
         const badge = ghost.createSpan('flywheel-pill-badge');
         badge.setText(gateAction.badge);
 
+        // Feedback buttons: thumbs-up / thumbs-down
+        const notePath = stage.id === 'apply'
+          ? (journey.gates.apply?.files?.[0] ?? '')
+          : stage.id === 'learn'
+            ? (journey.gates.learn?.file ?? '')
+            : '';
+        const btns = ghost.createSpan('flywheel-feedback-btns');
+        const plus = btns.createEl('button', { cls: 'flywheel-feedback-btn flywheel-feedback-positive' });
+        plus.textContent = '+';
+        plus.title = `Good suggestion — mark "${journey.name}" as correct`;
+        const minus = btns.createEl('button', { cls: 'flywheel-feedback-btn flywheel-feedback-negative' });
+        minus.textContent = '−';
+        minus.title = `Bad suggestion — mark "${journey.name}" as incorrect`;
+        const markSubmitted = () => {
+          plus.addClass('flywheel-feedback-submitted');
+          minus.addClass('flywheel-feedback-submitted');
+        };
+        plus.addEventListener('click', async (e) => {
+          e.stopPropagation();
+          if (plus.hasClass('flywheel-feedback-submitted')) return;
+          markSubmitted();
+          try { await this.mcpClient.reportWikilinkFeedback(journey.name, notePath, true); }
+          catch { /* fire-and-forget; visual already updated */ }
+        });
+        minus.addEventListener('click', async (e) => {
+          e.stopPropagation();
+          if (minus.hasClass('flywheel-feedback-submitted')) return;
+          markSubmitted();
+          try { await this.mcpClient.reportWikilinkFeedback(journey.name, notePath, false); }
+          catch { /* fire-and-forget; visual already updated */ }
+        });
+
         // Delay: pill at index ji reaches gate gi at gatePercent% of total duration (2s)
         const ghostDelay = ji * 0.025 + 2 * (GATE_PERCENTS[gi] / 100);
         ghost.style.setProperty('--ghost-delay', `${ghostDelay}s`);

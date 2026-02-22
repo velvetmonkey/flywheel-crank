@@ -1279,6 +1279,19 @@ export class FlywheelMcpClient {
   }
 
   /**
+   * Record explicit user feedback for a wikilink suggestion.
+   */
+  async reportWikilinkFeedback(entity: string, notePath: string, correct: boolean): Promise<void> {
+    await this.callTool<Record<string, unknown>>('wikilink_feedback', {
+      mode: 'report',
+      entity,
+      note_path: notePath,
+      correct,
+      context: 'explicit:user_rated',
+    });
+  }
+
+  /**
    * Get wikilink feedback stats or entries.
    */
   async wikilinkFeedback(mode: 'list' | 'stats', entity?: string, limit?: number): Promise<McpWikilinkFeedbackResponse> {

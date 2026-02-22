@@ -3983,3 +3983,28 @@
 .flywheel-waterfall-container.is-fresh {
   animation: flywheel-pulse 0.6s ease-out;
 }
+
+/* Explicit feedback buttons on ghost pills */
+.flywheel-feedback-btns {
+  display: inline-flex;
+  gap: 2px;
+  margin-left: 2px;
+  opacity: 0;
+  transition: opacity 0.15s;
+}
+.flywheel-pill-ghost:hover .flywheel-feedback-btns {
+  opacity: 1;
+}
+.flywheel-feedback-btn {
+  cursor: pointer;
+  font-size: 10px;
+  line-height: 1;
+  padding: 1px 4px;
+  border-radius: 3px;
+  border: 1px solid var(--background-modifier-border);
+  background: transparent;
+  color: inherit;
+}
+.flywheel-feedback-positive:hover { background: var(--color-green); border-color: var(--color-green); color: white; }
+.flywheel-feedback-negative:hover { background: var(--color-red); border-color: var(--color-red); color: white; }
+.flywheel-feedback-btn.flywheel-feedback-submitted { opacity: 0.35; pointer-events: none; }
