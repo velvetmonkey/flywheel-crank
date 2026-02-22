@@ -3818,6 +3818,15 @@
   min-height: 24px;
 }
 
+.flywheel-waterfall-floor {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 8px;
+  border-top: 1px solid var(--background-modifier-border);
+  margin-top: 4px;
+}
+
 .flywheel-waterfall-empty {
   padding: 16px 8px;
   color: var(--text-faint);
@@ -3875,7 +3884,16 @@
   opacity: 0.8;
 }
 
-.flywheel-pill:hover {
+.flywheel-pill.is-floor {
+  opacity: 0.3;
+  cursor: default;
+}
+
+.flywheel-pill.is-falling {
+  position: absolute;
+}
+
+.flywheel-pill:not(.is-falling):not(.is-floor):hover {
   filter: brightness(1.08) saturate(1.15);
   transform: scale(1.04);
   transition: filter 0.15s, transform 0.15s;
@@ -3926,7 +3944,7 @@
 }
 
 /* =========================================================================
-   Waterfall animation (Task 3)
+   Waterfall animation
    ========================================================================= */
 
 @keyframes pill-journey {
@@ -3948,6 +3966,11 @@
   0%   { opacity: 0; transform: scale(0.8); }
   50%  { opacity: 0.6; transform: scale(1.05); }
   100% { opacity: 0.5; transform: scale(1); }
+}
+
+.flywheel-waterfall.is-animating .flywheel-pill.is-falling {
+  animation: pill-journey var(--pill-duration, 2s) ease-in-out forwards;
+  animation-delay: var(--pill-delay, 0s);
 }
 
 .flywheel-waterfall.is-animating .flywheel-pill-ghost {
@@ -3985,3 +4008,179 @@
 .flywheel-feedback-positive:hover { background: var(--color-green); border-color: var(--color-green); color: white; }
 .flywheel-feedback-negative:hover { background: var(--color-red); border-color: var(--color-red); color: white; }
 .flywheel-feedback-btn.flywheel-feedback-submitted { opacity: 0.35; pointer-events: none; }
+
+/* ===================================================================
+   Entity Inbox
+   =================================================================== */
+
+.flywheel-entity-inbox {
+  padding: 16px;
+}
+
+.flywheel-inbox-loading {
+  text-align: center;
+  padding: 32px;
+  color: var(--text-muted);
+}
+
+.flywheel-inbox-progress {
+  text-align: center;
+  font-size: 12px;
+  color: var(--text-muted);
+  margin-bottom: 12px;
+}
+
+.flywheel-inbox-card {
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 8px;
+  padding: 16px;
+}
+
+.flywheel-inbox-card-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+  flex-wrap: wrap;
+}
+
+.flywheel-inbox-entity-name {
+  font-size: 18px;
+  font-weight: 600;
+}
+
+.flywheel-inbox-category-badge {
+  font-size: 11px;
+  padding: 2px 6px;
+  border-radius: 4px;
+  background: var(--background-modifier-hover);
+  color: var(--text-muted);
+}
+
+.flywheel-inbox-hub-badge {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.flywheel-inbox-type-badge {
+  font-size: 10px;
+  padding: 2px 6px;
+  border-radius: 4px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.flywheel-inbox-type-unlinked {
+  background: hsla(210, 60%, 50%, 0.15);
+  color: hsl(210, 60%, 60%);
+}
+
+.flywheel-inbox-type-merge {
+  background: hsla(30, 60%, 50%, 0.15);
+  color: hsl(30, 60%, 60%);
+}
+
+.flywheel-inbox-reason {
+  font-size: 13px;
+  color: var(--text-muted);
+  margin-bottom: 12px;
+}
+
+.flywheel-inbox-mentions {
+  margin-bottom: 16px;
+}
+
+.flywheel-inbox-mentions-label {
+  font-size: 12px;
+  color: var(--text-faint);
+  margin-bottom: 4px;
+}
+
+.flywheel-inbox-mention {
+  padding: 6px 0;
+  border-bottom: 1px solid var(--background-modifier-border-hover);
+}
+
+.flywheel-inbox-mention:last-child {
+  border-bottom: none;
+}
+
+.flywheel-inbox-mention-path {
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  color: var(--text-accent);
+}
+
+.flywheel-inbox-mention-path:hover {
+  text-decoration: underline;
+}
+
+.flywheel-inbox-mention-context {
+  font-size: 12px;
+  color: var(--text-muted);
+  margin-top: 2px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.flywheel-inbox-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 16px;
+}
+
+.flywheel-inbox-actions button {
+  flex: 1;
+  padding: 8px 16px;
+  border-radius: 6px;
+  font-size: 14px;
+  cursor: pointer;
+}
+
+.flywheel-inbox-action-primary {
+  background: var(--interactive-accent);
+  color: var(--text-on-accent);
+  border: none;
+}
+
+.flywheel-inbox-action-primary:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+.flywheel-inbox-action-skip {
+  background: transparent;
+  border: 1px solid var(--background-modifier-border);
+  color: var(--text-muted);
+}
+
+.flywheel-inbox-empty {
+  text-align: center;
+  padding: 48px 16px;
+}
+
+.flywheel-inbox-empty-icon {
+  margin-bottom: 12px;
+  color: var(--color-green);
+}
+
+.flywheel-inbox-empty-icon svg {
+  width: 36px;
+  height: 36px;
+}
+
+.flywheel-inbox-empty-text {
+  font-size: 18px;
+  font-weight: 600;
+  margin-bottom: 4px;
+}
+
+.flywheel-inbox-empty-sub {
+  font-size: 13px;
+  color: var(--text-muted);
+}

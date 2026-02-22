@@ -16,6 +16,7 @@ import { EntityBrowserView, ENTITY_BROWSER_VIEW_TYPE } from './views/entity-brow
 import { VaultHealthView, VAULT_HEALTH_VIEW_TYPE } from './views/vault-health';
 import { TaskDashboardView, TASK_DASHBOARD_VIEW_TYPE } from './views/task-dashboard';
 import { FeedbackDashboardView, FEEDBACK_DASHBOARD_VIEW_TYPE } from './views/feedback-dashboard';
+import { EntityInboxView, ENTITY_INBOX_VIEW_TYPE } from './views/entity-inbox';
 import { WikilinkSuggest } from './suggest/wikilink-suggest';
 import { FlywheelMcpClient } from './mcp/client';
 
@@ -54,6 +55,7 @@ export default class FlywheelCrankPlugin extends Plugin {
     this.registerView(VAULT_HEALTH_VIEW_TYPE, (leaf) => new VaultHealthView(leaf, this.mcpClient));
     this.registerView(TASK_DASHBOARD_VIEW_TYPE, (leaf) => new TaskDashboardView(leaf, this.mcpClient));
     this.registerView(FEEDBACK_DASHBOARD_VIEW_TYPE, (leaf) => new FeedbackDashboardView(leaf, this.mcpClient));
+    this.registerView(ENTITY_INBOX_VIEW_TYPE, (leaf) => new EntityInboxView(leaf, this.mcpClient));
 
     // Settings tab
     this.addSettingTab(new FlywheelCrankSettingTab(this.app, this));
@@ -93,6 +95,12 @@ export default class FlywheelCrankPlugin extends Plugin {
       id: 'open-feedback-dashboard',
       name: 'Open feedback dashboard',
       callback: () => this.activateView(FEEDBACK_DASHBOARD_VIEW_TYPE),
+    });
+
+    this.addCommand({
+      id: 'open-entity-inbox',
+      name: 'Open entity inbox',
+      callback: () => this.activateView(ENTITY_INBOX_VIEW_TYPE),
     });
 
     this.addCommand({
