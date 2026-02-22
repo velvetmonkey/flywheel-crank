@@ -3864,7 +3864,6 @@
   white-space: nowrap;
   cursor: pointer;
   background: var(--background-modifier-hover);
-  color: var(--text-normal);
   will-change: transform, opacity;
 }
 
@@ -3886,7 +3885,6 @@
   font-size: 11px;
   opacity: 0.55;
   background: var(--background-modifier-hover);
-  color: var(--text-normal);
 }
 
 .flywheel-pill-badge {

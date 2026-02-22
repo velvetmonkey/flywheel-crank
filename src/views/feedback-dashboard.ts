@@ -419,6 +419,23 @@ export class FeedbackDashboardView extends ItemView {
     const fbStep = pipeline?.steps.find(s => s.name === 'implicit_feedback');
     const removals = (fbStep?.output.removals as Array<{ entity: string; file: string }>) ?? [];
 
+    // Read link_diffs from forward_links step (P0b)
+    const flStep = pipeline?.steps.find(s => s.name === 'forward_links');
+    const linkDiffs = (flStep?.output?.link_diffs as Array<{ file: string; added: string[]; removed: string[] }>) ?? [];
+    const linkAddMap = new Map<string, string[]>();
+    const linkRemoveMap = new Map<string, string>();
+    for (const diff of linkDiffs) {
+      for (const name of diff.added) {
+        const key = name.toLowerCase();
+        linkAddMap.set(key, [...(linkAddMap.get(key) ?? []), diff.file]);
+      }
+      for (const name of diff.removed) {
+        if (!linkRemoveMap.has(name.toLowerCase())) {
+          linkRemoveMap.set(name.toLowerCase(), diff.file);
+        }
+      }
+    }
+
     // Collect all entity names
     const allNames = new Set<string>();
     for (const e of addedRaw) allNames.add(typeof e === 'string' ? e : e.name);
@@ -426,6 +443,10 @@ export class FeedbackDashboardView extends ItemView {
     for (const d of diffs) allNames.add(d.entity);
     for (const t of tracked) for (const e of t.entities ?? []) allNames.add(e);
     for (const r of removals) allNames.add(r.entity);
+    for (const diff of linkDiffs) {
+      for (const name of diff.added) allNames.add(name);
+      for (const name of diff.removed) allNames.add(name);
+    }
     if (d) {
       for (const s of d.suppressed) allNames.add(s.entity);
       for (const t of d.boost_tiers) for (const e of t.entities) allNames.add(e.entity);
@@ -492,13 +513,19 @@ export class FeedbackDashboardView extends ItemView {
       }
 
       const files = trackedMap.get(name);
+      const diffAddFiles = linkAddMap.get(name.toLowerCase());
       if (files && files.length > 0) {
         journey.gates.apply = { action: 'tracked', files };
+      } else if (diffAddFiles && diffAddFiles.length > 0) {
+        journey.gates.apply = { action: 'tracked', files: diffAddFiles };
       }
 
       const removal = removalMap.get(name);
+      const diffRemoveFile = linkRemoveMap.get(name.toLowerCase());
       if (removal) {
         journey.gates.learn = { action: 'removed', file: removal.file };
+      } else if (diffRemoveFile) {
+        journey.gates.learn = { action: 'removed', file: diffRemoveFile };
       }
 
       if (suppressedMap.has(name)) {
@@ -536,12 +563,13 @@ export class FeedbackDashboardView extends ItemView {
   private fillContent(): void {
     if (!this.skeletonBuilt) return;
 
-    this.fillHeader();
+    const journeys = this.buildEntityJourneys();  // compute first
+
+    this.fillHeader(journeys);  // pass journeys for active count
     this.fillHistory();
 
     if (this.waterfallEl) {
       this.waterfallEl.empty();
-      const journeys = this.buildEntityJourneys();
       this.renderWaterfall(this.waterfallEl, journeys);
     }
 
@@ -570,7 +598,7 @@ export class FeedbackDashboardView extends ItemView {
   // Header — commit-centric
   // =========================================================================
 
-  private fillHeader(): void {
+  private fillHeader(journeys?: EntityJourney[]): void {
     if (!this.headerEl) return;
     this.headerEl.empty();
 
@@ -590,8 +618,13 @@ export class FeedbackDashboardView extends ItemView {
     const subjectCount = this.pipelineSubjects.length;
     const dur = Math.round(pipeline.duration_ms);
 
+    const activeCount = journeys?.filter(j =>
+      j.gates.discover || j.gates.suggest || j.gates.apply || j.gates.learn || j.gates.adapt
+    ).length ?? 0;
+
     const parts: string[] = [ago];
-    if (subjectCount > 0) parts.push(`${subjectCount} entities`);
+    if (activeCount > 0) parts.push(`${activeCount} active`);
+    else if (subjectCount > 0) parts.push(`${subjectCount} entities`);
     parts.push(`${dur}ms`);
 
     this.subtitleEl = this.headerEl.createDiv('flywheel-pipeline-subtitle');
