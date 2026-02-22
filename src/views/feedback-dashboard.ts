@@ -833,36 +833,6 @@ export class FeedbackDashboardView extends ItemView {
       }
     }
 
-    // Floor: final resting pills
-    const floor = wf.createDiv('flywheel-waterfall-floor');
-    for (const journey of journeys) {
-      const floorColor = pillColor(journey.name, journey.isDead);
-      const floorPill = floor.createSpan('flywheel-pill is-floor');
-      floorPill.style.background = floorColor.pill;
-      floorPill.style.color = PILL_TEXT;
-      floorPill.setText(journey.name);
-    }
-
-    // Falling pills: absolutely positioned, will animate
-    for (let ji = 0; ji < journeys.length; ji++) {
-      const journey = journeys[ji];
-      const fallingColor = pillColor(journey.name, journey.isDead);
-      const pill = wf.createSpan('flywheel-pill is-falling');
-      pill.style.background = fallingColor.pill;
-      pill.style.color = PILL_TEXT;
-      pill.setText(journey.name);
-      pill.style.top = '0px';
-      pill.style.left = `${8 + (hashCode(journey.name) % 40)}%`;
-      // Tooltip: first gate action for this entity
-      let pillTooltip = journey.name;
-      for (const stage of STAGES) {
-        const action = this.getGateAction(stage.id, journey);
-        if (action) { pillTooltip = action.tooltip; break; }
-      }
-      pill.title = pillTooltip;
-      pill.addEventListener('click', () => this.openEntityDrilldown(journey.name));
-    }
-
     // After layout, set CSS custom properties for gate positions and start animation
     requestAnimationFrame(() => {
       const wfRect = wf.getBoundingClientRect();
@@ -871,20 +841,6 @@ export class FeedbackDashboardView extends ItemView {
       gateEls.forEach((gate, i) => {
         const y = gate.getBoundingClientRect().top - wfTop;
         wf.style.setProperty(`--gate-${i + 1}-y`, `${y}px`);
-      });
-
-      const floorEl = wf.querySelector('.flywheel-waterfall-floor');
-      if (floorEl) {
-        const floorY = floorEl.getBoundingClientRect().top - wfTop;
-        wf.style.setProperty('--floor-y', `${floorY}px`);
-      }
-
-      const pills = wf.querySelectorAll('.flywheel-pill.is-falling');
-      pills.forEach((pill, i) => {
-        const delay = i * 0.025;
-        (pill as HTMLElement).style.setProperty('--pill-delay', `${delay}s`);
-        const wobble = 0.7 + (hashCode((pill as HTMLElement).textContent ?? '') % 100) / 167;
-        (pill as HTMLElement).style.setProperty('--pill-wobble', String(wobble));
       });
 
       wf.addClass('is-animating');

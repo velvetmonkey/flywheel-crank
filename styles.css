@@ -3818,15 +3818,6 @@
   min-height: 24px;
 }
 
-.flywheel-waterfall-floor {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  padding: 8px;
-  border-top: 1px solid var(--background-modifier-border);
-  margin-top: 4px;
-}
-
 .flywheel-waterfall-empty {
   padding: 16px 8px;
   color: var(--text-faint);
@@ -3867,15 +3858,6 @@
   will-change: transform, opacity;
 }
 
-.flywheel-pill.is-floor {
-  opacity: 0.3;
-  cursor: default;
-}
-
-.flywheel-pill.is-falling {
-  position: absolute;
-}
-
 .flywheel-pill-ghost {
   display: inline-flex;
   align-items: center;
@@ -3893,7 +3875,7 @@
   opacity: 0.8;
 }
 
-.flywheel-pill:not(.is-falling):not(.is-floor):hover {
+.flywheel-pill:hover {
   filter: brightness(1.08) saturate(1.15);
   transform: scale(1.04);
   transition: filter 0.15s, transform 0.15s;
@@ -3966,11 +3948,6 @@
   0%   { opacity: 0; transform: scale(0.8); }
   50%  { opacity: 0.6; transform: scale(1.05); }
   100% { opacity: 0.5; transform: scale(1); }
-}
-
-.flywheel-waterfall.is-animating .flywheel-pill.is-falling {
-  animation: pill-journey var(--pill-duration, 2s) ease-in-out forwards;
-  animation-delay: var(--pill-delay, 0s);
 }
 
 .flywheel-waterfall.is-animating .flywheel-pill-ghost {
