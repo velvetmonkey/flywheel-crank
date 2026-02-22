@@ -496,12 +496,6 @@ export class FeedbackDashboardView extends ItemView {
       const entityName = (r.newPath.split('/').pop() ?? r.newPath).replace(/\.md$/, '');
       allNames.add(entityName);
     }
-    if (d) {
-      for (const s of d.suppressed) allNames.add(s.entity);
-      for (const t of d.boost_tiers) for (const e of t.entities) allNames.add(e.entity);
-      for (const l of d.learning) allNames.add(l.entity);
-    }
-
     // Lookup maps
     const addedMap = new Map<string, string | undefined>();
     for (const e of addedRaw) {
