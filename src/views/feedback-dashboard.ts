@@ -50,7 +50,7 @@ interface EntityJourney {
     discover?: { action: 'added' | 'removed' | 'category_changed' | 'moved'; detail?: string };
     suggest?: { action: 'score_change'; delta: number; before: number; after: number };
     apply?: { action: 'tracked'; files: string[] };
-    learn?: { action: 'removed'; file: string };
+    learn?: { action: 'removed'; file: string } | { action: 'survived'; file: string; count: number };
     adapt?: { action: 'suppressed' | 'boosted' | 'learning'; detail: string };
   };
 }
@@ -465,6 +465,16 @@ export class FeedbackDashboardView extends ItemView {
       }
     }
 
+    // Read survived links from forward_links step
+    const survivedRaw = (flStep?.output?.survived as
+      Array<{ entity: string; file: string; count: number }> | undefined) ?? [];
+    const survivedMap = new Map<string, { file: string; count: number }>();
+    for (const s of survivedRaw) {
+      if (!survivedMap.has(s.entity)) {
+        survivedMap.set(s.entity, { file: s.file, count: s.count });
+      }
+    }
+
     // Read category changes from entity_scan step (P8 T1)
     const categoryChanges = (entityStep?.output?.category_changes as Array<{ entity: string; from: string; to: string }>) ?? [];
     const categoryChangeMap = new Map(categoryChanges.map(c => [c.entity.toLowerCase(), c]));
@@ -492,6 +502,7 @@ export class FeedbackDashboardView extends ItemView {
       for (const name of diff.removed) allNames.add(name);
     }
     for (const c of categoryChanges) allNames.add(c.entity);
+    for (const s of survivedRaw) allNames.add(s.entity);
     for (const r of moveRenames) {
       const entityName = (r.newPath.split('/').pop() ?? r.newPath).replace(/\.md$/, '');
       allNames.add(entityName);
@@ -579,6 +590,11 @@ export class FeedbackDashboardView extends ItemView {
         journey.gates.learn = { action: 'removed', file: removal.file };
       } else if (diffRemoveFile) {
         journey.gates.learn = { action: 'removed', file: diffRemoveFile };
+      } else {
+        const survived = survivedMap.get(name.toLowerCase());
+        if (survived) {
+          journey.gates.learn = { action: 'survived', file: survived.file, count: survived.count };
+        }
       }
 
       if (suppressedMap.has(name)) {
@@ -872,8 +888,15 @@ export class FeedbackDashboardView extends ItemView {
       case 'learn': {
         const g = journey.gates.learn;
         if (!g) return null;
-        const file = this.shortenPath(g.file);
-        return { badge: 'removed', tooltip: `"${name}" wikilink was removed from ${file} — recorded as negative feedback` };
+        if (g.action === 'removed') {
+          const file = this.shortenPath(g.file);
+          return { badge: 'removed', tooltip: `"${name}" wikilink was removed from ${file} — recorded as negative feedback` };
+        }
+        // survived
+        return {
+          badge: `+${g.count}`,
+          tooltip: `"${name}" survived ${g.count} edit${g.count === 1 ? '' : 's'} in ${this.shortenPath(g.file)} — positive retention signal`,
+        };
       }
       case 'adapt': {
         const g = journey.gates.adapt;
@@ -933,8 +956,14 @@ export class FeedbackDashboardView extends ItemView {
         return 'checked';
       }
       case 'learn': {
-        const signals = journeys.filter(j => j.gates.learn).length;
-        if (signals) return `${signals} signal${signals !== 1 ? 's' : ''}`;
+        const survived = journeys.filter(j => j.gates.learn?.action === 'survived').length;
+        const removed  = journeys.filter(j => j.gates.learn?.action === 'removed').length;
+        if (survived || removed) {
+          const parts: string[] = [];
+          if (survived) parts.push(`${survived} survived`);
+          if (removed) parts.push(`${removed} removed`);
+          return parts.join(', ');
+        }
         const fbStep = pipeline?.steps.find(s => s.name === 'implicit_feedback');
         if (fbStep && !fbStep.skipped) return 'no removals';
         return 'no signals';
