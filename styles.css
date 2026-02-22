@@ -3757,3 +3757,231 @@
   background: var(--interactive-accent);
   color: var(--text-on-accent);
 }
+
+/* =========================================================================
+   Waterfall pipeline view
+   ========================================================================= */
+
+.flywheel-waterfall-container {
+  position: relative;
+}
+
+.flywheel-waterfall {
+  position: relative;
+  overflow: hidden;
+  min-height: 600px;
+}
+
+.flywheel-waterfall-start {
+  height: 32px;
+}
+
+.flywheel-waterfall-gate {
+  margin-bottom: 4px;
+}
+
+.flywheel-waterfall-gate-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 8px;
+  border-top: 1px solid var(--background-modifier-border);
+  font-size: var(--font-ui-small);
+  font-weight: var(--font-semibold);
+}
+
+.flywheel-waterfall-gate-name {
+  color: var(--text-muted);
+  letter-spacing: 0.04em;
+}
+
+.flywheel-waterfall-gate-desc {
+  color: var(--text-faint);
+  font-size: var(--font-ui-smaller);
+  font-weight: normal;
+  font-style: italic;
+  margin-left: 4px;
+}
+
+.flywheel-waterfall-gate-summary {
+  color: var(--text-faint);
+  font-size: var(--font-ui-smaller);
+  font-weight: normal;
+  margin-left: auto;
+}
+
+.flywheel-waterfall-shelf {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  padding: 4px 8px 8px;
+  min-height: 24px;
+}
+
+.flywheel-waterfall-floor {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 8px;
+  border-top: 1px solid var(--background-modifier-border);
+  margin-top: 4px;
+}
+
+.flywheel-waterfall-empty {
+  padding: 16px 8px;
+  color: var(--text-faint);
+  font-size: var(--font-ui-small);
+  font-style: italic;
+}
+
+.flywheel-waterfall-replay {
+  position: absolute;
+  top: 4px;
+  right: 8px;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: var(--font-ui-small);
+  border: 1px solid var(--background-modifier-border);
+  z-index: 10;
+}
+
+.flywheel-waterfall-replay:hover {
+  background: var(--background-modifier-hover);
+}
+
+/* Pills */
+.flywheel-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 2px 8px;
+  border-radius: 12px;
+  font-size: 11px;
+  white-space: nowrap;
+  cursor: pointer;
+  background: var(--background-modifier-hover);
+  color: var(--text-normal);
+  will-change: transform, opacity;
+}
+
+.flywheel-pill.is-floor {
+  opacity: 0.3;
+  cursor: default;
+}
+
+.flywheel-pill.is-falling {
+  position: absolute;
+}
+
+.flywheel-pill-ghost {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  border-radius: 12px;
+  font-size: 11px;
+  opacity: 0.55;
+  background: var(--background-modifier-hover);
+  color: var(--text-normal);
+}
+
+.flywheel-pill-badge {
+  font-size: 9px;
+  font-weight: 600;
+  opacity: 0.8;
+}
+
+.flywheel-pill:not(.is-falling):not(.is-floor):hover {
+  filter: brightness(1.08) saturate(1.15);
+  transform: scale(1.04);
+  transition: filter 0.15s, transform 0.15s;
+  cursor: pointer;
+}
+
+.flywheel-pill-ghost:hover {
+  filter: brightness(1.1) saturate(1.2);
+  transform: scale(1.05);
+  transition: filter 0.15s, transform 0.15s;
+  cursor: default;
+}
+
+/* Broken links create button */
+.flywheel-health-create-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: var(--interactive-accent);
+  color: var(--text-on-accent);
+  border: none;
+  cursor: pointer;
+  font-size: 14px;
+  line-height: 1;
+  opacity: 0.7;
+  transition: opacity 0.15s;
+  flex-shrink: 0;
+}
+
+.flywheel-health-create-btn:hover {
+  opacity: 1;
+}
+
+.flywheel-health-broken-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 18px;
+  height: 16px;
+  padding: 0 4px;
+  border-radius: 8px;
+  background: var(--background-modifier-hover);
+  font-size: var(--font-smallest);
+  color: var(--text-muted);
+}
+
+/* =========================================================================
+   Waterfall animation (Task 3)
+   ========================================================================= */
+
+@keyframes pill-journey {
+  0%   { top: 0; opacity: 1; transform: rotate(0deg) translateX(0); }
+  8%   { top: var(--gate-1-y, 100px); transform: rotate(calc(3deg  * var(--pill-wobble, 1))) translateX(2px); }
+  12%  { top: var(--gate-1-y, 100px); transform: rotate(calc(-2deg * var(--pill-wobble, 1))) translateX(-1px); }
+  20%  { top: var(--gate-2-y, 200px); transform: rotate(calc(4deg  * var(--pill-wobble, 1))) translateX(3px); }
+  24%  { top: var(--gate-2-y, 200px); transform: rotate(calc(-3deg * var(--pill-wobble, 1))) translateX(-2px); }
+  32%  { top: var(--gate-3-y, 300px); transform: rotate(calc(2deg  * var(--pill-wobble, 1))) translateX(1px); }
+  36%  { top: var(--gate-3-y, 300px); transform: rotate(calc(-1deg * var(--pill-wobble, 1))) translateX(0); }
+  44%  { top: var(--gate-4-y, 400px); transform: rotate(calc(3deg  * var(--pill-wobble, 1))) translateX(2px); }
+  48%  { top: var(--gate-4-y, 400px); transform: rotate(calc(-2deg * var(--pill-wobble, 1))) translateX(-1px); }
+  56%  { top: var(--gate-5-y, 500px); transform: rotate(calc(1deg  * var(--pill-wobble, 1))) translateX(1px); }
+  60%  { top: var(--gate-5-y, 500px); transform: rotate(0deg); }
+  100% { top: var(--floor-y, 600px); opacity: 0; transform: rotate(0deg); }
+}
+
+@keyframes ghost-appear {
+  0%   { opacity: 0; transform: scale(0.8); }
+  50%  { opacity: 0.6; transform: scale(1.05); }
+  100% { opacity: 0.5; transform: scale(1); }
+}
+
+.flywheel-waterfall.is-animating .flywheel-pill.is-falling {
+  animation: pill-journey var(--pill-duration, 2s) ease-in-out forwards;
+  animation-delay: var(--pill-delay, 0s);
+}
+
+.flywheel-waterfall.is-animating .flywheel-pill-ghost {
+  opacity: 0;
+  animation: ghost-appear 0.3s ease-out forwards;
+  animation-delay: var(--ghost-delay, 0s);
+}
+
+/* Flash animation when new pipeline arrives */
+.flywheel-waterfall-container.is-fresh {
+  animation: flywheel-pulse 0.6s ease-out;
+}

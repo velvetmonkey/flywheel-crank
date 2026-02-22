@@ -28,15 +28,73 @@ interface StageConfig {
   id: string;
   name: string;
   icon: string;
+  desc: string;
 }
 
 const STAGES: StageConfig[] = [
-  { id: 'discover', name: 'Discover', icon: 'search' },
-  { id: 'suggest', name: 'Suggest', icon: 'sparkles' },
-  { id: 'apply', name: 'Apply', icon: 'check-circle' },
-  { id: 'learn', name: 'Learn', icon: 'brain' },
-  { id: 'adapt', name: 'Adapt', icon: 'sliders-horizontal' },
+  { id: 'discover', name: 'Discover', icon: 'search',            desc: 'finds entities in edited files' },
+  { id: 'suggest',  name: 'Suggest',  icon: 'sparkles',          desc: 'recalculates hub scores' },
+  { id: 'apply',    name: 'Apply',    icon: 'check-circle',       desc: 'auto-inserts wikilinks' },
+  { id: 'learn',    name: 'Learn',    icon: 'brain',              desc: 'records removed links as feedback' },
+  { id: 'adapt',    name: 'Adapt',    icon: 'sliders-horizontal', desc: 'adjusts entity trust weights' },
 ];
+
+// Percentages along the animation timeline where each gate sits
+const GATE_PERCENTS = [10, 22, 34, 46, 58];
+
+interface EntityJourney {
+  name: string;
+  isDead: boolean;
+  category?: string;
+  gates: {
+    discover?: { action: 'added' | 'removed' };
+    suggest?: { action: 'score_change'; delta: number; before: number; after: number };
+    apply?: { action: 'tracked'; files: string[] };
+    learn?: { action: 'removed'; file: string };
+    adapt?: { action: 'suppressed' | 'boosted' | 'learning'; detail: string };
+  };
+}
+
+function hashCode(s: string): number {
+  let h = 0;
+  for (let i = 0; i < s.length; i++) {
+    h = (Math.imul(31, h) + s.charCodeAt(i)) | 0;
+  }
+  return Math.abs(h);
+}
+
+const PILL_PALETTE = [
+  { pill: 'hsl(345, 85%, 55%)', ghost: 'hsl(345, 85%, 55%)' },  // rose
+  { pill: 'hsl(25,  90%, 55%)', ghost: 'hsl(25,  90%, 55%)' },  // orange
+  { pill: 'hsl(45,  90%, 48%)', ghost: 'hsl(45,  90%, 48%)' },  // gold
+  { pill: 'hsl(130, 60%, 42%)', ghost: 'hsl(130, 60%, 42%)' },  // green
+  { pill: 'hsl(170, 65%, 40%)', ghost: 'hsl(170, 65%, 40%)' },  // teal
+  { pill: 'hsl(210, 80%, 55%)', ghost: 'hsl(210, 80%, 55%)' },  // blue
+  { pill: 'hsl(250, 65%, 58%)', ghost: 'hsl(250, 65%, 58%)' },  // indigo
+  { pill: 'hsl(280, 65%, 55%)', ghost: 'hsl(280, 65%, 55%)' },  // purple
+  { pill: 'hsl(310, 70%, 52%)', ghost: 'hsl(310, 70%, 52%)' },  // magenta
+  { pill: 'hsl(85,  65%, 42%)', ghost: 'hsl(85,  65%, 42%)' },  // olive
+  { pill: 'hsl(190, 75%, 42%)', ghost: 'hsl(190, 75%, 42%)' },  // cyan
+  { pill: 'hsl(265, 55%, 52%)', ghost: 'hsl(265, 55%, 52%)' },  // mauve
+  { pill: 'hsl(35,  85%, 50%)', ghost: 'hsl(35,  85%, 50%)' },  // amber
+  { pill: 'hsl(215, 60%, 52%)', ghost: 'hsl(215, 60%, 52%)' },  // steel
+  { pill: 'hsl(355, 80%, 52%)', ghost: 'hsl(355, 80%, 52%)' },  // crimson
+];
+
+const PILL_TEXT = '#ffffff';
+
+function pillColor(name: string, isDead: boolean): { pill: string; ghost: string } {
+  if (isDead) return { pill: 'hsl(0, 75%, 50%)', ghost: 'hsl(0, 75%, 50%)' };
+  return PILL_PALETTE[hashCode(name) % PILL_PALETTE.length];
+}
+
+const GATE_TOOLTIPS: Record<string, string> = {
+  discover: 'Runs on every file save — scans changed notes for new or deleted entities (notes, people, places). Trigger: save any file.',
+  suggest:  'Recalculates how "hub-like" each entity is by counting connections. Higher hub score = entity surfaces more in suggestions. Trigger: any entity graph change.',
+  apply:    'Checks whether entity names appear as plain text (unwikified) in the edited file. If score > threshold, marks it as tracked. Trigger: edit a file containing entity names without [[ ]].',
+  learn:    'Detects when a [[wikilink]] that was previously auto-inserted has been deleted by you. Records it as a rejection signal. Trigger: delete [[ ]] brackets around an auto-link.',
+  adapt:    'After 5+ feedback events for an entity, adjusts its boost or suppress weight. Suppressed entities stop appearing in suggestions. Trigger: accumulated accept/reject history.',
+};
 
 const LAYER_COLORS: Record<string, string> = {
   contentMatch: 'hsl(210, 70%, 55%)',
@@ -92,6 +150,7 @@ export class FeedbackDashboardView extends ItemView {
   private headerEl: HTMLElement | null = null;
   private historyEl: HTMLElement | null = null;
   private gateEls: Map<string, { summary: HTMLElement; items: HTMLElement }> = new Map();
+  private waterfallEl: HTMLElement | null = null;
   private scoreEl: HTMLElement | null = null;
 
   constructor(leaf: WorkspaceLeaf, mcpClient: FlywheelMcpClient) {
@@ -180,11 +239,14 @@ export class FeedbackDashboardView extends ItemView {
 
     this.headerEl = lc.createDiv('flywheel-pipeline-header');
     this.historyEl = lc.createDiv('flywheel-pipeline-history');
+    this.waterfallEl = lc.createDiv('flywheel-waterfall-container');
 
+    // Keep gate skeleton for backward-compat (used by refreshPipeline flash)
     for (const stage of STAGES) {
       lc.createDiv('flywheel-pipeline-connector');
       const gateEl = lc.createDiv('flywheel-pipeline-gate');
       gateEl.dataset.stage = stage.id;
+      gateEl.style.display = 'none'; // hidden — waterfall takes over
 
       const headerRow = gateEl.createDiv('flywheel-gate-header');
       const iconEl = headerRow.createDiv('flywheel-gate-icon');
@@ -235,14 +297,11 @@ export class FeedbackDashboardView extends ItemView {
       try { await this.buildSubjects(); } catch { /* subjects stay as-is */ }
       this.fillContent();
 
-      // Flash gates
-      for (const [, els] of this.gateEls) {
-        const gate = els.summary.parentElement?.parentElement;
-        if (gate) {
-          gate.removeClass('is-fresh');
-          void gate.offsetWidth;
-          gate.addClass('is-fresh');
-        }
+      // Flash waterfall on new pipeline
+      if (this.waterfallEl) {
+        this.waterfallEl.removeClass('is-fresh');
+        void this.waterfallEl.offsetWidth;
+        this.waterfallEl.addClass('is-fresh');
       }
     } finally {
       this.isRefreshing = false;
@@ -338,24 +397,152 @@ export class FeedbackDashboardView extends ItemView {
     }
   }
 
+  // =========================================================================
+  // Entity Journeys — build per-entity gate data for waterfall
+  // =========================================================================
+
+  private buildEntityJourneys(): EntityJourney[] {
+    const pipeline = this.getActivePipeline();
+    const d = this.dashboardData;
+
+    // Step outputs
+    const entityStep = pipeline?.steps.find(s => s.name === 'entity_scan');
+    const addedRaw = (entityStep?.output.added as Array<string | { name: string; category?: string }>) ?? [];
+    const removedRaw = (entityStep?.output.removed as Array<string | { name: string }>) ?? [];
+
+    const hubStep = pipeline?.steps.find(s => s.name === 'hub_scores');
+    const diffs = (!hubStep?.skipped ? (hubStep?.output.diffs as Array<{ entity: string; before: number; after: number }>) : null) ?? [];
+
+    const wlStep = pipeline?.steps.find(s => s.name === 'wikilink_check');
+    const tracked = (wlStep?.output.tracked as Array<{ file: string; entities: string[] }>) ?? [];
+
+    const fbStep = pipeline?.steps.find(s => s.name === 'implicit_feedback');
+    const removals = (fbStep?.output.removals as Array<{ entity: string; file: string }>) ?? [];
+
+    // Collect all entity names
+    const allNames = new Set<string>();
+    for (const e of addedRaw) allNames.add(typeof e === 'string' ? e : e.name);
+    for (const e of removedRaw) allNames.add(typeof e === 'string' ? e : e.name);
+    for (const d of diffs) allNames.add(d.entity);
+    for (const t of tracked) for (const e of t.entities ?? []) allNames.add(e);
+    for (const r of removals) allNames.add(r.entity);
+    if (d) {
+      for (const s of d.suppressed) allNames.add(s.entity);
+      for (const t of d.boost_tiers) for (const e of t.entities) allNames.add(e.entity);
+      for (const l of d.learning) allNames.add(l.entity);
+    }
+
+    // Lookup maps
+    const addedMap = new Map<string, string | undefined>();
+    for (const e of addedRaw) {
+      const name = typeof e === 'string' ? e : e.name;
+      const cat = typeof e === 'string' ? undefined : e.category;
+      addedMap.set(name, cat);
+    }
+    const removedSet = new Set(removedRaw.map(e => typeof e === 'string' ? e : e.name));
+    const diffMap = new Map(diffs.map(d => [d.entity, d]));
+
+    // tracked: entity → files[]
+    const trackedMap = new Map<string, string[]>();
+    for (const t of tracked) {
+      for (const e of t.entities ?? []) {
+        const existing = trackedMap.get(e) ?? [];
+        existing.push(t.file);
+        trackedMap.set(e, existing);
+      }
+    }
+
+    const removalMap = new Map(removals.map(r => [r.entity, r]));
+
+    const suppressedMap = new Map(d?.suppressed.map(s => [s.entity, s]) ?? []);
+    const boostMap = new Map<string, { label: string; boost: number }>();
+    if (d) {
+      for (const tier of d.boost_tiers) {
+        for (const e of tier.entities) {
+          boostMap.set(e.entity, { label: tier.label, boost: tier.boost });
+        }
+      }
+    }
+    const learningMap = new Map(d?.learning.map(l => [l.entity, l]) ?? []);
+
+    // Build journeys
+    const journeys: EntityJourney[] = [];
+    for (const name of allNames) {
+      const journey: EntityJourney = {
+        name,
+        isDead: this.deadLinkSubjects.has(name),
+        category: addedMap.get(name),
+        gates: {},
+      };
+
+      if (addedMap.has(name)) {
+        journey.gates.discover = { action: 'added' };
+      } else if (removedSet.has(name)) {
+        journey.gates.discover = { action: 'removed' };
+      }
+
+      const diff = diffMap.get(name);
+      if (diff) {
+        journey.gates.suggest = {
+          action: 'score_change',
+          delta: diff.after - diff.before,
+          before: diff.before,
+          after: diff.after,
+        };
+      }
+
+      const files = trackedMap.get(name);
+      if (files && files.length > 0) {
+        journey.gates.apply = { action: 'tracked', files };
+      }
+
+      const removal = removalMap.get(name);
+      if (removal) {
+        journey.gates.learn = { action: 'removed', file: removal.file };
+      }
+
+      if (suppressedMap.has(name)) {
+        const s = suppressedMap.get(name)!;
+        journey.gates.adapt = {
+          action: 'suppressed',
+          detail: `${Math.round(s.false_positive_rate * 100)}% false positive`,
+        };
+      } else if (boostMap.has(name)) {
+        const b = boostMap.get(name)!;
+        journey.gates.adapt = {
+          action: 'boosted',
+          detail: `${b.label} (${b.boost > 0 ? '+' : ''}${b.boost})`,
+        };
+      } else if (learningMap.has(name)) {
+        const l = learningMap.get(name)!;
+        journey.gates.adapt = {
+          action: 'learning',
+          detail: `${Math.round(l.accuracy * 100)}% (${l.total} samples)`,
+        };
+      }
+
+      journeys.push(journey);
+    }
+
+    // Sort: dead links last, then alpha
+    journeys.sort((a, b) => {
+      if (a.isDead !== b.isDead) return a.isDead ? 1 : -1;
+      return a.name.localeCompare(b.name);
+    });
+
+    return journeys;
+  }
+
   private fillContent(): void {
     if (!this.skeletonBuilt) return;
 
     this.fillHeader();
     this.fillHistory();
 
-    for (const stage of STAGES) {
-      const els = this.gateEls.get(stage.id);
-      if (!els) continue;
-      els.summary.empty();
-      els.items.empty();
-      switch (stage.id) {
-        case 'discover': this.renderDiscoverGate(els.summary, els.items); break;
-        case 'suggest': this.renderSuggestGate(els.summary, els.items); break;
-        case 'apply': this.renderApplyGate(els.summary, els.items); break;
-        case 'learn': this.renderLearnGate(els.summary, els.items); break;
-        case 'adapt': this.renderAdaptGate(els.summary, els.items); break;
-      }
+    if (this.waterfallEl) {
+      this.waterfallEl.empty();
+      const journeys = this.buildEntityJourneys();
+      this.renderWaterfall(this.waterfallEl, journeys);
     }
 
     this.fillVaultScore();
@@ -444,6 +631,248 @@ export class FeedbackDashboardView extends ItemView {
   }
 
   // =========================================================================
+  // Waterfall renderer — animates entity pills through gate stages
+  // =========================================================================
+
+  private renderWaterfall(container: HTMLElement, journeys: EntityJourney[]): void {
+    if (journeys.length === 0) {
+      // No entity activity — show gate structure with summaries, no pills
+      const quiet = container.createDiv('flywheel-waterfall-quiet');
+      for (const stage of STAGES) {
+        const gateDiv = quiet.createDiv('flywheel-waterfall-gate');
+        const bar = gateDiv.createDiv('flywheel-waterfall-gate-bar');
+        bar.title = GATE_TOOLTIPS[stage.id] ?? '';
+        const iconEl = bar.createDiv('flywheel-gate-icon');
+        setIcon(iconEl, stage.icon);
+        bar.createSpan('flywheel-waterfall-gate-name').setText(stage.name.toUpperCase());
+        bar.createSpan('flywheel-waterfall-gate-desc').setText(stage.desc);
+        bar.createSpan('flywheel-waterfall-gate-summary').setText(
+          this.buildGateSummary(stage.id, [], this.getActivePipeline())
+        );
+      }
+      return;
+    }
+
+    const wf = container.createDiv('flywheel-waterfall');
+
+    // Replay button (top right of pipeline header)
+    const replayBtn = wf.createDiv('flywheel-waterfall-replay');
+    replayBtn.setText('↺ Replay');
+    replayBtn.addEventListener('click', () => {
+      wf.removeClass('is-animating');
+      void wf.offsetHeight; // force reflow
+      wf.addClass('is-animating');
+    });
+
+    // Spawn row
+    wf.createDiv('flywheel-waterfall-start');
+
+    // Gate shelves
+    const gateEls: HTMLElement[] = [];
+    for (let gi = 0; gi < STAGES.length; gi++) {
+      const stage = STAGES[gi];
+      const gateDiv = wf.createDiv('flywheel-waterfall-gate');
+      gateDiv.dataset.stage = stage.id;
+      gateEls.push(gateDiv);
+
+      // Gate bar: icon + label + desc + summary text
+      const bar = gateDiv.createDiv('flywheel-waterfall-gate-bar');
+      bar.title = GATE_TOOLTIPS[stage.id] ?? '';
+      const iconEl = bar.createDiv('flywheel-gate-icon');
+      setIcon(iconEl, stage.icon);
+      bar.createSpan('flywheel-waterfall-gate-name').setText(stage.name.toUpperCase());
+      bar.createSpan('flywheel-waterfall-gate-desc').setText(stage.desc);
+      bar.createSpan('flywheel-waterfall-gate-summary').setText(
+        this.buildGateSummary(stage.id, journeys, this.getActivePipeline())
+      );
+
+      // Shelf: ghost pills for entities that had activity at this gate
+      const shelf = gateDiv.createDiv('flywheel-waterfall-shelf');
+      for (let ji = 0; ji < journeys.length; ji++) {
+        const journey = journeys[ji];
+        const gateAction = this.getGateAction(stage.id, journey);
+        if (!gateAction) continue;
+
+        const ghostColor = pillColor(journey.name, journey.isDead);
+        const ghost = shelf.createSpan('flywheel-pill-ghost');
+        ghost.style.background = ghostColor.ghost;
+        ghost.style.color = PILL_TEXT;
+        ghost.setText(journey.name);
+        ghost.title = gateAction.tooltip;
+
+        const badge = ghost.createSpan('flywheel-pill-badge');
+        badge.setText(gateAction.badge);
+
+        // Delay: pill at index ji reaches gate gi at gatePercent% of total duration (2s)
+        const ghostDelay = ji * 0.025 + 2 * (GATE_PERCENTS[gi] / 100);
+        ghost.style.setProperty('--ghost-delay', `${ghostDelay}s`);
+      }
+    }
+
+    // Floor: final resting pills
+    const floor = wf.createDiv('flywheel-waterfall-floor');
+    for (const journey of journeys) {
+      const floorColor = pillColor(journey.name, journey.isDead);
+      const floorPill = floor.createSpan('flywheel-pill is-floor');
+      floorPill.style.background = floorColor.pill;
+      floorPill.style.color = PILL_TEXT;
+      floorPill.setText(journey.name);
+    }
+
+    // Falling pills: absolutely positioned, will animate
+    for (let ji = 0; ji < journeys.length; ji++) {
+      const journey = journeys[ji];
+      const fallingColor = pillColor(journey.name, journey.isDead);
+      const pill = wf.createSpan('flywheel-pill is-falling');
+      pill.style.background = fallingColor.pill;
+      pill.style.color = PILL_TEXT;
+      pill.setText(journey.name);
+      pill.style.top = '0px';
+      pill.style.left = `${8 + (hashCode(journey.name) % 40)}%`;
+      // Tooltip: first gate action for this entity
+      let pillTooltip = journey.name;
+      for (const stage of STAGES) {
+        const action = this.getGateAction(stage.id, journey);
+        if (action) { pillTooltip = action.tooltip; break; }
+      }
+      pill.title = pillTooltip;
+      pill.addEventListener('click', () => this.openEntityDrilldown(journey.name));
+    }
+
+    // After layout, set CSS custom properties for gate positions and start animation
+    requestAnimationFrame(() => {
+      const wfRect = wf.getBoundingClientRect();
+      const wfTop = wfRect.top;
+
+      gateEls.forEach((gate, i) => {
+        const y = gate.getBoundingClientRect().top - wfTop;
+        wf.style.setProperty(`--gate-${i + 1}-y`, `${y}px`);
+      });
+
+      const floorEl = wf.querySelector('.flywheel-waterfall-floor');
+      if (floorEl) {
+        const floorY = floorEl.getBoundingClientRect().top - wfTop;
+        wf.style.setProperty('--floor-y', `${floorY}px`);
+      }
+
+      const pills = wf.querySelectorAll('.flywheel-pill.is-falling');
+      pills.forEach((pill, i) => {
+        const delay = i * 0.025;
+        (pill as HTMLElement).style.setProperty('--pill-delay', `${delay}s`);
+        const wobble = 0.7 + (hashCode((pill as HTMLElement).textContent ?? '') % 100) / 167;
+        (pill as HTMLElement).style.setProperty('--pill-wobble', String(wobble));
+      });
+
+      wf.addClass('is-animating');
+    });
+  }
+
+  private getGateAction(stageId: string, journey: EntityJourney): { badge: string; tooltip: string } | null {
+    const name = journey.name;
+    switch (stageId) {
+      case 'discover': {
+        const g = journey.gates.discover;
+        if (!g) return null;
+        if (g.action === 'added') return { badge: '+1', tooltip: `"${name}" added to entity index — will be suggested as a wikilink` };
+        return { badge: '-1', tooltip: `"${name}" removed from entity index` };
+      }
+      case 'suggest': {
+        const g = journey.gates.suggest;
+        if (!g) return null;
+        const sign = g.delta >= 0 ? '+' : '';
+        const badge = `${sign}${g.delta}`;
+        if (g.delta > 0) return { badge, tooltip: `"${name}" hub score ↑${g.delta} (${g.before} → ${g.after}) — gaining connections, will surface more often in suggestions` };
+        if (g.delta < 0) return { badge, tooltip: `"${name}" hub score ↓${Math.abs(g.delta)} (${g.before} → ${g.after}) — losing connections, lower suggestion priority` };
+        return { badge, tooltip: `"${name}" hub score stable at ${g.before} — no connection change this pipeline` };
+      }
+      case 'apply': {
+        const g = journey.gates.apply;
+        if (!g) return null;
+        const badge = `✓${g.files.length > 1 ? ` ×${g.files.length}` : ''}`;
+        const first = this.shortenPath(g.files[0]);
+        const extra = g.files.length > 1 ? ` and ${g.files.length - 1} other file${g.files.length > 2 ? 's' : ''}` : '';
+        return { badge, tooltip: `"${name}" spotted as unwikified text in ${first}${extra} — marked for potential auto-linking` };
+      }
+      case 'learn': {
+        const g = journey.gates.learn;
+        if (!g) return null;
+        const file = this.shortenPath(g.file);
+        return { badge: 'removed', tooltip: `"${name}" wikilink was removed from ${file} — recorded as negative feedback` };
+      }
+      case 'adapt': {
+        const g = journey.gates.adapt;
+        if (!g) return null;
+        if (g.action === 'suppressed') return { badge: 'suppressed', tooltip: `"${name}" suppressed — too many rejections, will not be suggested until feedback improves (${g.detail})` };
+        if (g.action === 'boosted') return { badge: 'boosted', tooltip: `"${name}" boosted: ${g.detail} — consistently accepted, gets priority in scoring` };
+        return { badge: 'learning', tooltip: `"${name}" calibrating: ${g.detail} — not enough feedback yet to adjust trust` };
+      }
+      default: return null;
+    }
+  }
+
+  private buildGateSummary(stageId: string, journeys: EntityJourney[], pipeline?: PipelineRecord): string {
+    switch (stageId) {
+      case 'discover': {
+        const added = journeys.filter(j => j.gates.discover?.action === 'added').length;
+        const removed = journeys.filter(j => j.gates.discover?.action === 'removed').length;
+        const dead = journeys.filter(j => j.isDead).length;
+        const parts: string[] = [];
+        if (added) parts.push(`+${added}`);
+        if (removed) parts.push(`-${removed}`);
+        if (dead) parts.push(`${dead} dead`);
+        if (parts.length) return parts.join(' ');
+        // Fallback: show total from step data
+        const entityStep = pipeline?.steps.find(s => s.name === 'entity_scan');
+        const flStep = pipeline?.steps.find(s => s.name === 'forward_links');
+        const entityCount = (entityStep?.output?.entity_count as number) ?? 0;
+        const totalDead = (flStep?.output?.total_dead as number) ?? 0;
+        if (entityCount && totalDead) return `${entityCount} indexed · ${totalDead} dead`;
+        if (entityCount) return `${entityCount} indexed`;
+        return 'scanned';
+      }
+      case 'suggest': {
+        const changed = journeys.filter(j => j.gates.suggest).length;
+        if (!changed) return 'no changes';
+        const up = journeys.filter(j => (j.gates.suggest?.delta ?? 0) > 0).length;
+        const down = journeys.filter(j => (j.gates.suggest?.delta ?? 0) < 0).length;
+        const parts: string[] = [];
+        if (up) parts.push(`↑${up}`);
+        if (down) parts.push(`↓${down}`);
+        return parts.join(' ') || `${changed} changed`;
+      }
+      case 'apply': {
+        const tracked = journeys.filter(j => j.gates.apply).length;
+        if (tracked) return `${tracked} tracked`;
+        const wlStep = pipeline?.steps.find(s => s.name === 'wikilink_check');
+        const trackedArr = (wlStep?.output?.tracked as unknown[]) ?? [];
+        if (!wlStep?.skipped) return `${trackedArr.length || 'no'} matches`;
+        return 'checked';
+      }
+      case 'learn': {
+        const signals = journeys.filter(j => j.gates.learn).length;
+        if (signals) return `${signals} signal${signals !== 1 ? 's' : ''}`;
+        const fbStep = pipeline?.steps.find(s => s.name === 'implicit_feedback');
+        if (fbStep && !fbStep.skipped) return 'no removals';
+        return 'no signals';
+      }
+      case 'adapt': {
+        const adapted = journeys.filter(j => j.gates.adapt).length;
+        if (adapted) return `${adapted} adapted`;
+        const d = this.dashboardData;
+        if (d) {
+          const suppressed = d.suppressed?.length ?? 0;
+          const boosted = d.boost_tiers?.reduce((n, t) => n + t.entities.length, 0) ?? 0;
+          const learning = d.learning?.length ?? 0;
+          const total = suppressed + boosted + learning;
+          if (total) return `${total} tracked`;
+        }
+        return 'calibrating';
+      }
+      default: return '';
+    }
+  }
+
+  // =========================================================================
   // Gate helpers
   // =========================================================================
 
@@ -502,7 +931,7 @@ export class FeedbackDashboardView extends ItemView {
   }
 
   // =========================================================================
-  // DISCOVER — entities added/removed + pass-through for existing subjects
+  // DISCOVER — @deprecated data extraction only, see renderWaterfall()
   // =========================================================================
 
   private renderDiscoverGate(summaryEl: HTMLElement, itemsEl: HTMLElement): void {
@@ -572,7 +1001,7 @@ export class FeedbackDashboardView extends ItemView {
   }
 
   // =========================================================================
-  // SUGGEST — hub score diffs, separating primary subjects from ripple effects
+  // SUGGEST — @deprecated data extraction only, see renderWaterfall()
   // =========================================================================
 
   private renderSuggestGate(summaryEl: HTMLElement, itemsEl: HTMLElement): void {
@@ -639,7 +1068,7 @@ export class FeedbackDashboardView extends ItemView {
   }
 
   // =========================================================================
-  // APPLY — auto-wikilinks tracked, with pass-through for other subjects
+  // APPLY — @deprecated data extraction only, see renderWaterfall()
   // =========================================================================
 
   private renderApplyGate(summaryEl: HTMLElement, itemsEl: HTMLElement): void {
@@ -681,7 +1110,7 @@ export class FeedbackDashboardView extends ItemView {
   }
 
   // =========================================================================
-  // LEARN — feedback signals, with pass-through for other subjects
+  // LEARN — @deprecated data extraction only, see renderWaterfall()
   // =========================================================================
 
   private renderLearnGate(summaryEl: HTMLElement, itemsEl: HTMLElement): void {
@@ -719,7 +1148,7 @@ export class FeedbackDashboardView extends ItemView {
   }
 
   // =========================================================================
-  // ADAPT — trust status for all pipeline subjects
+  // ADAPT — @deprecated data extraction only, see renderWaterfall()
   // =========================================================================
 
   private renderAdaptGate(summaryEl: HTMLElement, itemsEl: HTMLElement): void {
@@ -825,7 +1254,15 @@ export class FeedbackDashboardView extends ItemView {
     addStat('notes', (h?.note_count ?? 0).toLocaleString());
 
     if (d) {
-      addStat('accuracy', `${Math.round(d.overall_accuracy * 100)}%`);
+      const accText = d.total_feedback > 0
+        ? `${Math.round(d.overall_accuracy * 100)}%`
+        : '—';
+      const accStat = row.createSpan('flywheel-score-stat');
+      accStat.title = d.total_feedback > 0
+        ? `${d.total_correct} correct out of ${d.total_feedback} feedback events`
+        : 'No feedback recorded yet — delete an auto-inserted [[wikilink]] to generate the first signal';
+      accStat.createSpan('flywheel-score-stat-value').setText(accText);
+      accStat.createSpan('flywheel-score-stat-label').setText('accuracy');
       const trusted = d.boost_tiers.reduce((sum, t) => sum + (t.boost > 0 ? t.entities.length : 0), 0);
       if (trusted > 0) addStat('trusted', trusted.toLocaleString());
     }
