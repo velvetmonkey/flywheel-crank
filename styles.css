@@ -2930,19 +2930,6 @@
   padding: 4px 0;
 }
 
-/* Pass-through summary (dim line showing entities that flowed through with no action) */
-.flywheel-gate-passthrough {
-  font-size: var(--font-ui-smaller);
-  color: var(--text-faint);
-  padding: 2px 0;
-  font-style: italic;
-}
-
-.flywheel-gate-passthrough.is-dead-links {
-  color: var(--text-faint);
-  font-style: italic;
-}
-
 .flywheel-gate-chips {
   display: flex;
   flex-wrap: wrap;

@@ -474,10 +474,6 @@ export class FeedbackDashboardView extends ItemView {
     deltaEl.addClass(deltaClass);
   }
 
-  private createPassthroughLine(container: HTMLElement, text: string): void {
-    container.createDiv('flywheel-gate-passthrough').setText(text);
-  }
-
   /**
    * Show pass-through entities as individual clickable items (dimmed) instead of
    * a count. Caps visible names at `maxShow`; remainder shown as "+N more" line.
@@ -737,8 +733,6 @@ export class FeedbackDashboardView extends ItemView {
 
     if (!d || d.total_feedback === 0) {
       summaryEl.setText('calibrating');
-      this.createPassthroughLine(itemsEl,
-        `${subjects.length} entit${subjects.length === 1 ? 'y' : 'ies'} \u2014 awaiting feedback`);
       return;
     }
 
@@ -880,7 +874,7 @@ export class FeedbackDashboardView extends ItemView {
     await this.renderLayerHeatmap(panel);
 
     // Graph diff (detailed, only in drilldown)
-    await this.renderGraphDiff(panel);
+    await this.renderGraphDiff(panel, entityName);
   }
 
   private closeEntityDrilldown(): void {
@@ -1067,7 +1061,7 @@ export class FeedbackDashboardView extends ItemView {
     }
   }
 
-  private async renderGraphDiff(panel: HTMLElement): Promise<void> {
+  private async renderGraphDiff(panel: HTMLElement, entityName?: string): Promise<void> {
     const section = panel.createDiv('flywheel-viz-graph-diff-section');
     section.createDiv('flywheel-loop-section-title').setText('Graph changes (7 days)');
     try {
@@ -1075,8 +1069,20 @@ export class FeedbackDashboardView extends ItemView {
       const diffData = await this.mcpClient.snapshotDiff(now - 7 * 86400000, now);
       const diff = diffData.diff;
 
-      if (diff.hubScoreChanges.length > 0) {
-        const sorted = [...diff.hubScoreChanges].sort((a, b) => Math.abs(b.delta) - Math.abs(a.delta));
+      let hubChanges = diff.hubScoreChanges ?? [];
+
+      // When in entity drill-down, filter to just that entity
+      if (entityName) {
+        hubChanges = hubChanges.filter(h => h.entity === entityName);
+        if (hubChanges.length === 0) {
+          section.createDiv({ cls: 'flywheel-loop-detail-note' })
+            .setText(`No hub score changes for ${entityName} in the last 7 days.`);
+          return;
+        }
+      }
+
+      if (hubChanges.length > 0) {
+        const sorted = [...hubChanges].sort((a, b) => Math.abs(b.delta) - Math.abs(a.delta));
         for (const hub of sorted.slice(0, 8)) {
           const row = section.createDiv('flywheel-viz-hub-change');
           const nameEl = row.createSpan('flywheel-viz-entity-link');
