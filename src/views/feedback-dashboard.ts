@@ -51,7 +51,15 @@ interface EntityJourney {
     suggest?: { action: 'score_change'; delta: number; before: number; after: number };
     apply?: { action: 'tracked'; files: string[] };
     learn?: { action: 'removed'; file: string } | { action: 'survived'; file: string; count: number };
-    adapt?: { action: 'suppressed' | 'boosted' | 'learning'; detail: string };
+    adapt?: {
+      action: 'suppressed' | 'boosted' | 'learning';
+      detail: string;
+      accuracy?: number;
+      total?: number;
+      boost?: number;
+      tierLabel?: string;
+      falsePositiveRate?: number;
+    };
   };
 }
 
@@ -530,11 +538,11 @@ export class FeedbackDashboardView extends ItemView {
     const removalMap = new Map(removals.map(r => [r.entity, r]));
 
     const suppressedMap = new Map(d?.suppressed.map(s => [s.entity, s]) ?? []);
-    const boostMap = new Map<string, { label: string; boost: number }>();
+    const boostMap = new Map<string, { label: string; boost: number; accuracy: number; total: number }>();
     if (d) {
       for (const tier of d.boost_tiers) {
         for (const e of tier.entities) {
-          boostMap.set(e.entity, { label: tier.label, boost: tier.boost });
+          boostMap.set(e.entity, { label: tier.label, boost: tier.boost, accuracy: e.accuracy, total: e.total });
         }
       }
     }
@@ -602,18 +610,25 @@ export class FeedbackDashboardView extends ItemView {
         journey.gates.adapt = {
           action: 'suppressed',
           detail: `${Math.round(s.false_positive_rate * 100)}% false positive`,
+          falsePositiveRate: s.false_positive_rate,
         };
       } else if (boostMap.has(name)) {
         const b = boostMap.get(name)!;
         journey.gates.adapt = {
           action: 'boosted',
-          detail: `${b.label} (${b.boost > 0 ? '+' : ''}${b.boost})`,
+          detail: `${Math.round(b.accuracy * 100)}% accuracy, ${b.total} samples — ${b.label}`,
+          accuracy: b.accuracy,
+          total: b.total,
+          boost: b.boost,
+          tierLabel: b.label,
         };
       } else if (learningMap.has(name)) {
         const l = learningMap.get(name)!;
         journey.gates.adapt = {
           action: 'learning',
-          detail: `${Math.round(l.accuracy * 100)}% (${l.total} samples)`,
+          detail: `${Math.round(l.accuracy * 100)}% accuracy, ${l.total}/5 samples`,
+          accuracy: l.accuracy,
+          total: l.total,
         };
       }
 
@@ -901,9 +916,28 @@ export class FeedbackDashboardView extends ItemView {
       case 'adapt': {
         const g = journey.gates.adapt;
         if (!g) return null;
-        if (g.action === 'suppressed') return { badge: 'suppressed', tooltip: `"${name}" suppressed — too many rejections, will not be suggested until feedback improves (${g.detail})` };
-        if (g.action === 'boosted') return { badge: 'boosted', tooltip: `"${name}" boosted: ${g.detail} — consistently accepted, gets priority in scoring` };
-        return { badge: 'learning', tooltip: `"${name}" calibrating: ${g.detail} — not enough feedback yet to adjust trust` };
+        if (g.action === 'suppressed') {
+          const pct = Math.round((g.falsePositiveRate ?? 0) * 100);
+          return {
+            badge: `${pct}% FP`,
+            tooltip: `"${name}" suppressed — ${pct}% false positive rate. Will not be suggested until feedback improves.`,
+          };
+        }
+        if (g.action === 'boosted') {
+          const pct = Math.round((g.accuracy ?? 0) * 100);
+          const sign = (g.boost ?? 0) > 0 ? '+' : '';
+          return {
+            badge: `${pct}%`,
+            tooltip: `"${name}" — ${g.tierLabel} tier: ${pct}% accuracy over ${g.total} samples (${sign}${g.boost} boost to suggestion scoring)`,
+          };
+        }
+        // learning
+        const pct = Math.round((g.accuracy ?? 0) * 100);
+        const remaining = Math.max(1, 5 - (g.total ?? 0));
+        return {
+          badge: `${g.total}/5`,
+          tooltip: `"${name}" — calibrating: ${pct}% accuracy over ${g.total} samples. ${remaining} more needed for tier classification.`,
+        };
       }
       default: return null;
     }
@@ -970,14 +1004,22 @@ export class FeedbackDashboardView extends ItemView {
       }
       case 'adapt': {
         const adapted = journeys.filter(j => j.gates.adapt).length;
-        if (adapted) return `${adapted} adapted`;
+        if (adapted) {
+          const boosted = journeys.filter(j => j.gates.adapt?.action === 'boosted').length;
+          const suppressed = journeys.filter(j => j.gates.adapt?.action === 'suppressed').length;
+          const learning = journeys.filter(j => j.gates.adapt?.action === 'learning').length;
+          const parts: string[] = [];
+          if (boosted) parts.push(`${boosted} trusted`);
+          if (suppressed) parts.push(`${suppressed} suppressed`);
+          if (learning) parts.push(`${learning} calibrating`);
+          return parts.join(', ');
+        }
         const d = this.dashboardData;
         if (d) {
-          const suppressed = d.suppressed?.length ?? 0;
-          const boosted = d.boost_tiers?.reduce((n, t) => n + t.entities.length, 0) ?? 0;
-          const learning = d.learning?.length ?? 0;
-          const total = suppressed + boosted + learning;
-          if (total) return `${total} tracked`;
+          const total = (d.suppressed?.length ?? 0)
+            + (d.boost_tiers?.reduce((n, t) => n + t.entities.length, 0) ?? 0)
+            + (d.learning?.length ?? 0);
+          if (total) return `${total} in trust db`;
         }
         return 'calibrating';
       }
@@ -1527,9 +1569,17 @@ export class FeedbackDashboardView extends ItemView {
         return r.length > 0 ? `${r.length} entries` : 'No feedback';
       })() },
       { icon: 'sliders-horizontal', label: 'Adapted', detail: (() => {
-        if (this.dashboardData?.suppressed.some(s => s.entity === entityName)) return 'Suppressed';
-        const tier = this.dashboardData?.boost_tiers.find(t => t.entities.some(e => e.entity === entityName));
-        return tier ? `${tier.label} (+${tier.boost})` : 'Neutral';
+        const d = this.dashboardData;
+        if (!d) return 'No data';
+        const supp = d.suppressed.find(s => s.entity === entityName);
+        if (supp) return `Suppressed (${Math.round(supp.false_positive_rate * 100)}% FP)`;
+        for (const tier of d.boost_tiers) {
+          const e = tier.entities.find(e => e.entity === entityName);
+          if (e) return `${Math.round(e.accuracy * 100)}% accuracy, ${e.total} samples — ${tier.label}`;
+        }
+        const learn = d.learning.find(l => l.entity === entityName);
+        if (learn) return `${Math.round(learn.accuracy * 100)}% accuracy, ${learn.total}/5 samples`;
+        return 'Neutral';
       })() },
     ];
 
