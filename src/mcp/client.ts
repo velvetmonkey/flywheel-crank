@@ -427,6 +427,15 @@ export interface McpValidateLinksResponse {
   broken_links: number;
   returned_count: number;
   broken: McpBrokenLink[];
+  // group_by_target mode
+  total_dead_targets?: number;
+  total_broken_links?: number;
+  targets?: Array<{
+    target: string;
+    mention_count: number;
+    sources: string[];
+    suggestion?: string;
+  }>;
 }
 
 // Wikilink feedback
@@ -1252,12 +1261,20 @@ export class FlywheelMcpClient {
   }
 
   /**
+   * Create a new note in the vault.
+   */
+  async createNote(title: string, content: string): Promise<McpMutationResponse> {
+    return this.callTool<McpMutationResponse>('vault_create_note', { title, content });
+  }
+
+  /**
    * Validate wikilinks across the vault — find broken links with optional typo suggestions.
    */
-  async validateLinks(typosOnly = false, limit = 50): Promise<McpValidateLinksResponse> {
+  async validateLinks(typosOnly = false, limit = 50, groupByTarget = false): Promise<McpValidateLinksResponse> {
     return this.callTool<McpValidateLinksResponse>('validate_links', {
       typos_only: typosOnly,
       limit,
+      ...(groupByTarget ? { group_by_target: true } : {}),
     });
   }
 

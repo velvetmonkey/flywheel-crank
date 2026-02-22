@@ -47,7 +47,7 @@ interface EntityJourney {
   isDead: boolean;
   category?: string;
   gates: {
-    discover?: { action: 'added' | 'removed' };
+    discover?: { action: 'added' | 'removed' | 'category_changed'; detail?: string };
     suggest?: { action: 'score_change'; delta: number; before: number; after: number };
     apply?: { action: 'tracked'; files: string[] };
     learn?: { action: 'removed'; file: string };
@@ -436,6 +436,10 @@ export class FeedbackDashboardView extends ItemView {
       }
     }
 
+    // Read category changes from entity_scan step (P8 T1)
+    const categoryChanges = (entityStep?.output?.category_changes as Array<{ entity: string; from: string; to: string }>) ?? [];
+    const categoryChangeMap = new Map(categoryChanges.map(c => [c.entity.toLowerCase(), c]));
+
     // Collect all entity names
     const allNames = new Set<string>();
     for (const e of addedRaw) allNames.add(typeof e === 'string' ? e : e.name);
@@ -447,6 +451,7 @@ export class FeedbackDashboardView extends ItemView {
       for (const name of diff.added) allNames.add(name);
       for (const name of diff.removed) allNames.add(name);
     }
+    for (const c of categoryChanges) allNames.add(c.entity);
     if (d) {
       for (const s of d.suppressed) allNames.add(s.entity);
       for (const t of d.boost_tiers) for (const e of t.entities) allNames.add(e.entity);
@@ -500,6 +505,11 @@ export class FeedbackDashboardView extends ItemView {
         journey.gates.discover = { action: 'added' };
       } else if (removedSet.has(name)) {
         journey.gates.discover = { action: 'removed' };
+      } else {
+        const catChange = categoryChangeMap.get(name.toLowerCase());
+        if (catChange) {
+          journey.gates.discover = { action: 'category_changed', detail: `${catChange.from} → ${catChange.to}` };
+        }
       }
 
       const diff = diffMap.get(name);
@@ -807,7 +817,8 @@ export class FeedbackDashboardView extends ItemView {
         const g = journey.gates.discover;
         if (!g) return null;
         if (g.action === 'added') return { badge: '+1', tooltip: `"${name}" added to entity index — will be suggested as a wikilink` };
-        return { badge: '-1', tooltip: `"${name}" removed from entity index` };
+        if (g.action === 'removed') return { badge: '-1', tooltip: `"${name}" removed from entity index` };
+        return { badge: '~', tooltip: `"${name}" category changed: ${g.detail ?? ''}` };
       }
       case 'suggest': {
         const g = journey.gates.suggest;
@@ -848,10 +859,12 @@ export class FeedbackDashboardView extends ItemView {
       case 'discover': {
         const added = journeys.filter(j => j.gates.discover?.action === 'added').length;
         const removed = journeys.filter(j => j.gates.discover?.action === 'removed').length;
+        const changed = journeys.filter(j => j.gates.discover?.action === 'category_changed').length;
         const dead = journeys.filter(j => j.isDead).length;
         const parts: string[] = [];
         if (added) parts.push(`+${added}`);
         if (removed) parts.push(`-${removed}`);
+        if (changed) parts.push(`${changed} reclassified`);
         if (dead) parts.push(`${dead} dead`);
         if (parts.length) return parts.join(' ');
         // Fallback: show total from step data

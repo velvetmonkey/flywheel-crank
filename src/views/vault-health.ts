@@ -257,21 +257,82 @@ export class VaultHealthView extends ItemView {
       return total;
     }, 'Notes that other notes link to, but that contain no outgoing [[wikilinks]] themselves. They receive attention but don\'t connect readers forward. Add outgoing links to strengthen the graph.');
 
-    // Broken Links section — lazy-loaded
+    // Broken Links section — lazy-loaded, grouped by target with frequency weighting
     this.renderLazySection(content, 'Broken Links', 'unlink', async (el) => {
-      const resp = await this.mcpClient.validateLinks(false, 30);
-      const items = resp.broken ?? [];
-      if (items.length === 0) {
-        el.createDiv('flywheel-health-empty-msg').setText('No broken links found');
-        return items.length;
+      const resp = await this.mcpClient.validateLinks(false, 30, true);
+
+      // group_by_target returns targets[]; fall back to broken[] if server returned flat list
+      const grouped = resp.targets;
+      if (grouped) {
+        // Already sorted by mention_count desc from the server, but ensure it
+        const items = [...grouped].sort((a, b) => (b.mention_count ?? 0) - (a.mention_count ?? 0));
+        if (items.length === 0) {
+          el.createDiv('flywheel-health-empty-msg').setText('No broken links found');
+          return 0;
+        }
+
+        const renderBrokenItems = async (container: HTMLElement, itemList: typeof items) => {
+          for (const item of itemList) {
+            const row = container.createDiv('flywheel-health-item');
+            row.style.display = 'flex';
+            row.style.alignItems = 'center';
+            row.style.gap = '6px';
+
+            // Frequency-weighted entity name
+            const count = item.mention_count ?? 1;
+            const nameEl = row.createSpan('flywheel-health-broken-target');
+            nameEl.setText(item.target);
+            if (count >= 6) {
+              nameEl.style.fontWeight = '700';
+              nameEl.style.fontSize = '14px';
+            } else if (count >= 3) {
+              nameEl.style.fontWeight = '600';
+              nameEl.style.fontSize = '13px';
+            } else {
+              nameEl.style.fontWeight = '400';
+              nameEl.style.fontSize = '12px';
+            }
+
+            // Frequency badge
+            const badge = row.createSpan('flywheel-health-broken-badge');
+            badge.setText(`${count}`);
+
+            // Create button
+            const createBtn = row.createEl('button', { cls: 'flywheel-health-create-btn' });
+            createBtn.setText('+');
+            createBtn.setAttribute('aria-label', `Create note: ${item.target}`);
+            createBtn.addEventListener('click', async (e) => {
+              e.stopPropagation();
+              try {
+                await this.mcpClient.createNote(item.target, `# ${item.target}\n\n`);
+                row.remove();
+              } catch (err) {
+                console.error('Flywheel Crank: failed to create note', err);
+              }
+            });
+          }
+        };
+
+        await renderBrokenItems(el, items);
+        const total = resp.total_dead_targets ?? items.length;
+        if (total > 30) {
+          el.createDiv('flywheel-health-more').setText(`+${total - 30} more`);
+        }
+        return total;
       }
-      for (const broken of items) {
+
+      // Fallback: flat broken[] list (old server version)
+      const flatItems = resp.broken ?? [];
+      if (flatItems.length === 0) {
+        el.createDiv('flywheel-health-empty-msg').setText('No broken links found');
+        return 0;
+      }
+      for (const broken of flatItems) {
         const item = el.createDiv('flywheel-health-item flywheel-health-clickable');
         item.addEventListener('click', () => this.app.workspace.openLinkText(broken.source, '', false));
 
         const row = item.createDiv('flywheel-health-broken-row');
 
-        // Source note title (clickable)
         const sourceEl = row.createSpan('flywheel-health-broken-source flywheel-health-clickable');
         const sourceTitle = broken.source.replace(/\.md$/, '').split('/').pop() || broken.source;
         sourceEl.setText(sourceTitle);
@@ -280,17 +341,14 @@ export class VaultHealthView extends ItemView {
         row.createSpan('flywheel-health-broken-arrow').setText('\u2192');
         row.createSpan('flywheel-health-broken-target').setText(broken.target);
 
-        // Show source path so user knows which file to check
         const pathEl = item.createDiv('flywheel-health-item-path');
         pathEl.setText(broken.source.replace(/\.md$/, ''));
 
         if (broken.suggestion) {
           const suggestionName = broken.suggestion.replace(/\.md$/, '').split('/').pop() || broken.suggestion;
-
           const fixRow = item.createDiv('flywheel-health-broken-fix-row');
           const badge = fixRow.createSpan('flywheel-health-broken-suggestion');
           badge.setText(`\u2192 ${suggestionName}`);
-
           const fixBtn = fixRow.createSpan('flywheel-health-fix-btn');
           setIcon(fixBtn, 'pencil');
           fixBtn.createSpan({ cls: 'flywheel-health-fix-btn-label', text: 'Fix' });
@@ -301,10 +359,7 @@ export class VaultHealthView extends ItemView {
               const file = this.app.vault.getAbstractFileByPath(broken.source);
               if (file instanceof TFile) {
                 const content = await this.app.vault.cachedRead(file);
-                const newContent = content.replace(
-                  `[[${broken.target}]]`,
-                  `[[${suggestionName}]]`,
-                );
+                const newContent = content.replace(`[[${broken.target}]]`, `[[${suggestionName}]]`);
                 if (newContent !== content) {
                   await this.app.vault.modify(file, newContent);
                   fixBtn.empty();
@@ -318,12 +373,12 @@ export class VaultHealthView extends ItemView {
           });
         }
       }
-      const total = resp.broken_links ?? items.length;
+      const total = resp.broken_links ?? flatItems.length;
       if (total > 30) {
         el.createDiv('flywheel-health-more').setText(`+${total - 30} more`);
       }
       return total;
-    }, '[[Wikilinks]] pointing to notes that don\'t exist in the vault. The source note contains a link, but no matching note was found. Fix by creating the target note or correcting the link name.');
+    }, '[[Wikilinks]] pointing to notes that don\'t exist in the vault. Sorted by frequency — bolder = more references. Click + to create the missing note.');
 
     // Stale Hubs section — lazy-loaded
     this.renderLazySection(content, 'Stale Hubs', 'clock', async (el) => {

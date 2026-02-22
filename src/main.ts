@@ -29,6 +29,8 @@ export default class FlywheelCrankPlugin extends Plugin {
   private healthUnsub: (() => void) | null = null;
   private graphRefreshTimer: number | null = null;
   private lastRebuildTimestamp = 0;
+  private lastPipelineTimestamp = 0;
+  private pipelineActiveTimer: number | null = null;
 
   async onload(): Promise<void> {
     console.log('Flywheel Crank: loading plugin');
@@ -132,6 +134,17 @@ export default class FlywheelCrankPlugin extends Plugin {
       await this.initialize();
     });
 
+    // Show spinner when a note is saved — the server-side watcher will kick off
+    // a pipeline, but we won't know it's done until the next health poll. Spinning
+    // immediately gives feedback that something is happening.
+    this.registerEvent(
+      this.app.vault.on('modify', (file) => {
+        if (!file.path.endsWith('.md')) return;
+        if (!this.mcpClient.connected || this.indexing) return;
+        this.signalPipelineActive();
+      })
+    );
+
     // Invalidate plugin-side cache when Obsidian UI creates/deletes/renames notes.
     // The MCP server has its own file watcher, but the plugin cache can serve stale
     // data until the next health poll without these invalidations.
@@ -219,6 +232,16 @@ export default class FlywheelCrankPlugin extends Plugin {
 
   /** Handle health updates from the centralized health poller. */
   private handleHealthUpdate(health: import('./mcp/client').McpHealthCheckResponse): void {
+    // If a new pipeline arrived, cancel the processing spinner
+    const pipelineTs = health.last_pipeline?.timestamp ?? 0;
+    if (pipelineTs > this.lastPipelineTimestamp) {
+      this.lastPipelineTimestamp = pipelineTs;
+      if (this.pipelineActiveTimer) {
+        window.clearTimeout(this.pipelineActiveTimer);
+        this.pipelineActiveTimer = null;
+      }
+    }
+
     if (health.index_state === 'ready') {
       // Detect index rebuild and refresh entity cache for wikilink suggest
       const rebuildTs = health.last_rebuild?.timestamp ?? 0;
@@ -404,6 +427,19 @@ export default class FlywheelCrankPlugin extends Plugin {
     } finally {
       this.indexing = false;
     }
+  }
+
+  /** Spin the status bar to signal a pipeline is likely running. Clears itself after 10s max. */
+  private signalPipelineActive(): void {
+    if (this.pipelineActiveTimer) window.clearTimeout(this.pipelineActiveTimer);
+    this.setStatus('processing...', true);
+    // Safety: stop spinning after 10s even if health poll never confirms a new pipeline
+    this.pipelineActiveTimer = window.setTimeout(() => {
+      this.pipelineActiveTimer = null;
+      // Only reset if we're still showing "processing..." (not mid-rebuild etc.)
+      const health = this.mcpClient.lastHealth;
+      if (health) this.handleHealthUpdate(health);
+    }, 10_000);
   }
 
   private setStatus(text: string, active = false, tooltip?: string): void {
