@@ -47,7 +47,7 @@ interface EntityJourney {
   isDead: boolean;
   category?: string;
   gates: {
-    discover?: { action: 'added' | 'removed' | 'category_changed'; detail?: string };
+    discover?: { action: 'added' | 'removed' | 'category_changed' | 'moved'; detail?: string };
     suggest?: { action: 'score_change'; delta: number; before: number; after: number };
     apply?: { action: 'tracked'; files: string[] };
     learn?: { action: 'removed'; file: string };
@@ -469,6 +469,17 @@ export class FeedbackDashboardView extends ItemView {
     const categoryChanges = (entityStep?.output?.category_changes as Array<{ entity: string; from: string; to: string }>) ?? [];
     const categoryChangeMap = new Map(categoryChanges.map(c => [c.entity.toLowerCase(), c]));
 
+    // Read note moves from note_moves step (P8 T4)
+    const movesStep = pipeline?.steps.find(s => s.name === 'note_moves');
+    const moveRenames = (movesStep?.output?.renames as Array<{ oldPath: string; newPath: string }>) ?? [];
+    const moveMap = new Map<string, { oldFolder: string; newFolder: string }>();
+    for (const r of moveRenames) {
+      const entityName = (r.newPath.split('/').pop() ?? r.newPath).replace(/\.md$/, '');
+      const oldFolder = r.oldPath.includes('/') ? r.oldPath.split('/').slice(0, -1).join('/') : '';
+      const newFolder = r.newPath.includes('/') ? r.newPath.split('/').slice(0, -1).join('/') : '';
+      if (oldFolder !== newFolder) moveMap.set(entityName.toLowerCase(), { oldFolder, newFolder });
+    }
+
     // Collect all entity names
     const allNames = new Set<string>();
     for (const e of addedRaw) allNames.add(typeof e === 'string' ? e : e.name);
@@ -481,6 +492,10 @@ export class FeedbackDashboardView extends ItemView {
       for (const name of diff.removed) allNames.add(name);
     }
     for (const c of categoryChanges) allNames.add(c.entity);
+    for (const r of moveRenames) {
+      const entityName = (r.newPath.split('/').pop() ?? r.newPath).replace(/\.md$/, '');
+      allNames.add(entityName);
+    }
     if (d) {
       for (const s of d.suppressed) allNames.add(s.entity);
       for (const t of d.boost_tiers) for (const e of t.entities) allNames.add(e.entity);
@@ -538,6 +553,11 @@ export class FeedbackDashboardView extends ItemView {
         const catChange = categoryChangeMap.get(name.toLowerCase());
         if (catChange) {
           journey.gates.discover = { action: 'category_changed', detail: `${catChange.from} → ${catChange.to}` };
+        } else {
+          const move = moveMap.get(name.toLowerCase());
+          if (move) {
+            journey.gates.discover = { action: 'moved', detail: `${move.oldFolder || '(root)'} → ${move.newFolder || '(root)'}` };
+          }
         }
       }
 
@@ -879,6 +899,7 @@ export class FeedbackDashboardView extends ItemView {
         if (!g) return null;
         if (g.action === 'added') return { badge: '+1', tooltip: `"${name}" added to entity index — will be suggested as a wikilink` };
         if (g.action === 'removed') return { badge: '-1', tooltip: `"${name}" removed from entity index` };
+        if (g.action === 'moved') return { badge: '→', tooltip: `"${name}" moved: ${g.detail ?? ''}` };
         return { badge: '~', tooltip: `"${name}" category changed: ${g.detail ?? ''}` };
       }
       case 'suggest': {
@@ -921,12 +942,14 @@ export class FeedbackDashboardView extends ItemView {
         const added = journeys.filter(j => j.gates.discover?.action === 'added').length;
         const removed = journeys.filter(j => j.gates.discover?.action === 'removed').length;
         const changed = journeys.filter(j => j.gates.discover?.action === 'category_changed').length;
+        const moved = journeys.filter(j => j.gates.discover?.action === 'moved').length;
         // dead count is already filtered through looksLikeEntityName via deadLinkSubjects
         const dead = journeys.filter(j => j.isDead).length;
         const parts: string[] = [];
         if (added) parts.push(`+${added}`);
         if (removed) parts.push(`-${removed}`);
         if (changed) parts.push(`${changed} reclassified`);
+        if (moved) parts.push(`${moved} moved`);
         if (dead) parts.push(`${dead} unresolved`);
         if (parts.length) return parts.join(' ');
         // Fallback: show total from step data (filter dead links through heuristic)
