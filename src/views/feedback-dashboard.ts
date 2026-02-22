@@ -63,6 +63,35 @@ function hashCode(s: string): number {
   return Math.abs(h);
 }
 
+/**
+ * Returns false for obvious agent-prose artifacts that appear as [[dead links]]
+ * but are not real vault entity names. Used to suppress noise in the DISCOVER
+ * gate dead-link count.
+ *
+ * Rejects:
+ *  - Contains prose punctuation (. ! ?)
+ *  - All-uppercase and 5 chars or fewer  (emphasis noise: ZERO, YES, LOT)
+ *  - Starts with a common conjunction / preposition / article
+ *  - Longer than 50 chars
+ *  - Contains nested brackets [[ or ]]
+ */
+function looksLikeEntityName(text: string): boolean {
+  if (text.includes('.') || text.includes('!') || text.includes('?')) return false;
+  if (text.length > 50) return false;
+  if (text.includes('[[') || text.includes(']]')) return false;
+  if (text === text.toUpperCase() && text.length <= 5) return false;
+
+  const PROSE_OPENERS = new Set([
+    'if', 'and', 'so', 'are', 'is', 'of', 'the', 'but', 'for', 'from',
+    'or', 'at', 'in', 'on', 'a', 'an', 'hey', 'as', 'with', 'by', 'to',
+    'not', 'do', 'did',
+  ]);
+  const firstWord = text.trim().split(/\s+/)[0].toLowerCase();
+  if (PROSE_OPENERS.has(firstWord)) return false;
+
+  return true;
+}
+
 const PILL_PALETTE = [
   { pill: 'hsl(345, 85%, 55%)', ghost: 'hsl(345, 85%, 55%)' },  // rose
   { pill: 'hsl(25,  90%, 55%)', ghost: 'hsl(25,  90%, 55%)' },  // orange
@@ -339,7 +368,7 @@ export class FeedbackDashboardView extends ItemView {
         for (const name of entry.resolved ?? []) subjects.add(name);
         for (const name of entry.dead ?? []) {
           subjects.add(name);
-          deadLinks.add(name);
+          if (looksLikeEntityName(name)) deadLinks.add(name);
         }
       }
     } else {
@@ -357,7 +386,7 @@ export class FeedbackDashboardView extends ItemView {
           for (const link of result.forward_links) {
             const name = link.target.replace(/\.md$/, '').split('/').pop() || link.target;
             subjects.add(name);
-            if (!link.exists) deadLinks.add(name);
+            if (!link.exists && looksLikeEntityName(name)) deadLinks.add(name);
           }
         }
       } catch { /* ignore */ }
@@ -892,19 +921,23 @@ export class FeedbackDashboardView extends ItemView {
         const added = journeys.filter(j => j.gates.discover?.action === 'added').length;
         const removed = journeys.filter(j => j.gates.discover?.action === 'removed').length;
         const changed = journeys.filter(j => j.gates.discover?.action === 'category_changed').length;
+        // dead count is already filtered through looksLikeEntityName via deadLinkSubjects
         const dead = journeys.filter(j => j.isDead).length;
         const parts: string[] = [];
         if (added) parts.push(`+${added}`);
         if (removed) parts.push(`-${removed}`);
         if (changed) parts.push(`${changed} reclassified`);
-        if (dead) parts.push(`${dead} dead`);
+        if (dead) parts.push(`${dead} unresolved`);
         if (parts.length) return parts.join(' ');
-        // Fallback: show total from step data
+        // Fallback: show total from step data (filter dead links through heuristic)
         const entityStep = pipeline?.steps.find(s => s.name === 'entity_scan');
         const flStep = pipeline?.steps.find(s => s.name === 'forward_links');
         const entityCount = (entityStep?.output?.entity_count as number) ?? 0;
-        const totalDead = (flStep?.output?.total_dead as number) ?? 0;
-        if (entityCount && totalDead) return `${entityCount} indexed · ${totalDead} dead`;
+        const flLinks = (flStep?.output?.links as Array<{ dead?: string[] }>) ?? [];
+        const filteredDead = flLinks.reduce(
+          (n, entry) => n + (entry.dead ?? []).filter(looksLikeEntityName).length, 0,
+        );
+        if (entityCount && filteredDead) return `${entityCount} indexed · ${filteredDead} unresolved`;
         if (entityCount) return `${entityCount} indexed`;
         return 'scanned';
       }
