@@ -5,7 +5,7 @@
  * Search and graph views are powered by flywheel-memory via MCP.
  */
 
-import { Plugin, Notice, WorkspaceLeaf } from 'obsidian';
+import { Plugin, Notice, WorkspaceLeaf, Menu, Editor, MarkdownView } from 'obsidian';
 import type { FlywheelCrankSettings } from './core/types';
 import { DEFAULT_SETTINGS } from './core/types';
 import { FlywheelCrankSettingTab } from './settings';
@@ -178,6 +178,58 @@ export default class FlywheelCrankPlugin extends Plugin {
     this.registerEvent(
       this.app.workspace.on('active-leaf-change', () => {
         this.updateGraphSidebar();
+      })
+    );
+
+    // Context menu actions on [[wikilinks]]
+    this.registerEvent(
+      this.app.workspace.on('editor-menu', (menu: Menu, editor: Editor, view: MarkdownView) => {
+        if (!this.mcpClient.connected) return;
+
+        const cursor = editor.getCursor();
+        const line = editor.getLine(cursor.line);
+        const entity = this.getWikilinkAtPosition(line, cursor.ch);
+        if (!entity) return;
+
+        const notePath = view?.file?.path;
+        if (!notePath) return;
+
+        menu.addSeparator();
+
+        menu.addItem((item) => {
+          item.setTitle('Flywheel: Link is correct')
+            .setIcon('thumbs-up')
+            .onClick(async () => {
+              try {
+                await this.mcpClient.reportWikilinkFeedback(entity, notePath, true);
+                new Notice(`Feedback: "${entity}" is correct`);
+              } catch {
+                new Notice('Failed to record feedback');
+              }
+            });
+        });
+
+        menu.addItem((item) => {
+          item.setTitle('Flywheel: Link is wrong')
+            .setIcon('thumbs-down')
+            .onClick(async () => {
+              try {
+                await this.mcpClient.reportWikilinkFeedback(entity, notePath, false);
+                new Notice(`Feedback: "${entity}" is wrong`);
+              } catch {
+                new Notice('Failed to record feedback');
+              }
+            });
+        });
+
+        menu.addItem((item) => {
+          item.setTitle('Flywheel: View in graph')
+            .setIcon('git-fork')
+            .onClick(() => {
+              this.app.workspace.openLinkText(entity, notePath, false);
+              this.activateView(GRAPH_VIEW_TYPE);
+            });
+        });
       })
     );
   }
@@ -440,6 +492,42 @@ export default class FlywheelCrankPlugin extends Plugin {
       const health = this.mcpClient.lastHealth;
       if (health) this.handleHealthUpdate(health);
     }, 10_000);
+  }
+
+  /**
+   * Extract entity name if cursor position is inside [[entity]] or [[entity|alias]].
+   * Returns null if cursor is not inside a wikilink.
+   */
+  private getWikilinkAtPosition(line: string, ch: number): string | null {
+    // Scan backwards from cursor for [[
+    let openIdx = -1;
+    for (let i = ch - 1; i >= 1; i--) {
+      if (line[i] === '[' && line[i - 1] === '[') {
+        openIdx = i - 1;
+        break;
+      }
+      // Hit a close bracket before finding open — not inside a wikilink
+      if (line[i] === ']' && i > 0 && line[i - 1] === ']') return null;
+    }
+    if (openIdx === -1) return null;
+
+    // Scan forward from cursor for ]]
+    let closeIdx = -1;
+    for (let i = ch; i < line.length - 1; i++) {
+      if (line[i] === ']' && line[i + 1] === ']') {
+        closeIdx = i;
+        break;
+      }
+      // Hit another open bracket — nested, bail
+      if (line[i] === '[' && i < line.length - 1 && line[i + 1] === '[') return null;
+    }
+    if (closeIdx === -1) return null;
+
+    const inner = line.substring(openIdx + 2, closeIdx);
+    // Handle [[entity|alias]] — entity is before the pipe
+    const pipeIdx = inner.indexOf('|');
+    const entity = pipeIdx >= 0 ? inner.substring(0, pipeIdx).trim() : inner.trim();
+    return entity.length > 0 ? entity : null;
   }
 
   private setStatus(text: string, active = false, tooltip?: string): void {
