@@ -17,6 +17,7 @@ import { VaultHealthView, VAULT_HEALTH_VIEW_TYPE } from './views/vault-health';
 import { TaskDashboardView, TASK_DASHBOARD_VIEW_TYPE } from './views/task-dashboard';
 import { FeedbackDashboardView, FEEDBACK_DASHBOARD_VIEW_TYPE } from './views/feedback-dashboard';
 import { EntityInboxView, ENTITY_INBOX_VIEW_TYPE } from './views/entity-inbox';
+import { EntityPageView, ENTITY_PAGE_VIEW_TYPE } from './views/entity-page';
 import { WikilinkSuggest } from './suggest/wikilink-suggest';
 import { createInlineSuggestionPlugin } from './suggest/inline-suggestions';
 import { FlywheelMcpClient } from './mcp/client';
@@ -63,6 +64,7 @@ export default class FlywheelCrankPlugin extends Plugin {
     this.registerView(TASK_DASHBOARD_VIEW_TYPE, (leaf) => new TaskDashboardView(leaf, this.mcpClient));
     this.registerView(FEEDBACK_DASHBOARD_VIEW_TYPE, (leaf) => new FeedbackDashboardView(leaf, this.mcpClient));
     this.registerView(ENTITY_INBOX_VIEW_TYPE, (leaf) => new EntityInboxView(leaf, this.mcpClient));
+    this.registerView(ENTITY_PAGE_VIEW_TYPE, (leaf) => new EntityPageView(leaf, this.mcpClient));
 
     // Settings tab
     this.addSettingTab(new FlywheelCrankSettingTab(this.app, this));
@@ -454,6 +456,28 @@ export default class FlywheelCrankPlugin extends Plugin {
       if (viewType === GRAPH_VIEW_TYPE) {
         (leaf.view as GraphSidebarView).refresh(true);
       }
+    }
+  }
+
+  /**
+   * Open the Entity Page view for a specific entity.
+   * Reuses existing Entity Page leaf if one is already open.
+   */
+  async openEntityPage(entityName: string): Promise<void> {
+    const { workspace } = this.app;
+    let leaf: WorkspaceLeaf | null = null;
+    const leaves = workspace.getLeavesOfType(ENTITY_PAGE_VIEW_TYPE);
+
+    if (leaves.length > 0) {
+      leaf = leaves[0];
+    } else {
+      leaf = workspace.getRightLeaf(false);
+      if (leaf) await leaf.setViewState({ type: ENTITY_PAGE_VIEW_TYPE, active: true });
+    }
+
+    if (leaf) {
+      workspace.revealLeaf(leaf);
+      await (leaf.view as EntityPageView).showEntity(entityName);
     }
   }
 
