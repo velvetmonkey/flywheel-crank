@@ -32,6 +32,8 @@ export default class FlywheelCrankPlugin extends Plugin {
   private lastRebuildTimestamp = 0;
   private lastPipelineTimestamp = 0;
   private pipelineActiveTimer: number | null = null;
+  private reviewCount = 0;
+  private inboxCountFetched = false;
 
   async onload(): Promise<void> {
     console.log('Flywheel Crank: loading plugin');
@@ -45,7 +47,11 @@ export default class FlywheelCrankPlugin extends Plugin {
     if (statusBar) statusBar.prepend(this.statusBarEl);
     this.statusBarEl.style.cursor = 'pointer';
     this.statusBarEl.addEventListener('click', () => {
-      if (this.mcpClient.connectionState === 'error') this.initialize();
+      if (this.mcpClient.connectionState === 'error') {
+        this.initialize();
+      } else if (this.reviewCount > 0) {
+        this.activateView(ENTITY_INBOX_VIEW_TYPE);
+      }
     });
     this.setStatus('connecting...', true);
 
@@ -348,6 +354,12 @@ export default class FlywheelCrankPlugin extends Plugin {
       }
 
       this.setStatus(`ready · ${agoText}`, false, tooltip);
+
+      // Seed inbox count once after index is ready (non-blocking)
+      if (!this.inboxCountFetched) {
+        this.inboxCountFetched = true;
+        this.refreshInboxCount();
+      }
       return;
     }
 
@@ -378,6 +390,26 @@ export default class FlywheelCrankPlugin extends Plugin {
       this.wikilinkEntitiesLoaded = false; // allow retry on next poll
       console.error('Flywheel Crank: failed to load entities for wikilink suggest', err);
     }
+  }
+
+  /** Fetch merge suggestion count to seed the inbox badge. Fire-and-forget. */
+  private async refreshInboxCount(): Promise<void> {
+    try {
+      const merges = await this.mcpClient.suggestEntityMerges(5);
+      this.reviewCount = merges.total_candidates ?? merges.suggestions?.length ?? 0;
+      // Re-render status bar to show/hide badge
+      const health = this.mcpClient.lastHealth;
+      if (health) this.handleHealthUpdate(health);
+    } catch {
+      // Non-critical — badge stays hidden on error
+    }
+  }
+
+  /** Allow external callers (e.g. Entity Inbox) to update the review count. */
+  setReviewCount(count: number): void {
+    this.reviewCount = count;
+    const health = this.mcpClient.lastHealth;
+    if (health) this.handleHealthUpdate(health);
   }
 
   private updateGraphSidebar(force = false): void {
@@ -552,6 +584,11 @@ export default class FlywheelCrankPlugin extends Plugin {
     }
 
     this.statusBarEl.createSpan().setText(` Flywheel ${text}`);
+
+    if (!active && this.reviewCount > 0) {
+      const badge = this.statusBarEl.createSpan('flywheel-status-badge');
+      badge.setText(`${this.reviewCount}`);
+    }
 
     if (tooltip) {
       this.statusBarEl.setAttribute('aria-label', tooltip);
