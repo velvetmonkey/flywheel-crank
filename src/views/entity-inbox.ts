@@ -26,6 +26,7 @@ interface ReviewItem {
 
 export class EntityInboxView extends ItemView {
   private mcpClient: FlywheelMcpClient;
+  onOpenEntityPage?: (name: string) => void;
   private queue: ReviewItem[] = [];
   private currentIndex = 0;
 
@@ -138,7 +139,12 @@ export class EntityInboxView extends ItemView {
 
     // Header: entity name + metadata badges
     const header = card.createDiv('flywheel-inbox-card-header');
-    header.createDiv('flywheel-inbox-entity-name').setText(item.entity);
+    const nameEl = header.createDiv('flywheel-inbox-entity-name');
+    nameEl.setText(item.entity);
+    if (this.onOpenEntityPage) {
+      nameEl.addClass('flywheel-inbox-entity-name-link');
+      nameEl.addEventListener('click', () => this.onOpenEntityPage!(item.entity));
+    }
     if (item.category) {
       header.createSpan('flywheel-inbox-category-badge').setText(item.category);
     }

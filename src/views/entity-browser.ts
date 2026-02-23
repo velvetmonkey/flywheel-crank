@@ -175,6 +175,7 @@ const CATEGORY_TO_FRONTMATTER_TYPE: Record<EntityCategory, string> = {
 
 export class EntityBrowserView extends ItemView {
   private mcpClient: FlywheelMcpClient;
+  onOpenEntityPage?: (name: string) => void;
   private entityData: McpEntityIndexResponse | null = null;
   private filterText = '';
   private totalEntities = 0;
@@ -417,7 +418,11 @@ export class EntityBrowserView extends ItemView {
           item.addClass('flywheel-entity-clickable');
         } else if (entity.path) {
           item.addEventListener('click', () => {
-            this.app.workspace.openLinkText(entity.path, '', false);
+            if (this.onOpenEntityPage) {
+              this.onOpenEntityPage(entity.name);
+            } else {
+              this.app.workspace.openLinkText(entity.path, '', false);
+            }
           });
           item.addClass('flywheel-entity-clickable');
         }

@@ -60,11 +60,19 @@ export default class FlywheelCrankPlugin extends Plugin {
 
     // Register views
     this.registerView(GRAPH_VIEW_TYPE, (leaf) => new GraphSidebarView(leaf, this.mcpClient));
-    this.registerView(ENTITY_BROWSER_VIEW_TYPE, (leaf) => new EntityBrowserView(leaf, this.mcpClient));
+    this.registerView(ENTITY_BROWSER_VIEW_TYPE, (leaf) => {
+      const view = new EntityBrowserView(leaf, this.mcpClient);
+      view.onOpenEntityPage = (name) => this.openEntityPage(name);
+      return view;
+    });
     this.registerView(VAULT_HEALTH_VIEW_TYPE, (leaf) => new VaultHealthView(leaf, this.mcpClient));
     this.registerView(TASK_DASHBOARD_VIEW_TYPE, (leaf) => new TaskDashboardView(leaf, this.mcpClient));
     this.registerView(FEEDBACK_DASHBOARD_VIEW_TYPE, (leaf) => new FeedbackDashboardView(leaf, this.mcpClient));
-    this.registerView(ENTITY_INBOX_VIEW_TYPE, (leaf) => new EntityInboxView(leaf, this.mcpClient));
+    this.registerView(ENTITY_INBOX_VIEW_TYPE, (leaf) => {
+      const view = new EntityInboxView(leaf, this.mcpClient);
+      view.onOpenEntityPage = (name) => this.openEntityPage(name);
+      return view;
+    });
     this.registerView(ENTITY_PAGE_VIEW_TYPE, (leaf) => new EntityPageView(leaf, this.mcpClient));
 
     // Settings tab
