@@ -47,7 +47,7 @@ interface EntityJourney {
   isDead: boolean;
   category?: string;
   gates: {
-    discover?: { action: 'added' | 'removed' | 'category_changed' | 'moved'; detail?: string };
+    discover?: { action: 'added' | 'removed' | 'category_changed' | 'moved' | 'description_changed'; detail?: string };
     suggest?: { action: 'score_change'; delta: number; before: number; after: number };
     apply?: { action: 'tracked' | 'mention'; files: string[] };
     learn?: { action: 'removed'; file: string } | { action: 'survived'; file: string; count: number };
@@ -489,6 +489,10 @@ export class FeedbackDashboardView extends ItemView {
     const categoryChanges = (entityStep?.output?.category_changes as Array<{ entity: string; from: string; to: string }>) ?? [];
     const categoryChangeMap = new Map(categoryChanges.map(c => [c.entity.toLowerCase(), c]));
 
+    // Read description changes from entity_scan step (P8 T6)
+    const descriptionChanges = (entityStep?.output?.description_changes as Array<{ entity: string; from: string | null; to: string | null }>) ?? [];
+    const descriptionChangeMap = new Map(descriptionChanges.map(c => [c.entity.toLowerCase(), c]));
+
     // Read note moves from note_moves step (P8 T4)
     const movesStep = pipeline?.steps.find(s => s.name === 'note_moves');
     const moveRenames = (movesStep?.output?.renames as Array<{ oldPath: string; newPath: string }>) ?? [];
@@ -533,6 +537,7 @@ export class FeedbackDashboardView extends ItemView {
       for (const name of diff.removed) allNames.add(name);
     }
     for (const c of categoryChanges) allNames.add(c.entity);
+    for (const c of descriptionChanges) allNames.add(c.entity);
     for (const s of survivedRaw) allNames.add(s.entity);
     for (const m of mentionsRaw) for (const entity of m.entities) allNames.add(entity);
     for (const r of moveRenames) {
@@ -580,6 +585,8 @@ export class FeedbackDashboardView extends ItemView {
         const catChange = categoryChangeMap.get(name.toLowerCase());
         if (catChange) {
           journey.gates.discover = { action: 'category_changed', detail: `${catChange.from} → ${catChange.to}` };
+        } else if (descriptionChangeMap.has(name.toLowerCase())) {
+          journey.gates.discover = { action: 'description_changed', detail: 'description updated' };
         } else {
           const move = moveMap.get(name.toLowerCase());
           if (move) {
@@ -900,6 +907,7 @@ export class FeedbackDashboardView extends ItemView {
         if (g.action === 'added') return { badge: '+1', tooltip: `"${name}" added to entity index — will be suggested as a wikilink` };
         if (g.action === 'removed') return { badge: '-1', tooltip: `"${name}" removed from entity index` };
         if (g.action === 'moved') return { badge: '→', tooltip: `"${name}" moved: ${g.detail ?? ''}` };
+        if (g.action === 'description_changed') return { badge: '✎', tooltip: `"${name}" description updated` };
         return { badge: '~', tooltip: `"${name}" category changed: ${g.detail ?? ''}` };
       }
       case 'suggest': {
