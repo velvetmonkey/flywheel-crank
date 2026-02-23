@@ -18,6 +18,7 @@ import { TaskDashboardView, TASK_DASHBOARD_VIEW_TYPE } from './views/task-dashbo
 import { FeedbackDashboardView, FEEDBACK_DASHBOARD_VIEW_TYPE } from './views/feedback-dashboard';
 import { EntityInboxView, ENTITY_INBOX_VIEW_TYPE } from './views/entity-inbox';
 import { WikilinkSuggest } from './suggest/wikilink-suggest';
+import { createInlineSuggestionPlugin } from './suggest/inline-suggestions';
 import { FlywheelMcpClient } from './mcp/client';
 
 export default class FlywheelCrankPlugin extends Plugin {
@@ -140,6 +141,11 @@ export default class FlywheelCrankPlugin extends Plugin {
     if (this.settings.enableWikilinkSuggest) {
       this.wikilinkSuggest = new WikilinkSuggest(this.app);
       this.registerEditorSuggest(this.wikilinkSuggest);
+    }
+
+    // Inline entity suggestions (dotted underlines on entity mentions)
+    if (this.settings.enableInlineSuggestions !== false) {
+      this.registerEditorExtension(createInlineSuggestionPlugin(this.mcpClient));
     }
 
     // Initialize on layout ready
