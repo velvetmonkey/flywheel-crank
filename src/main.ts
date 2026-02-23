@@ -18,6 +18,7 @@ import { TaskDashboardView, TASK_DASHBOARD_VIEW_TYPE } from './views/task-dashbo
 import { FeedbackDashboardView, FEEDBACK_DASHBOARD_VIEW_TYPE } from './views/feedback-dashboard';
 import { EntityInboxView, ENTITY_INBOX_VIEW_TYPE } from './views/entity-inbox';
 import { EntityPageView, ENTITY_PAGE_VIEW_TYPE } from './views/entity-page';
+import { WeeklyDigestModal } from './views/weekly-digest';
 import { WikilinkSuggest } from './suggest/wikilink-suggest';
 import { createInlineSuggestionPlugin } from './suggest/inline-suggestions';
 import { FlywheelMcpClient } from './mcp/client';
@@ -110,6 +111,12 @@ export default class FlywheelCrankPlugin extends Plugin {
       id: 'open-entity-inbox',
       name: 'Open entity inbox',
       callback: () => this.activateView(ENTITY_INBOX_VIEW_TYPE),
+    });
+
+    this.addCommand({
+      id: 'weekly-digest',
+      name: 'Weekly flywheel digest',
+      callback: () => new WeeklyDigestModal(this.app, this.mcpClient).open(),
     });
 
     this.addCommand({
