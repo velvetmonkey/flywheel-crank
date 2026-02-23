@@ -4349,3 +4349,12 @@
   opacity: 0.5;
   cursor: default;
 }
+
+/* === Local Graph === */
+
+.flywheel-local-graph-canvas {
+  width: 100%;
+  border-radius: 6px;
+  background: var(--background-primary);
+  display: block;
+}
