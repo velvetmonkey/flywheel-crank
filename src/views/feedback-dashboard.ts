@@ -32,11 +32,11 @@ interface StageConfig {
 }
 
 const STAGES: StageConfig[] = [
-  { id: 'discover', name: 'Discover', icon: 'search',            desc: 'finds entities in edited files' },
-  { id: 'suggest',  name: 'Suggest',  icon: 'sparkles',          desc: 'recalculates hub scores' },
-  { id: 'apply',    name: 'Apply',    icon: 'check-circle',       desc: 'auto-inserts wikilinks' },
-  { id: 'learn',    name: 'Learn',    icon: 'brain',              desc: 'records removed links as feedback' },
-  { id: 'adapt',    name: 'Adapt',    icon: 'sliders-horizontal', desc: 'adjusts entity trust weights' },
+  { id: 'discover', name: 'Discover', icon: 'search',            desc: 'scans edited files for entities' },
+  { id: 'suggest',  name: 'Suggest',  icon: 'sparkles',          desc: 'ranks entities by connectedness' },
+  { id: 'apply',    name: 'Apply',    icon: 'check-circle',       desc: 'finds unwikified entity mentions' },
+  { id: 'learn',    name: 'Learn',    icon: 'brain',              desc: 'detects link additions and removals' },
+  { id: 'adapt',    name: 'Adapt',    icon: 'sliders-horizontal', desc: 'tracks entity accuracy over time' },
 ];
 
 // Percentages along the animation timeline where each gate sits
@@ -49,7 +49,7 @@ interface EntityJourney {
   gates: {
     discover?: { action: 'added' | 'removed' | 'category_changed' | 'moved'; detail?: string };
     suggest?: { action: 'score_change'; delta: number; before: number; after: number };
-    apply?: { action: 'tracked'; files: string[] };
+    apply?: { action: 'tracked' | 'mention'; files: string[] };
     learn?: { action: 'removed'; file: string } | { action: 'survived'; file: string; count: number };
     adapt?: {
       action: 'suppressed' | 'boosted' | 'learning';
@@ -413,10 +413,12 @@ export class FeedbackDashboardView extends ItemView {
       ? (hubStep.output.diffs as Array<{ entity: string }>) ?? [] : [];
     for (const d of diffs) subjects.add(d.entity);
 
-    // 4. Entities from wikilink_check tracked
+    // 4. Entities from wikilink_check tracked + mentions
     const wlStep = pipeline.steps.find(s => s.name === 'wikilink_check');
     const tracked = (wlStep?.output.tracked as Array<{ entities: string[] }>) ?? [];
     for (const t of tracked) for (const e of t.entities ?? []) subjects.add(e);
+    const mentionsSub = (wlStep?.output.mentions as Array<{ entities: string[] }>) ?? [];
+    for (const m of mentionsSub) for (const e of m.entities ?? []) subjects.add(e);
 
     // 5. Entities from implicit_feedback removals
     const fbStep = pipeline.steps.find(s => s.name === 'implicit_feedback');
@@ -498,6 +500,27 @@ export class FeedbackDashboardView extends ItemView {
       if (oldFolder !== newFolder) moveMap.set(entityName.toLowerCase(), { oldFolder, newFolder });
     }
 
+    // tracked: entity → files[]
+    const trackedMap = new Map<string, string[]>();
+    for (const t of tracked) {
+      for (const e of t.entities ?? []) {
+        const existing = trackedMap.get(e) ?? [];
+        existing.push(t.file);
+        trackedMap.set(e, existing);
+      }
+    }
+
+    // unwikified mentions: entity → files[]
+    const mentionsRaw = (wlStep?.output.mentions as Array<{ file: string; entities: string[] }>) ?? [];
+    const mentionMap = new Map<string, string[]>();
+    for (const m of mentionsRaw) {
+      for (const entity of m.entities) {
+        const arr = mentionMap.get(entity) ?? [];
+        arr.push(m.file);
+        mentionMap.set(entity, arr);
+      }
+    }
+
     // Collect all entity names
     const allNames = new Set<string>();
     for (const e of addedRaw) allNames.add(typeof e === 'string' ? e : e.name);
@@ -511,6 +534,7 @@ export class FeedbackDashboardView extends ItemView {
     }
     for (const c of categoryChanges) allNames.add(c.entity);
     for (const s of survivedRaw) allNames.add(s.entity);
+    for (const m of mentionsRaw) for (const entity of m.entities) allNames.add(entity);
     for (const r of moveRenames) {
       const entityName = (r.newPath.split('/').pop() ?? r.newPath).replace(/\.md$/, '');
       allNames.add(entityName);
@@ -524,16 +548,6 @@ export class FeedbackDashboardView extends ItemView {
     }
     const removedSet = new Set(removedRaw.map(e => typeof e === 'string' ? e : e.name));
     const diffMap = new Map(diffs.map(d => [d.entity, d]));
-
-    // tracked: entity → files[]
-    const trackedMap = new Map<string, string[]>();
-    for (const t of tracked) {
-      for (const e of t.entities ?? []) {
-        const existing = trackedMap.get(e) ?? [];
-        existing.push(t.file);
-        trackedMap.set(e, existing);
-      }
-    }
 
     const removalMap = new Map(removals.map(r => [r.entity, r]));
 
@@ -586,10 +600,13 @@ export class FeedbackDashboardView extends ItemView {
 
       const files = trackedMap.get(name);
       const diffAddFiles = linkAddMap.get(name.toLowerCase());
+      const mentionFiles = mentionMap.get(name);
       if (files && files.length > 0) {
         journey.gates.apply = { action: 'tracked', files };
       } else if (diffAddFiles && diffAddFiles.length > 0) {
         journey.gates.apply = { action: 'tracked', files: diffAddFiles };
+      } else if (mentionFiles && mentionFiles.length > 0) {
+        journey.gates.apply = { action: 'mention', files: mentionFiles };
       }
 
       const removal = removalMap.get(name);
@@ -820,37 +837,39 @@ export class FeedbackDashboardView extends ItemView {
         const badge = ghost.createSpan('flywheel-pill-badge');
         badge.setText(gateAction.badge);
 
-        // Feedback buttons: thumbs-up / thumbs-down
+        // Feedback buttons: only at apply/learn gates where we have a note path
         const notePath = stage.id === 'apply'
           ? (journey.gates.apply?.files?.[0] ?? '')
           : stage.id === 'learn'
             ? (journey.gates.learn?.file ?? '')
             : '';
-        const btns = ghost.createSpan('flywheel-feedback-btns');
-        const plus = btns.createEl('button', { cls: 'flywheel-feedback-btn flywheel-feedback-positive' });
-        plus.textContent = '+';
-        plus.title = `Good suggestion — mark "${journey.name}" as correct`;
-        const minus = btns.createEl('button', { cls: 'flywheel-feedback-btn flywheel-feedback-negative' });
-        minus.textContent = '−';
-        minus.title = `Bad suggestion — mark "${journey.name}" as incorrect`;
-        const markSubmitted = () => {
-          plus.addClass('flywheel-feedback-submitted');
-          minus.addClass('flywheel-feedback-submitted');
-        };
-        plus.addEventListener('click', async (e) => {
-          e.stopPropagation();
-          if (plus.hasClass('flywheel-feedback-submitted')) return;
-          markSubmitted();
-          try { await this.mcpClient.reportWikilinkFeedback(journey.name, notePath, true); }
-          catch { /* fire-and-forget; visual already updated */ }
-        });
-        minus.addEventListener('click', async (e) => {
-          e.stopPropagation();
-          if (minus.hasClass('flywheel-feedback-submitted')) return;
-          markSubmitted();
-          try { await this.mcpClient.reportWikilinkFeedback(journey.name, notePath, false); }
-          catch { /* fire-and-forget; visual already updated */ }
-        });
+        if (notePath) {
+          const btns = ghost.createSpan('flywheel-feedback-btns');
+          const plus = btns.createEl('button', { cls: 'flywheel-feedback-btn flywheel-feedback-positive' });
+          plus.textContent = '+';
+          plus.title = `Good suggestion — mark "${journey.name}" as correct`;
+          const minus = btns.createEl('button', { cls: 'flywheel-feedback-btn flywheel-feedback-negative' });
+          minus.textContent = '−';
+          minus.title = `Bad suggestion — mark "${journey.name}" as incorrect`;
+          const markSubmitted = () => {
+            plus.addClass('flywheel-feedback-submitted');
+            minus.addClass('flywheel-feedback-submitted');
+          };
+          plus.addEventListener('click', async (e) => {
+            e.stopPropagation();
+            if (plus.hasClass('flywheel-feedback-submitted')) return;
+            markSubmitted();
+            try { await this.mcpClient.reportWikilinkFeedback(journey.name, notePath, true); }
+            catch { /* fire-and-forget; visual already updated */ }
+          });
+          minus.addEventListener('click', async (e) => {
+            e.stopPropagation();
+            if (minus.hasClass('flywheel-feedback-submitted')) return;
+            markSubmitted();
+            try { await this.mcpClient.reportWikilinkFeedback(journey.name, notePath, false); }
+            catch { /* fire-and-forget; visual already updated */ }
+          });
+        }
 
         // Delay: pill at index ji reaches gate gi at gatePercent% of total duration (2s)
         const ghostDelay = ji * 0.025 + 2 * (GATE_PERCENTS[gi] / 100);
@@ -895,10 +914,16 @@ export class FeedbackDashboardView extends ItemView {
       case 'apply': {
         const g = journey.gates.apply;
         if (!g) return null;
+        if (g.action === 'mention') {
+          const first = this.shortenPath(g.files[0]);
+          const extra = g.files.length > 1 ? ` and ${g.files.length - 1} other file${g.files.length > 2 ? 's' : ''}` : '';
+          return { badge: 'unlinked', tooltip: `"${name}" mentioned without [[link]] in ${first}${extra}` };
+        }
+        // tracked
         const badge = `✓${g.files.length > 1 ? ` ×${g.files.length}` : ''}`;
         const first = this.shortenPath(g.files[0]);
         const extra = g.files.length > 1 ? ` and ${g.files.length - 1} other file${g.files.length > 2 ? 's' : ''}` : '';
-        return { badge, tooltip: `"${name}" spotted as unwikified text in ${first}${extra} — marked for potential auto-linking` };
+        return { badge, tooltip: `"${name}" auto-linked in ${first}${extra}` };
       }
       case 'learn': {
         const g = journey.gates.learn;
@@ -982,12 +1007,17 @@ export class FeedbackDashboardView extends ItemView {
         return parts.join(' ') || `${changed} changed`;
       }
       case 'apply': {
-        const tracked = journeys.filter(j => j.gates.apply).length;
-        if (tracked) return `${tracked} tracked`;
+        const tracked = journeys.filter(j => j.gates.apply?.action === 'tracked').length;
+        const mentions = journeys.filter(j => j.gates.apply?.action === 'mention').length;
+        if (tracked || mentions) {
+          const parts: string[] = [];
+          if (tracked) parts.push(`${tracked} linked`);
+          if (mentions) parts.push(`${mentions} unlinked`);
+          return parts.join(', ');
+        }
         const wlStep = pipeline?.steps.find(s => s.name === 'wikilink_check');
-        const trackedArr = (wlStep?.output?.tracked as unknown[]) ?? [];
-        if (!wlStep?.skipped) return `${trackedArr.length || 'no'} matches`;
-        return 'checked';
+        if (!wlStep?.skipped) return 'no mentions';
+        return 'skipped';
       }
       case 'learn': {
         const survived = journeys.filter(j => j.gates.learn?.action === 'survived').length;
@@ -999,8 +1029,8 @@ export class FeedbackDashboardView extends ItemView {
           return parts.join(', ');
         }
         const fbStep = pipeline?.steps.find(s => s.name === 'implicit_feedback');
-        if (fbStep && !fbStep.skipped) return 'no removals';
-        return 'no signals';
+        if (fbStep && !fbStep.skipped) return 'no link changes';
+        return 'skipped';
       }
       case 'adapt': {
         const adapted = journeys.filter(j => j.gates.adapt).length;
