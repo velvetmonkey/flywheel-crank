@@ -216,9 +216,63 @@ export class VaultHealthView extends ItemView {
         return items.length;
       }
       for (const orphan of items.slice(0, 30)) {
-        const item = el.createDiv('flywheel-health-item flywheel-health-clickable');
-        item.addEventListener('click', () => this.app.workspace.openLinkText(orphan.path, '', false));
-        item.createDiv('flywheel-health-item-title').setText(orphan.title || orphan.path);
+        const item = el.createDiv('flywheel-health-item');
+
+        const row = item.createDiv('flywheel-health-action-row');
+        const titleEl = row.createDiv('flywheel-health-item-title flywheel-health-clickable');
+        titleEl.setText(orphan.title || orphan.path);
+        titleEl.addEventListener('click', () => this.app.workspace.openLinkText(orphan.path, '', false));
+
+        const findBtn = row.createEl('button', { cls: 'flywheel-health-action-btn', text: 'Find links' });
+        findBtn.addEventListener('click', async (e) => {
+          e.stopPropagation();
+          findBtn.disabled = true;
+          findBtn.setText('...');
+
+          try {
+            const file = this.app.vault.getAbstractFileByPath(orphan.path);
+            if (!(file instanceof TFile)) throw new Error('Not a file');
+
+            const content = await this.app.vault.cachedRead(file);
+            const resp = await this.mcpClient.suggestWikilinks(content.slice(0, 5000), true);
+            const suggestions = (resp.scored_suggestions ?? [])
+              .filter((s: any) => s.confidence === 'high' || s.confidence === 'medium')
+              .slice(0, 4);
+
+            if (suggestions.length === 0) {
+              findBtn.setText('No suggestions');
+              return;
+            }
+
+            findBtn.remove();
+
+            const chipsEl = item.createDiv('flywheel-health-suggestion-chips');
+            for (const s of suggestions) {
+              const chip = chipsEl.createEl('button', {
+                cls: 'flywheel-health-suggestion-chip',
+                text: `+ [[${s.entity}]]`,
+              });
+              chip.addEventListener('click', async () => {
+                chip.disabled = true;
+                try {
+                  const escaped = s.entity.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+                  await this.app.vault.process(file, (c: string) => {
+                    const pattern = new RegExp(`(?<!\\[\\[)\\b${escaped}\\b(?!\\]\\])`, 'i');
+                    return c.replace(pattern, `[[${s.entity}]]`);
+                  });
+                  chip.setText(`\u2713 ${s.entity}`);
+                  chip.addClass('flywheel-health-suggestion-done');
+                } catch {
+                  chip.setText('Failed');
+                }
+              });
+            }
+          } catch (err) {
+            findBtn.setText('Failed');
+            console.error('Flywheel: failed to find links for orphan', err);
+          }
+        });
+
         const folder = orphan.path.split('/').slice(0, -1).join('/');
         if (folder) item.createDiv('flywheel-health-item-path').setText(folder);
       }
@@ -392,7 +446,7 @@ export class VaultHealthView extends ItemView {
         const item = el.createDiv('flywheel-health-item flywheel-health-clickable');
         item.addEventListener('click', () => this.app.workspace.openLinkText(note.path, '', false));
 
-        const row = item.createDiv('flywheel-health-hub-row');
+        const row = item.createDiv('flywheel-health-hub-row flywheel-health-action-row');
         row.createDiv('flywheel-health-item-title').setText(note.title || note.path);
 
         const badges = row.createDiv('flywheel-health-badges');
@@ -404,6 +458,12 @@ export class VaultHealthView extends ItemView {
           const inBadge = badges.createSpan('flywheel-health-badge flywheel-health-badge-in');
           inBadge.setText(`\u2190 ${note.backlinks ?? note.backlink_count}`);
         }
+
+        const reviewBtn = row.createEl('button', { cls: 'flywheel-health-action-btn', text: 'Review' });
+        reviewBtn.addEventListener('click', (e) => {
+          e.stopPropagation();
+          this.app.workspace.openLinkText(note.path, '', false);
+        });
       }
       const total = (resp as any).total ?? items.length;
       if (total > 20) {
@@ -425,7 +485,7 @@ export class VaultHealthView extends ItemView {
         const item = el.createDiv('flywheel-health-item flywheel-health-clickable');
         item.addEventListener('click', () => this.app.workspace.openLinkText(note.path, '', false));
 
-        const row = item.createDiv('flywheel-health-hub-row');
+        const row = item.createDiv('flywheel-health-hub-row flywheel-health-action-row');
         row.createDiv('flywheel-health-item-title').setText(note.title || note.path);
 
         const badges = row.createDiv('flywheel-health-badges');
@@ -444,6 +504,37 @@ export class VaultHealthView extends ItemView {
           const scoreBadge = badges.createSpan('flywheel-health-badge flywheel-health-badge-in');
           scoreBadge.setText(`${Math.round(note.maturity_score * 100)}%`);
         }
+
+        const enrichBtn = row.createEl('button', { cls: 'flywheel-health-action-btn', text: 'Enrich' });
+        enrichBtn.addEventListener('click', async (e) => {
+          e.stopPropagation();
+          enrichBtn.disabled = true;
+          enrichBtn.setText('...');
+
+          try {
+            const folder = note.path.split('/').slice(0, -1).join('/') || '/';
+            const conventions = await this.mcpClient.folderConventions(folder);
+            const missingFields: Record<string, string> = {};
+
+            for (const field of (conventions as any).inferred_fields ?? []) {
+              if (field.frequency >= 0.5 && field.suggested_value) {
+                missingFields[field.name] = field.suggested_value;
+              }
+            }
+
+            if (Object.keys(missingFields).length === 0) {
+              enrichBtn.setText('No fields');
+              return;
+            }
+
+            await this.mcpClient.updateFrontmatter(note.path, missingFields, true);
+            enrichBtn.setText('\u2713 Updated');
+            enrichBtn.addClass('flywheel-health-action-done');
+          } catch (err) {
+            enrichBtn.setText('Failed');
+            console.error('Flywheel: failed to enrich note', err);
+          }
+        });
       }
       const total = (resp as any).total ?? items.length;
       if (total > 20) {

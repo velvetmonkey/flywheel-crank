@@ -4358,3 +4358,69 @@
   background: var(--background-primary);
   display: block;
 }
+
+/* === Guided Actions === */
+
+.flywheel-health-action-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.flywheel-health-action-btn {
+  font-size: 11px;
+  padding: 2px 8px;
+  border-radius: 4px;
+  border: 1px solid var(--background-modifier-border);
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.flywheel-health-action-btn:hover {
+  background: var(--background-modifier-hover);
+}
+
+.flywheel-health-action-btn:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+.flywheel-health-action-done {
+  color: var(--text-success);
+  border-color: var(--text-success);
+}
+
+.flywheel-health-suggestion-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 4px;
+}
+
+.flywheel-health-suggestion-chip {
+  font-size: 11px;
+  padding: 2px 8px;
+  border-radius: 12px;
+  border: 1px solid var(--interactive-accent);
+  background: transparent;
+  color: var(--interactive-accent);
+  cursor: pointer;
+}
+
+.flywheel-health-suggestion-chip:hover {
+  background: var(--interactive-accent);
+  color: var(--text-on-accent);
+}
+
+.flywheel-health-suggestion-chip:disabled {
+  cursor: default;
+}
+
+.flywheel-health-suggestion-done {
+  border-color: var(--text-success);
+  color: var(--text-success);
+}
