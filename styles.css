@@ -3834,25 +3834,6 @@
   font-style: italic;
 }
 
-.flywheel-waterfall-replay {
-  position: absolute;
-  top: 4px;
-  right: 8px;
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  padding: 2px 8px;
-  border-radius: 4px;
-  cursor: pointer;
-  font-size: var(--font-ui-small);
-  border: 1px solid var(--background-modifier-border);
-  z-index: 10;
-}
-
-.flywheel-waterfall-replay:hover {
-  background: var(--background-modifier-hover);
-}
-
 /* Pills */
 .flywheel-pill {
   display: inline-flex;
@@ -3984,30 +3965,6 @@
   animation: flywheel-pulse 0.6s ease-out;
 }
 
-/* Explicit feedback buttons on ghost pills */
-.flywheel-feedback-btns {
-  display: inline-flex;
-  gap: 2px;
-  margin-left: 2px;
-  opacity: 0;
-  transition: opacity 0.15s;
-}
-.flywheel-pill-ghost:hover .flywheel-feedback-btns {
-  opacity: 1;
-}
-.flywheel-feedback-btn {
-  cursor: pointer;
-  font-size: 10px;
-  line-height: 1;
-  padding: 1px 4px;
-  border-radius: 3px;
-  border: 1px solid var(--background-modifier-border);
-  background: transparent;
-  color: inherit;
-}
-.flywheel-feedback-positive:hover { background: var(--color-green); border-color: var(--color-green); color: white; }
-.flywheel-feedback-negative:hover { background: var(--color-red); border-color: var(--color-red); color: white; }
-.flywheel-feedback-btn.flywheel-feedback-submitted { opacity: 0.35; pointer-events: none; }
 
 /* ===================================================================
    Entity Inbox

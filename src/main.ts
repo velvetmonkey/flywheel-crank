@@ -5,7 +5,7 @@
  * Search and graph views are powered by flywheel-memory via MCP.
  */
 
-import { Plugin, Notice, WorkspaceLeaf, Menu, Editor, MarkdownView } from 'obsidian';
+import { Plugin, Notice, WorkspaceLeaf, Menu, Editor, MarkdownView, FuzzySuggestModal, App } from 'obsidian';
 import type { FlywheelCrankSettings } from './core/types';
 import { DEFAULT_SETTINGS } from './core/types';
 import { FlywheelCrankSettingTab } from './settings';
@@ -21,7 +21,7 @@ import { EntityPageView, ENTITY_PAGE_VIEW_TYPE } from './views/entity-page';
 import { WeeklyDigestModal } from './views/weekly-digest';
 import { WikilinkSuggest } from './suggest/wikilink-suggest';
 import { createInlineSuggestionPlugin } from './suggest/inline-suggestions';
-import { FlywheelMcpClient } from './mcp/client';
+import { FlywheelMcpClient, McpEntityItem } from './mcp/client';
 
 export default class FlywheelCrankPlugin extends Plugin {
   settings: FlywheelCrankSettings = DEFAULT_SETTINGS;
@@ -265,6 +265,14 @@ export default class FlywheelCrankPlugin extends Plugin {
             .onClick(() => {
               this.app.workspace.openLinkText(entity, notePath, false);
               this.activateView(GRAPH_VIEW_TYPE);
+            });
+        });
+
+        menu.addItem((item) => {
+          item.setTitle('Flywheel: Merge as alias into...')
+            .setIcon('arrow-right-circle')
+            .onClick(() => {
+              new EntityPickerModal(this.app, this.mcpClient, entity).open();
             });
         });
       })
@@ -647,5 +655,66 @@ export default class FlywheelCrankPlugin extends Plugin {
 
   async saveSettings(): Promise<void> {
     await this.saveData(this.settings);
+  }
+}
+
+/**
+ * Fuzzy entity picker for the "Merge as alias into..." context menu action.
+ * Loads all entities from the MCP server and lets the user pick a target.
+ */
+class EntityPickerModal extends FuzzySuggestModal<McpEntityItem> {
+  private mcpClient: FlywheelMcpClient;
+  private sourceName: string;
+  private entities: McpEntityItem[] = [];
+
+  constructor(app: App, mcpClient: FlywheelMcpClient, sourceName: string) {
+    super(app);
+    this.mcpClient = mcpClient;
+    this.sourceName = sourceName;
+    this.setPlaceholder(`Pick target entity to absorb "${sourceName}" into...`);
+    this.loadEntities();
+  }
+
+  private async loadEntities(): Promise<void> {
+    try {
+      const index = await this.mcpClient.listEntities();
+      const allEntities: McpEntityItem[] = [];
+      for (const [key, value] of Object.entries(index)) {
+        if (key === '_metadata') continue;
+        if (Array.isArray(value)) {
+          allEntities.push(...(value as McpEntityItem[]));
+        }
+      }
+      this.entities = allEntities.filter(
+        e => e.name.toLowerCase() !== this.sourceName.toLowerCase()
+      );
+      // Trigger re-render now that entities are loaded
+      this.inputEl.dispatchEvent(new Event('input'));
+    } catch {
+      new Notice('Failed to load entities');
+      this.close();
+    }
+  }
+
+  getItems(): McpEntityItem[] {
+    return this.entities;
+  }
+
+  getItemText(item: McpEntityItem): string {
+    return item.name;
+  }
+
+  onChooseItem(item: McpEntityItem): void {
+    this.mcpClient.absorbAsAlias(this.sourceName, item.path)
+      .then(result => {
+        if (result.success) {
+          new Notice(`Absorbed "${this.sourceName}" into "${item.name}" (${result.backlinks_updated ?? 0} links updated)`);
+        } else {
+          new Notice(`Merge failed: ${result.message}`);
+        }
+      })
+      .catch(err => {
+        new Notice(`Error: ${err instanceof Error ? err.message : String(err)}`);
+      });
   }
 }

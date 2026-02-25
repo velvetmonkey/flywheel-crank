@@ -626,6 +626,9 @@ export class FlywheelMcpClient {
   // Retry callbacks
   private retryCallbacks = new Set<() => void>();
 
+  // Feedback submission callbacks
+  private feedbackCallbacks = new Set<() => void>();
+
   // Centralized health polling
   private healthCallbacks = new Set<(h: McpHealthCheckResponse) => void>();
   private healthTimer: ReturnType<typeof setInterval> | null = null;
@@ -667,6 +670,12 @@ export class FlywheelMcpClient {
   private setConnectionState(state: ConnectionState): void {
     this._connectionState = state;
     for (const cb of this.connectionStateCallbacks) { try { cb(); } catch {} }
+  }
+
+  /** Subscribe to feedback submission events. Returns unsubscribe function. */
+  onFeedbackSubmitted(cb: () => void): () => void {
+    this.feedbackCallbacks.add(cb);
+    return () => { this.feedbackCallbacks.delete(cb); };
   }
 
   /**
@@ -1088,6 +1097,20 @@ export class FlywheelMcpClient {
   }
 
   /**
+   * Absorb an entity name as an alias of a target note.
+   * Adds alias to target frontmatter and rewrites all [[source]] → [[target|source]].
+   */
+  async absorbAsAlias(sourceName: string, targetPath: string): Promise<McpMergeResult> {
+    const result = await this.callTool<McpMergeResult>('absorb_as_alias', {
+      source_name: sourceName,
+      target_path: targetPath,
+    });
+    this.cache.invalidateTool('list_entities');
+    this.cache.invalidatePath(targetPath);
+    return result;
+  }
+
+  /**
    * Suggest missing aliases (acronyms, short forms) for entities in a folder.
    */
   async suggestEntityAliases(folder?: string): Promise<McpAliasSuggestionsResponse> {
@@ -1289,6 +1312,8 @@ export class FlywheelMcpClient {
       correct,
       context: 'explicit:user_rated',
     });
+    // Notify subscribers (dashboard) that feedback was submitted
+    for (const cb of this.feedbackCallbacks) { try { cb(); } catch {} }
   }
 
   /**
