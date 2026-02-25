@@ -3859,10 +3859,18 @@
   background: var(--background-modifier-hover);
 }
 
+.theme-dark .flywheel-pill-ghost {
+  opacity: 0.7;
+}
+
 .flywheel-pill-badge {
   font-size: 9px;
   font-weight: 600;
   opacity: 0.8;
+}
+
+.theme-dark .flywheel-pill-badge {
+  opacity: 1;
 }
 
 .flywheel-pill.is-floor {

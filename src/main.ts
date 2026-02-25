@@ -251,8 +251,15 @@ export default class FlywheelCrankPlugin extends Plugin {
             .setIcon('thumbs-down')
             .onClick(async () => {
               try {
-                await this.mcpClient.reportWikilinkFeedback(entity, notePath, false);
-                new Notice(`Feedback: "${entity}" is wrong`);
+                // Strip [[wikilink]] brackets from the editor
+                const cur = editor.getCursor();
+                const curLine = editor.getLine(cur.line);
+                const stripped = this.stripWikilinkAtPosition(curLine, cur.ch);
+                if (stripped) {
+                  editor.setLine(cur.line, stripped);
+                }
+                await this.mcpClient.reportWikilinkFeedback(entity, notePath, false, true);
+                new Notice(`Feedback: "${entity}" is wrong — brackets removed`);
               } catch {
                 new Notice('Failed to record feedback');
               }
@@ -621,6 +628,42 @@ export default class FlywheelCrankPlugin extends Plugin {
     const pipeIdx = inner.indexOf('|');
     const entity = pipeIdx >= 0 ? inner.substring(0, pipeIdx).trim() : inner.trim();
     return entity.length > 0 ? entity : null;
+  }
+
+  /**
+   * Strip [[entity]] or [[entity|alias]] at cursor position, returning
+   * the modified line. For piped links, keeps the alias text.
+   * Returns null if cursor is not inside a wikilink.
+   */
+  private stripWikilinkAtPosition(line: string, ch: number): string | null {
+    // Find open [[ scanning backwards
+    let openIdx = -1;
+    for (let i = ch - 1; i >= 1; i--) {
+      if (line[i] === '[' && line[i - 1] === '[') {
+        openIdx = i - 1;
+        break;
+      }
+      if (line[i] === ']' && i > 0 && line[i - 1] === ']') return null;
+    }
+    if (openIdx === -1) return null;
+
+    // Find close ]] scanning forwards
+    let closeIdx = -1;
+    for (let i = ch; i < line.length - 1; i++) {
+      if (line[i] === ']' && line[i + 1] === ']') {
+        closeIdx = i;
+        break;
+      }
+      if (line[i] === '[' && i < line.length - 1 && line[i + 1] === '[') return null;
+    }
+    if (closeIdx === -1) return null;
+
+    const inner = line.substring(openIdx + 2, closeIdx);
+    const pipeIdx = inner.indexOf('|');
+    // For [[entity|alias]], keep the alias; for [[entity]], keep entity
+    const replacement = pipeIdx >= 0 ? inner.substring(pipeIdx + 1).trim() : inner.trim();
+
+    return line.substring(0, openIdx) + replacement + line.substring(closeIdx + 2);
   }
 
   private setStatus(text: string, active = false, tooltip?: string): void {

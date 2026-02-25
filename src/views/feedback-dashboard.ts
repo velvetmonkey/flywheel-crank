@@ -50,7 +50,7 @@ interface EntityJourney {
     discover?: { action: 'added' | 'removed' | 'category_changed' | 'moved' | 'description_changed' | 'hub_change'; detail?: string; hubDelta?: number; hubBefore?: number; hubAfter?: number };
     suggest?: { action: 'mention'; file: string };
     link?: { action: 'tracked'; files: string[] };
-    learn?: { action: 'removed'; file: string } | { action: 'survived'; file: string; count: number };
+    learn?: { action: 'removed'; file: string } | { action: 'survived'; file: string; count: number } | { action: 'weight_changed'; delta: number; new_weight: number; signal: string };
     tune?: {
       action: 'suppressed' | 'boosted' | 'learning';
       detail: string;
@@ -510,6 +510,17 @@ export class FeedbackDashboardView extends ItemView {
       }
     }
 
+    // Read edge weight changes from edge_weights step
+    const ewStep = pipeline?.steps.find(s => s.name === 'edge_weights');
+    const ewChanges = (ewStep?.output?.top_changes as Array<{
+      note_path: string; target: string; old_weight: number; new_weight: number;
+      delta: number; edits_survived: number; co_sessions: number; source_access: number;
+    }>) ?? [];
+    const ewChangeMap = new Map<string, typeof ewChanges[0]>();
+    for (const c of ewChanges) {
+      if (!ewChangeMap.has(c.target)) ewChangeMap.set(c.target, c);
+    }
+
     // Read category changes from entity_scan step (P8 T1)
     const categoryChanges = (entityStep?.output?.category_changes as Array<{ entity: string; from: string; to: string }>) ?? [];
     const categoryChangeMap = new Map(categoryChanges.map(c => [c.entity.toLowerCase(), c]));
@@ -578,6 +589,7 @@ export class FeedbackDashboardView extends ItemView {
       const entityName = (r.newPath.split('/').pop() ?? r.newPath).replace(/\.md$/, '');
       addName(entityName);
     }
+    for (const c of ewChanges) addName(c.target);
     // Lookup maps
     const addedMap = new Map<string, string | undefined>();
     for (const e of addedRaw) {
@@ -673,6 +685,22 @@ export class FeedbackDashboardView extends ItemView {
         const survived = survivedMap.get(name.toLowerCase());
         if (survived) {
           journey.gates.learn = { action: 'survived', file: survived.file, count: survived.count };
+        }
+      }
+
+      if (!journey.gates.learn) {
+        const ewChange = ewChangeMap.get(name.toLowerCase());
+        if (ewChange) {
+          const signals: string[] = [];
+          if (ewChange.edits_survived > 0) signals.push(`${ewChange.edits_survived} edits survived`);
+          if (ewChange.co_sessions > 0) signals.push(`${ewChange.co_sessions} co-sessions`);
+          if (ewChange.source_access > 0) signals.push(`${ewChange.source_access} reads`);
+          journey.gates.learn = {
+            action: 'weight_changed',
+            delta: ewChange.delta,
+            new_weight: ewChange.new_weight,
+            signal: signals.join(', ') || 'recalculated',
+          };
         }
       }
 
@@ -956,26 +984,33 @@ export class FeedbackDashboardView extends ItemView {
       case 'suggest': {
         const g = journey.gates.suggest;
         if (!g) return null;
-        return { badge: '⊕', tooltip: `"${name}" mentioned in ${this.shortenPath(g.file)} but not yet [[wikilinked]]` };
+        return { badge: '1', tooltip: `"${name}" mentioned in ${this.shortenPath(g.file)} but not yet [[wikilinked]]` };
       }
       case 'link': {
         const g = journey.gates.link;
         if (!g) return null;
         const badge = `✓${g.files.length > 1 ? ` ×${g.files.length}` : ''}`;
         const fileList = g.files.map(f => this.shortenPath(f)).join(', ');
-        return { badge, tooltip: `"${name}" — [[wikilink]] inserted in ${fileList}` };
+        return { badge, tooltip: `"${name}" — [[wikilink]] inserted in ${fileList}. Now tracked for retention feedback.` };
       }
       case 'learn': {
         const g = journey.gates.learn;
         if (!g) return null;
         if (g.action === 'removed') {
           const file = this.shortenPath(g.file);
-          return { badge: 'removed', tooltip: `"${name}" wikilink was removed from ${file} — recorded as negative feedback` };
+          return { badge: 'removed', tooltip: `"${name}" wikilink removed from ${file} — negative feedback recorded → lowers trust score and future ranking` };
+        }
+        if (g.action === 'weight_changed') {
+          const sign = g.delta > 0 ? '+' : '';
+          return {
+            badge: `${sign}${g.delta.toFixed(1)}w`,
+            tooltip: `"${name}" edge weight → ${g.new_weight.toFixed(1)} (${g.signal}) — read activity strengthening this connection`,
+          };
         }
         // survived
         return {
           badge: `+${g.count}`,
-          tooltip: `"${name}" survived ${g.count} edit${g.count === 1 ? '' : 's'} in ${this.shortenPath(g.file)} — positive retention signal`,
+          tooltip: `"${name}" survived ${g.count} edit${g.count === 1 ? '' : 's'} in ${this.shortenPath(g.file)} — positive retention signal → boosts trust score`,
         };
       }
       case 'tune': {
@@ -985,7 +1020,7 @@ export class FeedbackDashboardView extends ItemView {
           const pct = Math.round((g.falsePositiveRate ?? 0) * 100);
           return {
             badge: `${pct}% FP`,
-            tooltip: `"${name}" suppressed — ${pct}% false positive rate. Will not be suggested until feedback improves.`,
+            tooltip: `"${name}" suppressed — ${pct}% false positive rate → will not be suggested until feedback improves`,
           };
         }
         if (g.action === 'boosted') {
@@ -993,7 +1028,7 @@ export class FeedbackDashboardView extends ItemView {
           const sign = (g.boost ?? 0) > 0 ? '+' : '';
           return {
             badge: `${pct}%`,
-            tooltip: `"${name}" — ${g.tierLabel} tier: ${pct}% accuracy over ${g.total} samples (${sign}${g.boost} boost to suggestion scoring)`,
+            tooltip: `"${name}" ${sign}${g.boost} boost — ${g.tierLabel} tier: ${pct}% accuracy over ${g.total} samples → will rank ${(g.boost ?? 0) > 0 ? 'higher' : 'lower'} in future suggestions`,
           };
         }
         // learning
@@ -1001,7 +1036,7 @@ export class FeedbackDashboardView extends ItemView {
         const remaining = Math.max(1, 5 - (g.total ?? 0));
         return {
           badge: `${g.total}/5`,
-          tooltip: `"${name}" — calibrating: ${pct}% accuracy over ${g.total} samples. ${remaining} more needed for tier classification.`,
+          tooltip: `"${name}" calibrating: ${pct}% accuracy over ${g.total} samples. ${remaining} more needed → tier assignment will adjust suggestion ranking`,
         };
       }
       default: return null;
@@ -1023,7 +1058,7 @@ export class FeedbackDashboardView extends ItemView {
         if (changed) parts.push(`${changed} reclassified`);
         if (moved) parts.push(`${moved} moved`);
         if (dead) parts.push(`${dead} unresolved`);
-        const hubChanges = journeys.filter(j => j.gates.discover?.hubDelta);
+        const hubChanges = journeys.filter(j => j.gates.discover?.action === 'hub_change');
         if (hubChanges.length > 0) {
           const up = hubChanges.filter(j => (j.gates.discover?.hubDelta ?? 0) > 0).length;
           const down = hubChanges.filter(j => (j.gates.discover?.hubDelta ?? 0) < 0).length;
@@ -1064,10 +1099,12 @@ export class FeedbackDashboardView extends ItemView {
       case 'learn': {
         const survived = journeys.filter(j => j.gates.learn?.action === 'survived').length;
         const removed  = journeys.filter(j => j.gates.learn?.action === 'removed').length;
-        if (survived || removed) {
+        const weighted = journeys.filter(j => j.gates.learn?.action === 'weight_changed').length;
+        if (survived || removed || weighted) {
           const parts: string[] = [];
           if (survived) parts.push(`${survived} survived`);
           if (removed) parts.push(`${removed} removed`);
+          if (weighted) parts.push(`${weighted} reweighted`);
           return parts.join(', ');
         }
         const fbStep = pipeline?.steps.find(s => s.name === 'implicit_feedback');
@@ -1118,9 +1155,20 @@ export class FeedbackDashboardView extends ItemView {
 
     const nameEl = item.createDiv('flywheel-gate-item-name');
     if (entityClickable) {
-      const link = nameEl.createSpan('flywheel-viz-entity-link');
-      link.setText(name);
-      link.dataset.entity = entityClickable;
+      // Separate entity link from any suffix (e.g. "entity in file.md")
+      const idx = name.indexOf(entityClickable);
+      if (idx >= 0) {
+        if (idx > 0) nameEl.appendText(name.slice(0, idx));
+        const link = nameEl.createSpan('flywheel-viz-entity-link');
+        link.setText(entityClickable);
+        link.dataset.entity = entityClickable;
+        const after = name.slice(idx + entityClickable.length);
+        if (after) nameEl.appendText(after);
+      } else {
+        const link = nameEl.createSpan('flywheel-viz-entity-link');
+        link.setText(name);
+        link.dataset.entity = entityClickable;
+      }
     } else {
       nameEl.setText(name);
     }

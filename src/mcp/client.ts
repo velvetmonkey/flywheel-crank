@@ -1304,13 +1304,14 @@ export class FlywheelMcpClient {
   /**
    * Record explicit user feedback for a wikilink suggestion.
    */
-  async reportWikilinkFeedback(entity: string, notePath: string, correct: boolean): Promise<void> {
+  async reportWikilinkFeedback(entity: string, notePath: string, correct: boolean, skipStatusUpdate?: boolean): Promise<void> {
     await this.callTool<Record<string, unknown>>('wikilink_feedback', {
       mode: 'report',
       entity,
       note_path: notePath,
       correct,
       context: 'explicit:user_rated',
+      ...(skipStatusUpdate ? { skip_status_update: true } : {}),
     });
     // Notify subscribers (dashboard) that feedback was submitted
     for (const cb of this.feedbackCallbacks) { try { cb(); } catch {} }
