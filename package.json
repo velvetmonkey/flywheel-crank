@@ -10,7 +10,7 @@
   },
   "keywords": [],
   "author": "Velvet Monkey",
-  "license": "AGPL-3.0-only",
+  "license": "Apache-2.0",
   "devDependencies": {
     "@types/node": "^20.0.0",
     "builtin-modules": "^3.3.0",

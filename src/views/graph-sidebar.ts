@@ -18,6 +18,23 @@ import type {
 
 export const GRAPH_VIEW_TYPE = 'flywheel-graph';
 
+interface GraphNode {
+  id: string;
+  label: string;
+  x: number;
+  y: number;
+  vx: number;
+  vy: number;
+  radius: number;
+  color: string;
+  isCurrent: boolean;
+}
+
+interface GraphEdge {
+  source: string;
+  target: string;
+}
+
 export class GraphSidebarView extends ItemView {
   private mcpClient: FlywheelMcpClient;
   private contentContainer!: HTMLDivElement;
@@ -529,9 +546,54 @@ export class GraphSidebarView extends ItemView {
       // Folder section (first — most actionable)
       await this.renderFolderSection(file, generation);
 
-      // Context Cloud — unified view of all related notes
+      // Local Graph section — force-directed 1-hop neighborhood
       const safeBacklinks: McpBacklinksResponse = backlinksResp ?? { backlinks: [] };
       const safeForwardLinks: McpForwardLinksResponse = forwardLinksResp ?? { forward_links: [] };
+
+      {
+        const W = 280;
+        const H = 200;
+        const { nodes, edges } = this.buildLocalGraph(notePath, safeBacklinks, safeForwardLinks);
+        const dpr = window.devicePixelRatio || 1;
+
+        this.renderSection('Local Graph', 'git-fork', undefined, (sectionContent) => {
+          if (nodes.length <= 1) {
+            sectionContent.createDiv('flywheel-graph-section-empty').setText('No connections yet');
+            return;
+          }
+          this.layoutGraph(nodes, edges, W, H);
+          const canvas = this.renderLocalGraphCanvas(sectionContent, nodes, edges, W, H);
+          const cx = W / 2;
+          const cy = H / 2;
+
+          const hitTest = (e: MouseEvent): GraphNode | null => {
+            const rect = canvas.getBoundingClientRect();
+            const mx = (e.clientX - rect.left) * (canvas.width / rect.width / dpr) - cx;
+            const my = (e.clientY - rect.top) * (canvas.height / rect.height / dpr) - cy;
+            for (const n of nodes) {
+              const dx = mx - n.x;
+              const dy = my - n.y;
+              if (dx * dx + dy * dy <= (n.radius + 3) ** 2) return n;
+            }
+            return null;
+          };
+
+          canvas.addEventListener('click', (e) => {
+            const node = hitTest(e);
+            if (node && !node.isCurrent) {
+              this.app.workspace.openLinkText(node.id, '', false);
+            }
+          });
+
+          canvas.addEventListener('mousemove', (e) => {
+            const node = hitTest(e);
+            canvas.style.cursor = node ? 'pointer' : 'default';
+            canvas.title = node ? node.label : '';
+          });
+        }, true, undefined, 'localGraph');
+      }
+
+      // Context Cloud — unified view of all related notes
       this.renderContextCloud(safeBacklinks, safeForwardLinks, suggestResp, similarResp, semanticResp);
 
       const MAX_ITEMS = 5;
@@ -1212,6 +1274,187 @@ export class GraphSidebarView extends ItemView {
     if (lastIndex === 0) {
       el.setText(text);
     }
+  }
+
+  // ---------------------------------------------------------------------------
+  // Local Graph: force-directed 1-hop neighborhood
+  // ---------------------------------------------------------------------------
+
+  private buildLocalGraph(
+    notePath: string,
+    backlinksResp: McpBacklinksResponse | null,
+    forwardLinksResp: McpForwardLinksResponse | null,
+  ): { nodes: GraphNode[]; edges: GraphEdge[] } {
+    const nodeMap = new Map<string, GraphNode>();
+    const edges: GraphEdge[] = [];
+    const edgeSet = new Set<string>();
+
+    const PALETTE = [
+      '#6e9bf5', '#f5a623', '#7ec699', '#e06c75', '#c678dd',
+      '#56b6c2', '#d19a66', '#98c379', '#e5c07b', '#61afef',
+      '#be5046', '#e6c07b', '#c3a6ff', '#56d5a0', '#ff9e64',
+    ];
+    const colorFor = (p: string) => {
+      let h = 0;
+      for (let i = 0; i < p.length; i++) h = ((h << 5) - h + p.charCodeAt(i)) | 0;
+      return PALETTE[Math.abs(h) % PALETTE.length];
+    };
+    const nameOf = (p: string) => p.replace(/\.md$/, '').split('/').pop() || p;
+
+    nodeMap.set(notePath, {
+      id: notePath, label: nameOf(notePath),
+      x: 0, y: 0, vx: 0, vy: 0,
+      radius: 7, color: 'var(--interactive-accent)', isCurrent: true,
+    });
+
+    for (const b of backlinksResp?.backlinks ?? []) {
+      const p = b.source;
+      if (!nodeMap.has(p)) {
+        nodeMap.set(p, {
+          id: p, label: nameOf(p),
+          x: (Math.random() - 0.5) * 200, y: (Math.random() - 0.5) * 200,
+          vx: 0, vy: 0, radius: 5, color: colorFor(p), isCurrent: false,
+        });
+      }
+      const key = `${p}→${notePath}`;
+      if (!edgeSet.has(key)) { edgeSet.add(key); edges.push({ source: p, target: notePath }); }
+    }
+
+    for (const f of forwardLinksResp?.forward_links ?? []) {
+      const p = f.resolved_path ?? f.target;
+      if (!p || !f.exists) continue;
+      if (!nodeMap.has(p)) {
+        nodeMap.set(p, {
+          id: p, label: nameOf(p),
+          x: (Math.random() - 0.5) * 200, y: (Math.random() - 0.5) * 200,
+          vx: 0, vy: 0, radius: 5, color: colorFor(p), isCurrent: false,
+        });
+      }
+      const key = `${notePath}→${p}`;
+      if (!edgeSet.has(key)) { edgeSet.add(key); edges.push({ source: notePath, target: p }); }
+    }
+
+    return { nodes: Array.from(nodeMap.values()), edges };
+  }
+
+  private layoutGraph(nodes: GraphNode[], edges: GraphEdge[], width: number, height: number): void {
+    if (nodes.length <= 1) return;
+
+    const area = width * height;
+    const k = Math.sqrt(area / nodes.length);
+    const ITERATIONS = 60;
+    let temperature = width / 10;
+    const cooling = temperature / ITERATIONS;
+
+    for (let iter = 0; iter < ITERATIONS; iter++) {
+      for (const n of nodes) { n.vx = 0; n.vy = 0; }
+
+      for (let i = 0; i < nodes.length; i++) {
+        for (let j = i + 1; j < nodes.length; j++) {
+          const dx = nodes[i].x - nodes[j].x;
+          const dy = nodes[i].y - nodes[j].y;
+          const dist = Math.max(Math.sqrt(dx * dx + dy * dy), 0.01);
+          const force = (k * k) / dist;
+          const fx = (dx / dist) * force;
+          const fy = (dy / dist) * force;
+          nodes[i].vx += fx; nodes[i].vy += fy;
+          nodes[j].vx -= fx; nodes[j].vy -= fy;
+        }
+      }
+
+      for (const e of edges) {
+        const src = nodes.find(n => n.id === e.source);
+        const tgt = nodes.find(n => n.id === e.target);
+        if (!src || !tgt) continue;
+        const dx = src.x - tgt.x;
+        const dy = src.y - tgt.y;
+        const dist = Math.max(Math.sqrt(dx * dx + dy * dy), 0.01);
+        const force = (dist * dist) / k;
+        const fx = (dx / dist) * force;
+        const fy = (dy / dist) * force;
+        src.vx -= fx; src.vy -= fy;
+        tgt.vx += fx; tgt.vy += fy;
+      }
+
+      for (const n of nodes) {
+        if (n.isCurrent) continue;
+        const disp = Math.sqrt(n.vx * n.vx + n.vy * n.vy);
+        if (disp > 0) {
+          const capped = Math.min(disp, temperature);
+          n.x += (n.vx / disp) * capped;
+          n.y += (n.vy / disp) * capped;
+        }
+        const hw = width / 2 - 20;
+        const hh = height / 2 - 20;
+        n.x = Math.max(-hw, Math.min(hw, n.x));
+        n.y = Math.max(-hh, Math.min(hh, n.y));
+      }
+
+      temperature -= cooling;
+    }
+  }
+
+  private renderLocalGraphCanvas(
+    container: HTMLElement,
+    nodes: GraphNode[],
+    edges: GraphEdge[],
+    width: number,
+    height: number,
+  ): HTMLCanvasElement {
+    const dpr = window.devicePixelRatio || 1;
+    const canvas = container.createEl('canvas', { cls: 'flywheel-local-graph-canvas' });
+    canvas.width = width * dpr;
+    canvas.height = height * dpr;
+    canvas.style.width = `${width}px`;
+    canvas.style.height = `${height}px`;
+
+    const ctx = canvas.getContext('2d')!;
+    ctx.scale(dpr, dpr);
+
+    const cx = width / 2;
+    const cy = height / 2;
+
+    ctx.clearRect(0, 0, width, height);
+
+    // Edges
+    ctx.lineWidth = 1;
+    for (const e of edges) {
+      const src = nodes.find(n => n.id === e.source);
+      const tgt = nodes.find(n => n.id === e.target);
+      if (!src || !tgt) continue;
+      ctx.beginPath();
+      ctx.moveTo(cx + src.x, cy + src.y);
+      ctx.lineTo(cx + tgt.x, cy + tgt.y);
+      ctx.strokeStyle = 'rgba(128, 128, 128, 0.3)';
+      ctx.setLineDash([]);
+      ctx.stroke();
+    }
+
+    // Nodes
+    for (const n of nodes) {
+      ctx.beginPath();
+      ctx.arc(cx + n.x, cy + n.y, n.radius, 0, Math.PI * 2);
+      // Resolve CSS var for current node color
+      if (n.isCurrent) {
+        ctx.fillStyle = getComputedStyle(container).getPropertyValue('--interactive-accent').trim() || '#7c3aed';
+      } else {
+        ctx.fillStyle = n.color;
+      }
+      ctx.fill();
+    }
+
+    // Labels
+    const textColor = getComputedStyle(container).color || '#ccc';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'top';
+    for (const n of nodes) {
+      ctx.fillStyle = textColor;
+      ctx.font = n.isCurrent ? 'bold 11px -apple-system, sans-serif' : '10px -apple-system, sans-serif';
+      const label = n.label.length > 18 ? n.label.slice(0, 16) + '\u2026' : n.label;
+      ctx.fillText(label, cx + n.x, cy + n.y + n.radius + 3);
+    }
+
+    return canvas;
   }
 
   // ---------------------------------------------------------------------------

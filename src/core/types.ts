@@ -294,6 +294,7 @@ export interface FlywheelCrankSettings {
   maxSearchResults: number;
   /** Path to flywheel-memory server entry point. Empty = use npx. */
   mcpServerPath: string;
+  enableInlineSuggestions: boolean;
 }
 
 export const DEFAULT_SETTINGS: FlywheelCrankSettings = {
@@ -308,4 +309,5 @@ export const DEFAULT_SETTINGS: FlywheelCrankSettings = {
   excludeFolders: ['daily-notes', 'templates', 'attachments', '.obsidian', '.trash'],
   maxSearchResults: 20,
   mcpServerPath: '',
+  enableInlineSuggestions: true,
 };

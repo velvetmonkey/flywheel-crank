@@ -4,3 +4,4 @@ main.js
 sql-wasm.wasm
 dist/
 .DS_Store
+.claude/

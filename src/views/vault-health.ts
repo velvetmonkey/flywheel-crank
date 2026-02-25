@@ -216,9 +216,63 @@ export class VaultHealthView extends ItemView {
         return items.length;
       }
       for (const orphan of items.slice(0, 30)) {
-        const item = el.createDiv('flywheel-health-item flywheel-health-clickable');
-        item.addEventListener('click', () => this.app.workspace.openLinkText(orphan.path, '', false));
-        item.createDiv('flywheel-health-item-title').setText(orphan.title || orphan.path);
+        const item = el.createDiv('flywheel-health-item');
+
+        const row = item.createDiv('flywheel-health-action-row');
+        const titleEl = row.createDiv('flywheel-health-item-title flywheel-health-clickable');
+        titleEl.setText(orphan.title || orphan.path);
+        titleEl.addEventListener('click', () => this.app.workspace.openLinkText(orphan.path, '', false));
+
+        const findBtn = row.createEl('button', { cls: 'flywheel-health-action-btn', text: 'Find links' });
+        findBtn.addEventListener('click', async (e) => {
+          e.stopPropagation();
+          findBtn.disabled = true;
+          findBtn.setText('...');
+
+          try {
+            const file = this.app.vault.getAbstractFileByPath(orphan.path);
+            if (!(file instanceof TFile)) throw new Error('Not a file');
+
+            const content = await this.app.vault.cachedRead(file);
+            const resp = await this.mcpClient.suggestWikilinks(content.slice(0, 5000), true);
+            const suggestions = (resp.scored_suggestions ?? [])
+              .filter((s: any) => s.confidence === 'high' || s.confidence === 'medium')
+              .slice(0, 4);
+
+            if (suggestions.length === 0) {
+              findBtn.setText('No suggestions');
+              return;
+            }
+
+            findBtn.remove();
+
+            const chipsEl = item.createDiv('flywheel-health-suggestion-chips');
+            for (const s of suggestions) {
+              const chip = chipsEl.createEl('button', {
+                cls: 'flywheel-health-suggestion-chip',
+                text: `+ [[${s.entity}]]`,
+              });
+              chip.addEventListener('click', async () => {
+                chip.disabled = true;
+                try {
+                  const escaped = s.entity.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+                  await this.app.vault.process(file, (c: string) => {
+                    const pattern = new RegExp(`(?<!\\[\\[)\\b${escaped}\\b(?!\\]\\])`, 'i');
+                    return c.replace(pattern, `[[${s.entity}]]`);
+                  });
+                  chip.setText(`\u2713 ${s.entity}`);
+                  chip.addClass('flywheel-health-suggestion-done');
+                } catch {
+                  chip.setText('Failed');
+                }
+              });
+            }
+          } catch (err) {
+            findBtn.setText('Failed');
+            console.error('Flywheel: failed to find links for orphan', err);
+          }
+        });
+
         const folder = orphan.path.split('/').slice(0, -1).join('/');
         if (folder) item.createDiv('flywheel-health-item-path').setText(folder);
       }
@@ -257,21 +311,82 @@ export class VaultHealthView extends ItemView {
       return total;
     }, 'Notes that other notes link to, but that contain no outgoing [[wikilinks]] themselves. They receive attention but don\'t connect readers forward. Add outgoing links to strengthen the graph.');
 
-    // Broken Links section — lazy-loaded
+    // Broken Links section — lazy-loaded, grouped by target with frequency weighting
     this.renderLazySection(content, 'Broken Links', 'unlink', async (el) => {
-      const resp = await this.mcpClient.validateLinks(false, 30);
-      const items = resp.broken ?? [];
-      if (items.length === 0) {
-        el.createDiv('flywheel-health-empty-msg').setText('No broken links found');
-        return items.length;
+      const resp = await this.mcpClient.validateLinks(false, 30, true);
+
+      // group_by_target returns targets[]; fall back to broken[] if server returned flat list
+      const grouped = resp.targets;
+      if (grouped) {
+        // Already sorted by mention_count desc from the server, but ensure it
+        const items = [...grouped].sort((a, b) => (b.mention_count ?? 0) - (a.mention_count ?? 0));
+        if (items.length === 0) {
+          el.createDiv('flywheel-health-empty-msg').setText('No broken links found');
+          return 0;
+        }
+
+        const renderBrokenItems = async (container: HTMLElement, itemList: typeof items) => {
+          for (const item of itemList) {
+            const row = container.createDiv('flywheel-health-item');
+            row.style.display = 'flex';
+            row.style.alignItems = 'center';
+            row.style.gap = '6px';
+
+            // Frequency-weighted entity name
+            const count = item.mention_count ?? 1;
+            const nameEl = row.createSpan('flywheel-health-broken-target');
+            nameEl.setText(item.target);
+            if (count >= 6) {
+              nameEl.style.fontWeight = '700';
+              nameEl.style.fontSize = '14px';
+            } else if (count >= 3) {
+              nameEl.style.fontWeight = '600';
+              nameEl.style.fontSize = '13px';
+            } else {
+              nameEl.style.fontWeight = '400';
+              nameEl.style.fontSize = '12px';
+            }
+
+            // Frequency badge
+            const badge = row.createSpan('flywheel-health-broken-badge');
+            badge.setText(`${count}`);
+
+            // Create button
+            const createBtn = row.createEl('button', { cls: 'flywheel-health-create-btn' });
+            createBtn.setText('+');
+            createBtn.setAttribute('aria-label', `Create note: ${item.target}`);
+            createBtn.addEventListener('click', async (e) => {
+              e.stopPropagation();
+              try {
+                await this.mcpClient.createNote(item.target, `# ${item.target}\n\n`);
+                row.remove();
+              } catch (err) {
+                console.error('Flywheel Crank: failed to create note', err);
+              }
+            });
+          }
+        };
+
+        await renderBrokenItems(el, items);
+        const total = resp.total_dead_targets ?? items.length;
+        if (total > 30) {
+          el.createDiv('flywheel-health-more').setText(`+${total - 30} more`);
+        }
+        return total;
       }
-      for (const broken of items) {
+
+      // Fallback: flat broken[] list (old server version)
+      const flatItems = resp.broken ?? [];
+      if (flatItems.length === 0) {
+        el.createDiv('flywheel-health-empty-msg').setText('No broken links found');
+        return 0;
+      }
+      for (const broken of flatItems) {
         const item = el.createDiv('flywheel-health-item flywheel-health-clickable');
         item.addEventListener('click', () => this.app.workspace.openLinkText(broken.source, '', false));
 
         const row = item.createDiv('flywheel-health-broken-row');
 
-        // Source note title (clickable)
         const sourceEl = row.createSpan('flywheel-health-broken-source flywheel-health-clickable');
         const sourceTitle = broken.source.replace(/\.md$/, '').split('/').pop() || broken.source;
         sourceEl.setText(sourceTitle);
@@ -280,17 +395,14 @@ export class VaultHealthView extends ItemView {
         row.createSpan('flywheel-health-broken-arrow').setText('\u2192');
         row.createSpan('flywheel-health-broken-target').setText(broken.target);
 
-        // Show source path so user knows which file to check
         const pathEl = item.createDiv('flywheel-health-item-path');
         pathEl.setText(broken.source.replace(/\.md$/, ''));
 
         if (broken.suggestion) {
           const suggestionName = broken.suggestion.replace(/\.md$/, '').split('/').pop() || broken.suggestion;
-
           const fixRow = item.createDiv('flywheel-health-broken-fix-row');
           const badge = fixRow.createSpan('flywheel-health-broken-suggestion');
           badge.setText(`\u2192 ${suggestionName}`);
-
           const fixBtn = fixRow.createSpan('flywheel-health-fix-btn');
           setIcon(fixBtn, 'pencil');
           fixBtn.createSpan({ cls: 'flywheel-health-fix-btn-label', text: 'Fix' });
@@ -301,10 +413,7 @@ export class VaultHealthView extends ItemView {
               const file = this.app.vault.getAbstractFileByPath(broken.source);
               if (file instanceof TFile) {
                 const content = await this.app.vault.cachedRead(file);
-                const newContent = content.replace(
-                  `[[${broken.target}]]`,
-                  `[[${suggestionName}]]`,
-                );
+                const newContent = content.replace(`[[${broken.target}]]`, `[[${suggestionName}]]`);
                 if (newContent !== content) {
                   await this.app.vault.modify(file, newContent);
                   fixBtn.empty();
@@ -318,12 +427,12 @@ export class VaultHealthView extends ItemView {
           });
         }
       }
-      const total = resp.broken_links ?? items.length;
+      const total = resp.broken_links ?? flatItems.length;
       if (total > 30) {
         el.createDiv('flywheel-health-more').setText(`+${total - 30} more`);
       }
       return total;
-    }, '[[Wikilinks]] pointing to notes that don\'t exist in the vault. The source note contains a link, but no matching note was found. Fix by creating the target note or correcting the link name.');
+    }, '[[Wikilinks]] pointing to notes that don\'t exist in the vault. Sorted by frequency — bolder = more references. Click + to create the missing note.');
 
     // Stale Hubs section — lazy-loaded
     this.renderLazySection(content, 'Stale Hubs', 'clock', async (el) => {
@@ -337,7 +446,7 @@ export class VaultHealthView extends ItemView {
         const item = el.createDiv('flywheel-health-item flywheel-health-clickable');
         item.addEventListener('click', () => this.app.workspace.openLinkText(note.path, '', false));
 
-        const row = item.createDiv('flywheel-health-hub-row');
+        const row = item.createDiv('flywheel-health-hub-row flywheel-health-action-row');
         row.createDiv('flywheel-health-item-title').setText(note.title || note.path);
 
         const badges = row.createDiv('flywheel-health-badges');
@@ -349,6 +458,12 @@ export class VaultHealthView extends ItemView {
           const inBadge = badges.createSpan('flywheel-health-badge flywheel-health-badge-in');
           inBadge.setText(`\u2190 ${note.backlinks ?? note.backlink_count}`);
         }
+
+        const reviewBtn = row.createEl('button', { cls: 'flywheel-health-action-btn', text: 'Review' });
+        reviewBtn.addEventListener('click', (e) => {
+          e.stopPropagation();
+          this.app.workspace.openLinkText(note.path, '', false);
+        });
       }
       const total = (resp as any).total ?? items.length;
       if (total > 20) {
@@ -370,7 +485,7 @@ export class VaultHealthView extends ItemView {
         const item = el.createDiv('flywheel-health-item flywheel-health-clickable');
         item.addEventListener('click', () => this.app.workspace.openLinkText(note.path, '', false));
 
-        const row = item.createDiv('flywheel-health-hub-row');
+        const row = item.createDiv('flywheel-health-hub-row flywheel-health-action-row');
         row.createDiv('flywheel-health-item-title').setText(note.title || note.path);
 
         const badges = row.createDiv('flywheel-health-badges');
@@ -389,6 +504,37 @@ export class VaultHealthView extends ItemView {
           const scoreBadge = badges.createSpan('flywheel-health-badge flywheel-health-badge-in');
           scoreBadge.setText(`${Math.round(note.maturity_score * 100)}%`);
         }
+
+        const enrichBtn = row.createEl('button', { cls: 'flywheel-health-action-btn', text: 'Enrich' });
+        enrichBtn.addEventListener('click', async (e) => {
+          e.stopPropagation();
+          enrichBtn.disabled = true;
+          enrichBtn.setText('...');
+
+          try {
+            const folder = note.path.split('/').slice(0, -1).join('/') || '/';
+            const conventions = await this.mcpClient.folderConventions(folder);
+            const missingFields: Record<string, string> = {};
+
+            for (const field of (conventions as any).inferred_fields ?? []) {
+              if (field.frequency >= 0.5 && field.suggested_value) {
+                missingFields[field.name] = field.suggested_value;
+              }
+            }
+
+            if (Object.keys(missingFields).length === 0) {
+              enrichBtn.setText('No fields');
+              return;
+            }
+
+            await this.mcpClient.updateFrontmatter(note.path, missingFields, true);
+            enrichBtn.setText('\u2713 Updated');
+            enrichBtn.addClass('flywheel-health-action-done');
+          } catch (err) {
+            enrichBtn.setText('Failed');
+            console.error('Flywheel: failed to enrich note', err);
+          }
+        });
       }
       const total = (resp as any).total ?? items.length;
       if (total > 20) {

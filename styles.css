@@ -3757,3 +3757,740 @@
   background: var(--interactive-accent);
   color: var(--text-on-accent);
 }
+
+/* =========================================================================
+   Waterfall pipeline view
+   ========================================================================= */
+
+.flywheel-waterfall-container {
+  position: relative;
+}
+
+.flywheel-waterfall {
+  position: relative;
+  overflow: hidden;
+  min-height: 600px;
+}
+
+.flywheel-waterfall-start {
+  height: 32px;
+}
+
+.flywheel-waterfall-gate {
+  margin-bottom: 4px;
+}
+
+.flywheel-waterfall-gate-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 8px;
+  border-top: 1px solid var(--background-modifier-border);
+  font-size: var(--font-ui-small);
+  font-weight: var(--font-semibold);
+}
+
+.flywheel-waterfall-gate-name {
+  color: var(--text-muted);
+  letter-spacing: 0.04em;
+}
+
+.flywheel-waterfall-gate-desc {
+  color: var(--text-faint);
+  font-size: var(--font-ui-smaller);
+  font-weight: normal;
+  font-style: italic;
+  margin-left: 4px;
+}
+
+.flywheel-waterfall-gate-summary {
+  color: var(--text-faint);
+  font-size: var(--font-ui-smaller);
+  font-weight: normal;
+  margin-left: auto;
+}
+
+.flywheel-waterfall-shelf {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  padding: 4px 8px 8px;
+  min-height: 24px;
+}
+
+.flywheel-waterfall-floor {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 8px;
+  border-top: 1px solid var(--background-modifier-border);
+  margin-top: 4px;
+}
+
+.flywheel-waterfall-empty {
+  padding: 16px 8px;
+  color: var(--text-faint);
+  font-size: var(--font-ui-small);
+  font-style: italic;
+}
+
+/* Pills */
+.flywheel-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 2px 8px;
+  border-radius: 12px;
+  font-size: 11px;
+  white-space: nowrap;
+  cursor: pointer;
+  background: var(--background-modifier-hover);
+  will-change: transform, opacity;
+}
+
+.flywheel-pill-ghost {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  border-radius: 12px;
+  font-size: 11px;
+  opacity: 0.55;
+  background: var(--background-modifier-hover);
+}
+
+.theme-dark .flywheel-pill-ghost {
+  opacity: 0.7;
+}
+
+.flywheel-pill-badge {
+  font-size: 9px;
+  font-weight: 600;
+  opacity: 0.8;
+}
+
+.theme-dark .flywheel-pill-badge {
+  opacity: 1;
+}
+
+.flywheel-pill.is-floor {
+  opacity: 0.3;
+  cursor: default;
+}
+
+.flywheel-pill.is-falling {
+  position: absolute;
+}
+
+.flywheel-pill:not(.is-falling):not(.is-floor):hover {
+  filter: brightness(1.08) saturate(1.15);
+  transform: scale(1.04);
+  transition: filter 0.15s, transform 0.15s;
+  cursor: pointer;
+}
+
+.flywheel-pill-ghost:hover {
+  filter: brightness(1.1) saturate(1.2);
+  transform: scale(1.05);
+  transition: filter 0.15s, transform 0.15s;
+  cursor: default;
+}
+
+/* Broken links create button */
+.flywheel-health-create-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: var(--interactive-accent);
+  color: var(--text-on-accent);
+  border: none;
+  cursor: pointer;
+  font-size: 14px;
+  line-height: 1;
+  opacity: 0.7;
+  transition: opacity 0.15s;
+  flex-shrink: 0;
+}
+
+.flywheel-health-create-btn:hover {
+  opacity: 1;
+}
+
+.flywheel-health-broken-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 18px;
+  height: 16px;
+  padding: 0 4px;
+  border-radius: 8px;
+  background: var(--background-modifier-hover);
+  font-size: var(--font-smallest);
+  color: var(--text-muted);
+}
+
+/* =========================================================================
+   Waterfall animation
+   ========================================================================= */
+
+@keyframes pill-journey {
+  0%   { top: 0; opacity: 1; transform: rotate(0deg) translateX(0); }
+  8%   { top: var(--gate-1-y, 100px); transform: rotate(calc(3deg  * var(--pill-wobble, 1))) translateX(2px); }
+  12%  { top: var(--gate-1-y, 100px); transform: rotate(calc(-2deg * var(--pill-wobble, 1))) translateX(-1px); }
+  20%  { top: var(--gate-2-y, 200px); transform: rotate(calc(4deg  * var(--pill-wobble, 1))) translateX(3px); }
+  24%  { top: var(--gate-2-y, 200px); transform: rotate(calc(-3deg * var(--pill-wobble, 1))) translateX(-2px); }
+  32%  { top: var(--gate-3-y, 300px); transform: rotate(calc(2deg  * var(--pill-wobble, 1))) translateX(1px); }
+  36%  { top: var(--gate-3-y, 300px); transform: rotate(calc(-1deg * var(--pill-wobble, 1))) translateX(0); }
+  44%  { top: var(--gate-4-y, 400px); transform: rotate(calc(3deg  * var(--pill-wobble, 1))) translateX(2px); }
+  48%  { top: var(--gate-4-y, 400px); transform: rotate(calc(-2deg * var(--pill-wobble, 1))) translateX(-1px); }
+  56%  { top: var(--gate-5-y, 500px); transform: rotate(calc(1deg  * var(--pill-wobble, 1))) translateX(1px); }
+  60%  { top: var(--gate-5-y, 500px); transform: rotate(0deg); }
+  100% { top: var(--floor-y, 600px); opacity: 0; transform: rotate(0deg); }
+}
+
+@keyframes ghost-appear {
+  0%   { opacity: 0; transform: scale(0.8); }
+  50%  { opacity: 0.6; transform: scale(1.05); }
+  100% { opacity: 0.5; transform: scale(1); }
+}
+
+.flywheel-waterfall.is-animating .flywheel-pill.is-falling {
+  animation: pill-journey var(--pill-duration, 2s) ease-in-out forwards;
+  animation-delay: var(--pill-delay, 0s);
+}
+
+.flywheel-waterfall.is-animating .flywheel-pill-ghost {
+  opacity: 0;
+  animation: ghost-appear 0.3s ease-out forwards;
+  animation-delay: var(--ghost-delay, 0s);
+}
+
+/* Flash animation when new pipeline arrives */
+.flywheel-waterfall-container.is-fresh {
+  animation: flywheel-pulse 0.6s ease-out;
+}
+
+
+/* ===================================================================
+   Entity Inbox
+   =================================================================== */
+
+.flywheel-entity-inbox {
+  padding: 16px;
+}
+
+.flywheel-inbox-loading {
+  text-align: center;
+  padding: 32px;
+  color: var(--text-muted);
+}
+
+.flywheel-inbox-progress {
+  text-align: center;
+  font-size: 12px;
+  color: var(--text-muted);
+  margin-bottom: 12px;
+}
+
+.flywheel-inbox-card {
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 8px;
+  padding: 16px;
+}
+
+.flywheel-inbox-card-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+  flex-wrap: wrap;
+}
+
+.flywheel-inbox-entity-name {
+  font-size: 18px;
+  font-weight: 600;
+}
+
+.flywheel-inbox-entity-name-link {
+  cursor: pointer;
+  color: var(--text-accent);
+}
+
+.flywheel-inbox-entity-name-link:hover {
+  text-decoration: underline;
+}
+
+.flywheel-inbox-category-badge {
+  font-size: 11px;
+  padding: 2px 6px;
+  border-radius: 4px;
+  background: var(--background-modifier-hover);
+  color: var(--text-muted);
+}
+
+.flywheel-inbox-hub-badge {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.flywheel-inbox-type-badge {
+  font-size: 10px;
+  padding: 2px 6px;
+  border-radius: 4px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.flywheel-inbox-type-unlinked {
+  background: hsla(210, 60%, 50%, 0.15);
+  color: hsl(210, 60%, 60%);
+}
+
+.flywheel-inbox-type-merge {
+  background: hsla(30, 60%, 50%, 0.15);
+  color: hsl(30, 60%, 60%);
+}
+
+.flywheel-inbox-reason {
+  font-size: 13px;
+  color: var(--text-muted);
+  margin-bottom: 12px;
+}
+
+.flywheel-inbox-mentions {
+  margin-bottom: 16px;
+}
+
+.flywheel-inbox-mentions-label {
+  font-size: 12px;
+  color: var(--text-faint);
+  margin-bottom: 4px;
+}
+
+.flywheel-inbox-mention {
+  padding: 6px 0;
+  border-bottom: 1px solid var(--background-modifier-border-hover);
+}
+
+.flywheel-inbox-mention:last-child {
+  border-bottom: none;
+}
+
+.flywheel-inbox-mention-path {
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  color: var(--text-accent);
+}
+
+.flywheel-inbox-mention-path:hover {
+  text-decoration: underline;
+}
+
+.flywheel-inbox-mention-context {
+  font-size: 12px;
+  color: var(--text-muted);
+  margin-top: 2px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.flywheel-inbox-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 16px;
+}
+
+.flywheel-inbox-actions button {
+  flex: 1;
+  padding: 8px 16px;
+  border-radius: 6px;
+  font-size: 14px;
+  cursor: pointer;
+}
+
+.flywheel-inbox-action-primary {
+  background: var(--interactive-accent);
+  color: var(--text-on-accent);
+  border: none;
+}
+
+.flywheel-inbox-action-primary:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+.flywheel-inbox-action-skip {
+  background: transparent;
+  border: 1px solid var(--background-modifier-border);
+  color: var(--text-muted);
+}
+
+.flywheel-inbox-empty {
+  text-align: center;
+  padding: 48px 16px;
+}
+
+.flywheel-inbox-empty-icon {
+  margin-bottom: 12px;
+  color: var(--color-green);
+}
+
+.flywheel-inbox-empty-icon svg {
+  width: 36px;
+  height: 36px;
+}
+
+.flywheel-inbox-empty-text {
+  font-size: 18px;
+  font-weight: 600;
+  margin-bottom: 4px;
+}
+
+.flywheel-inbox-empty-sub {
+  font-size: 13px;
+  color: var(--text-muted);
+}
+
+/* === Status Bar Badge === */
+
+.flywheel-status-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 16px;
+  height: 16px;
+  padding: 0 4px;
+  margin-left: 4px;
+  border-radius: 8px;
+  background: var(--interactive-accent);
+  color: var(--text-on-accent);
+  font-size: 10px;
+  font-weight: 600;
+  line-height: 1;
+  vertical-align: middle;
+}
+
+/* === Inline Suggestions === */
+
+.flywheel-inline-suggestion {
+  text-decoration: underline;
+  text-decoration-style: dotted;
+  text-decoration-color: var(--interactive-accent);
+  text-underline-offset: 3px;
+  cursor: pointer;
+  transition: text-decoration-color 0.15s;
+}
+
+.flywheel-inline-suggestion:hover {
+  text-decoration-style: solid;
+  text-decoration-color: var(--interactive-accent);
+  background: hsla(var(--interactive-accent-hsl), 0.08);
+  border-radius: 2px;
+}
+
+/* === Entity Page === */
+
+.flywheel-entity-page {
+  padding: 16px;
+  overflow-y: auto;
+}
+
+.flywheel-entity-page-placeholder {
+  text-align: center;
+  padding: 48px 16px;
+  color: var(--text-muted);
+}
+
+.flywheel-entity-page-header {
+  margin-bottom: 16px;
+}
+
+.flywheel-entity-page-name {
+  font-size: 20px;
+  font-weight: 700;
+}
+
+.flywheel-entity-page-section {
+  margin-bottom: 20px;
+}
+
+.flywheel-entity-page-section-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin-bottom: 8px;
+}
+
+.flywheel-entity-page-chart {
+  width: 100%;
+  height: 80px;
+  border-radius: 4px;
+  background: var(--background-secondary);
+}
+
+.flywheel-entity-page-ref {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 6px 0;
+  border-bottom: 1px solid var(--background-modifier-border-hover);
+}
+
+.flywheel-entity-page-ref:last-child {
+  border-bottom: none;
+}
+
+.flywheel-entity-page-ref-link {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-accent);
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.flywheel-entity-page-ref-link:hover {
+  text-decoration: underline;
+}
+
+.flywheel-entity-page-ref-context {
+  font-size: 12px;
+  color: var(--text-muted);
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.flywheel-entity-page-link-btn {
+  font-size: 11px;
+  padding: 2px 8px;
+  border-radius: 4px;
+  border: 1px solid var(--interactive-accent);
+  background: transparent;
+  color: var(--interactive-accent);
+  cursor: pointer;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.flywheel-entity-page-link-btn:hover {
+  background: var(--interactive-accent);
+  color: var(--text-on-accent);
+}
+
+.flywheel-entity-page-link-done {
+  border-color: var(--text-success);
+  color: var(--text-success);
+  cursor: default;
+}
+
+.flywheel-entity-page-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 24px;
+  padding-top: 16px;
+  border-top: 1px solid var(--background-modifier-border);
+}
+
+.flywheel-entity-page-action-btn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 16px;
+  border-radius: 6px;
+  font-size: 13px;
+  cursor: pointer;
+  border: 1px solid var(--background-modifier-border);
+  background: transparent;
+  color: var(--text-normal);
+}
+
+.flywheel-entity-page-action-btn:hover {
+  background: var(--background-modifier-hover);
+}
+
+.flywheel-entity-page-action-btn:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+/* === Local Graph === */
+
+.flywheel-local-graph-canvas {
+  width: 100%;
+  border-radius: 6px;
+  background: var(--background-primary);
+  display: block;
+}
+
+/* === Guided Actions === */
+
+.flywheel-health-action-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.flywheel-health-action-btn {
+  font-size: 11px;
+  padding: 2px 8px;
+  border-radius: 4px;
+  border: 1px solid var(--background-modifier-border);
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.flywheel-health-action-btn:hover {
+  background: var(--background-modifier-hover);
+}
+
+.flywheel-health-action-btn:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+.flywheel-health-action-done {
+  color: var(--text-success);
+  border-color: var(--text-success);
+}
+
+.flywheel-health-suggestion-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 4px;
+}
+
+.flywheel-health-suggestion-chip {
+  font-size: 11px;
+  padding: 2px 8px;
+  border-radius: 12px;
+  border: 1px solid var(--interactive-accent);
+  background: transparent;
+  color: var(--interactive-accent);
+  cursor: pointer;
+}
+
+.flywheel-health-suggestion-chip:hover {
+  background: var(--interactive-accent);
+  color: var(--text-on-accent);
+}
+
+.flywheel-health-suggestion-chip:disabled {
+  cursor: default;
+}
+
+.flywheel-health-suggestion-done {
+  border-color: var(--text-success);
+  color: var(--text-success);
+}
+
+/* === Weekly Digest === */
+
+.flywheel-weekly-digest {
+  max-width: 480px;
+}
+
+.flywheel-weekly-digest h2 {
+  margin-top: 0;
+}
+
+.flywheel-digest-loading {
+  text-align: center;
+  padding: 24px;
+  color: var(--text-muted);
+}
+
+.flywheel-digest-section {
+  margin-bottom: 20px;
+}
+
+.flywheel-digest-section-title {
+  font-size: 14px;
+  font-weight: 600;
+  margin-bottom: 4px;
+}
+
+.flywheel-digest-section-desc {
+  font-size: 12px;
+  color: var(--text-muted);
+  margin-bottom: 8px;
+}
+
+.flywheel-digest-metrics {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
+.flywheel-digest-metric {
+  padding: 10px;
+  border-radius: 6px;
+  background: var(--background-secondary);
+}
+
+.flywheel-digest-metric-label {
+  font-size: 11px;
+  color: var(--text-muted);
+  text-transform: capitalize;
+}
+
+.flywheel-digest-metric-value {
+  font-size: 20px;
+  font-weight: 600;
+}
+
+.flywheel-digest-metric-delta {
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.flywheel-digest-up {
+  color: var(--text-success);
+}
+
+.flywheel-digest-down {
+  color: var(--text-error);
+}
+
+.flywheel-digest-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 6px 0;
+  border-bottom: 1px solid var(--background-modifier-border-hover);
+}
+
+.flywheel-digest-row:last-child {
+  border-bottom: none;
+}
+
+.flywheel-digest-row-name {
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.flywheel-digest-row-badge {
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.flywheel-digest-activity {
+  font-size: 13px;
+  color: var(--text-muted);
+  margin-bottom: 4px;
+}

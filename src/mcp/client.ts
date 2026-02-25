@@ -427,6 +427,15 @@ export interface McpValidateLinksResponse {
   broken_links: number;
   returned_count: number;
   broken: McpBrokenLink[];
+  // group_by_target mode
+  total_dead_targets?: number;
+  total_broken_links?: number;
+  targets?: Array<{
+    target: string;
+    mention_count: number;
+    sources: string[];
+    suggestion?: string;
+  }>;
 }
 
 // Wikilink feedback
@@ -617,6 +626,9 @@ export class FlywheelMcpClient {
   // Retry callbacks
   private retryCallbacks = new Set<() => void>();
 
+  // Feedback submission callbacks
+  private feedbackCallbacks = new Set<() => void>();
+
   // Centralized health polling
   private healthCallbacks = new Set<(h: McpHealthCheckResponse) => void>();
   private healthTimer: ReturnType<typeof setInterval> | null = null;
@@ -658,6 +670,12 @@ export class FlywheelMcpClient {
   private setConnectionState(state: ConnectionState): void {
     this._connectionState = state;
     for (const cb of this.connectionStateCallbacks) { try { cb(); } catch {} }
+  }
+
+  /** Subscribe to feedback submission events. Returns unsubscribe function. */
+  onFeedbackSubmitted(cb: () => void): () => void {
+    this.feedbackCallbacks.add(cb);
+    return () => { this.feedbackCallbacks.delete(cb); };
   }
 
   /**
@@ -1079,6 +1097,20 @@ export class FlywheelMcpClient {
   }
 
   /**
+   * Absorb an entity name as an alias of a target note.
+   * Adds alias to target frontmatter and rewrites all [[source]] → [[target|source]].
+   */
+  async absorbAsAlias(sourceName: string, targetPath: string): Promise<McpMergeResult> {
+    const result = await this.callTool<McpMergeResult>('absorb_as_alias', {
+      source_name: sourceName,
+      target_path: targetPath,
+    });
+    this.cache.invalidateTool('list_entities');
+    this.cache.invalidatePath(targetPath);
+    return result;
+  }
+
+  /**
    * Suggest missing aliases (acronyms, short forms) for entities in a folder.
    */
   async suggestEntityAliases(folder?: string): Promise<McpAliasSuggestionsResponse> {
@@ -1252,13 +1284,37 @@ export class FlywheelMcpClient {
   }
 
   /**
+   * Create a new note in the vault.
+   */
+  async createNote(title: string, content: string): Promise<McpMutationResponse> {
+    return this.callTool<McpMutationResponse>('vault_create_note', { title, content });
+  }
+
+  /**
    * Validate wikilinks across the vault — find broken links with optional typo suggestions.
    */
-  async validateLinks(typosOnly = false, limit = 50): Promise<McpValidateLinksResponse> {
+  async validateLinks(typosOnly = false, limit = 50, groupByTarget = false): Promise<McpValidateLinksResponse> {
     return this.callTool<McpValidateLinksResponse>('validate_links', {
       typos_only: typosOnly,
       limit,
+      ...(groupByTarget ? { group_by_target: true } : {}),
     });
+  }
+
+  /**
+   * Record explicit user feedback for a wikilink suggestion.
+   */
+  async reportWikilinkFeedback(entity: string, notePath: string, correct: boolean, skipStatusUpdate?: boolean): Promise<void> {
+    await this.callTool<Record<string, unknown>>('wikilink_feedback', {
+      mode: 'report',
+      entity,
+      note_path: notePath,
+      correct,
+      context: 'explicit:user_rated',
+      ...(skipStatusUpdate ? { skip_status_update: true } : {}),
+    });
+    // Notify subscribers (dashboard) that feedback was submitted
+    for (const cb of this.feedbackCallbacks) { try { cb(); } catch {} }
   }
 
   /**

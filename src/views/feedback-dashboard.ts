@@ -2,7 +2,7 @@
  * Feedback Loop Dashboard — Commit-centric pipeline view
  *
  * Shows each vault edit flowing through 5 gates:
- *   Discover → Suggest → Apply → Learn → Adapt
+ *   Discover → Suggest → Link → Learn → Tune
  *
  * Architecture:
  * - render() builds DOM skeleton once (on open / index ready / drilldown return)
@@ -28,15 +28,110 @@ interface StageConfig {
   id: string;
   name: string;
   icon: string;
+  desc: string;
 }
 
 const STAGES: StageConfig[] = [
-  { id: 'discover', name: 'Discover', icon: 'search' },
-  { id: 'suggest', name: 'Suggest', icon: 'sparkles' },
-  { id: 'apply', name: 'Apply', icon: 'check-circle' },
-  { id: 'learn', name: 'Learn', icon: 'brain' },
-  { id: 'adapt', name: 'Adapt', icon: 'sliders-horizontal' },
+  { id: 'discover', name: 'Discover', icon: 'search',            desc: 'indexes vault, finds entities and changes' },
+  { id: 'suggest',  name: 'Suggest',  icon: 'sparkles',          desc: 'found in text, not yet linked' },
+  { id: 'link',     name: 'Link',     icon: 'check-circle',       desc: 'inserts [[wikilinks]] into notes' },
+  { id: 'learn',    name: 'Learn',    icon: 'brain',              desc: 'tracks what you keep vs remove' },
+  { id: 'tune',     name: 'Tune',     icon: 'sliders-horizontal', desc: 'tunes accuracy from your feedback' },
 ];
+
+// Percentages along the animation timeline where each gate sits
+const GATE_PERCENTS = [10, 22, 34, 46, 58];
+
+interface EntityJourney {
+  name: string;
+  isDead: boolean;
+  category?: string;
+  gates: {
+    discover?: { action: 'added' | 'removed' | 'category_changed' | 'moved' | 'description_changed' | 'hub_change'; detail?: string; hubDelta?: number; hubBefore?: number; hubAfter?: number };
+    suggest?: { action: 'mention'; file: string };
+    link?: { action: 'tracked'; files: string[] };
+    learn?: { action: 'removed'; file: string } | { action: 'survived'; file: string; count: number } | { action: 'weight_changed'; delta: number; new_weight: number; signal: string };
+    tune?: {
+      action: 'suppressed' | 'boosted' | 'learning';
+      detail: string;
+      accuracy?: number;
+      total?: number;
+      boost?: number;
+      tierLabel?: string;
+      falsePositiveRate?: number;
+    };
+  };
+}
+
+function hashCode(s: string): number {
+  let h = 0;
+  for (let i = 0; i < s.length; i++) {
+    h = (Math.imul(31, h) + s.charCodeAt(i)) | 0;
+  }
+  return Math.abs(h);
+}
+
+/**
+ * Returns false for obvious agent-prose artifacts that appear as [[dead links]]
+ * but are not real vault entity names. Used to suppress noise in the DISCOVER
+ * gate dead-link count.
+ *
+ * Rejects:
+ *  - Contains prose punctuation (. ! ?)
+ *  - All-uppercase and 5 chars or fewer  (emphasis noise: ZERO, YES, LOT)
+ *  - Starts with a common conjunction / preposition / article
+ *  - Longer than 50 chars
+ *  - Contains nested brackets [[ or ]]
+ */
+function looksLikeEntityName(text: string): boolean {
+  if (text.includes('.') || text.includes('!') || text.includes('?')) return false;
+  if (text.length > 50) return false;
+  if (text.includes('[[') || text.includes(']]')) return false;
+  if (text === text.toUpperCase() && text.length <= 5) return false;
+
+  const PROSE_OPENERS = new Set([
+    'if', 'and', 'so', 'are', 'is', 'of', 'the', 'but', 'for', 'from',
+    'or', 'at', 'in', 'on', 'a', 'an', 'hey', 'as', 'with', 'by', 'to',
+    'not', 'do', 'did',
+  ]);
+  const firstWord = text.trim().split(/\s+/)[0].toLowerCase();
+  if (PROSE_OPENERS.has(firstWord)) return false;
+
+  return true;
+}
+
+const PILL_PALETTE = [
+  { pill: 'hsl(345, 85%, 55%)', ghost: 'hsl(345, 85%, 55%)' },  // rose
+  { pill: 'hsl(25,  90%, 55%)', ghost: 'hsl(25,  90%, 55%)' },  // orange
+  { pill: 'hsl(45,  90%, 48%)', ghost: 'hsl(45,  90%, 48%)' },  // gold
+  { pill: 'hsl(130, 60%, 42%)', ghost: 'hsl(130, 60%, 42%)' },  // green
+  { pill: 'hsl(170, 65%, 40%)', ghost: 'hsl(170, 65%, 40%)' },  // teal
+  { pill: 'hsl(210, 80%, 55%)', ghost: 'hsl(210, 80%, 55%)' },  // blue
+  { pill: 'hsl(250, 65%, 58%)', ghost: 'hsl(250, 65%, 58%)' },  // indigo
+  { pill: 'hsl(280, 65%, 55%)', ghost: 'hsl(280, 65%, 55%)' },  // purple
+  { pill: 'hsl(310, 70%, 52%)', ghost: 'hsl(310, 70%, 52%)' },  // magenta
+  { pill: 'hsl(85,  65%, 42%)', ghost: 'hsl(85,  65%, 42%)' },  // olive
+  { pill: 'hsl(190, 75%, 42%)', ghost: 'hsl(190, 75%, 42%)' },  // cyan
+  { pill: 'hsl(265, 55%, 52%)', ghost: 'hsl(265, 55%, 52%)' },  // mauve
+  { pill: 'hsl(35,  85%, 50%)', ghost: 'hsl(35,  85%, 50%)' },  // amber
+  { pill: 'hsl(215, 60%, 52%)', ghost: 'hsl(215, 60%, 52%)' },  // steel
+  { pill: 'hsl(355, 80%, 52%)', ghost: 'hsl(355, 80%, 52%)' },  // crimson
+];
+
+const PILL_TEXT = '#ffffff';
+
+function pillColor(name: string, isDead: boolean): { pill: string; ghost: string } {
+  if (isDead) return { pill: 'hsl(0, 75%, 50%)', ghost: 'hsl(0, 75%, 50%)' };
+  return PILL_PALETTE[hashCode(name) % PILL_PALETTE.length];
+}
+
+const GATE_TOOLTIPS: Record<string, string> = {
+  discover: 'Runs on every file save — scans changed notes for new or deleted entities (notes, people, places). Trigger: save any file.',
+  suggest:  'Finds entity mentions in your notes that aren\'t yet [[wikilinked]]. Shows where links could be added. Trigger: any file save.',
+  link:     'Inserts [[wikilinks]] for high-scoring entities into notes. Tracks which links were added so Learn can detect if you remove them. Trigger: engine or MCP tool writes links into a file.',
+  learn:    'Detects when a [[wikilink]] that was previously auto-inserted has been deleted by you. Records it as a rejection signal. Trigger: delete [[ ]] brackets around an auto-link.',
+  tune:     'Tracks trust for each entity based on accept/reject history. After 5+ events it applies a boost or suppression weight. Suppressed entities stop appearing in suggestions.',
+};
 
 const LAYER_COLORS: Record<string, string> = {
   contentMatch: 'hsl(210, 70%, 55%)',
@@ -48,6 +143,7 @@ const LAYER_COLORS: Record<string, string> = {
   recencyBoost: 'hsl(38, 90%, 55%)',
   feedbackAdjustment: 'hsl(25, 85%, 55%)',
   semanticBoost: 'hsl(270, 60%, 60%)',
+  edgeWeightBoost: 'hsl(280, 70%, 60%)',
 };
 
 const LAYER_LABELS: Record<string, string> = {
@@ -60,6 +156,7 @@ const LAYER_LABELS: Record<string, string> = {
   hubBoost: 'Hub Score',
   feedbackAdjustment: 'Feedback',
   semanticBoost: 'Semantic',
+  edgeWeightBoost: 'Edge Weight',
 };
 
 type PipelineRecord = NonNullable<McpHealthCheckResponse['last_pipeline']>;
@@ -70,6 +167,7 @@ export class FeedbackDashboardView extends ItemView {
   private healthData: McpHealthCheckResponse | null = null;
   private indexReady = false;
   private healthUnsub: (() => void) | null = null;
+  private feedbackUnsub: (() => void) | null = null;
   private _connStateUnsub: (() => void) | null = null;
   private pipelineTimestamp = 0;
   private pipelineCount = 0;
@@ -92,6 +190,7 @@ export class FeedbackDashboardView extends ItemView {
   private headerEl: HTMLElement | null = null;
   private historyEl: HTMLElement | null = null;
   private gateEls: Map<string, { summary: HTMLElement; items: HTMLElement }> = new Map();
+  private waterfallEl: HTMLElement | null = null;
   private scoreEl: HTMLElement | null = null;
 
   constructor(leaf: WorkspaceLeaf, mcpClient: FlywheelMcpClient) {
@@ -165,6 +264,12 @@ export class FeedbackDashboardView extends ItemView {
       }
     });
 
+    // Refresh footer stats when explicit feedback is submitted (no full re-render)
+    if (this.feedbackUnsub) { this.feedbackUnsub(); this.feedbackUnsub = null; }
+    this.feedbackUnsub = this.mcpClient.onFeedbackSubmitted(() => {
+      this.refreshFooterOnly();
+    });
+
     // Build skeleton
     this.loopContainer = container.createDiv('flywheel-loop');
     const lc = this.loopContainer;
@@ -180,11 +285,14 @@ export class FeedbackDashboardView extends ItemView {
 
     this.headerEl = lc.createDiv('flywheel-pipeline-header');
     this.historyEl = lc.createDiv('flywheel-pipeline-history');
+    this.waterfallEl = lc.createDiv('flywheel-waterfall-container');
 
+    // Keep gate skeleton for backward-compat (used by refreshPipeline flash)
     for (const stage of STAGES) {
       lc.createDiv('flywheel-pipeline-connector');
       const gateEl = lc.createDiv('flywheel-pipeline-gate');
       gateEl.dataset.stage = stage.id;
+      gateEl.style.display = 'none'; // hidden — waterfall takes over
 
       const headerRow = gateEl.createDiv('flywheel-gate-header');
       const iconEl = headerRow.createDiv('flywheel-gate-icon');
@@ -233,20 +341,33 @@ export class FeedbackDashboardView extends ItemView {
       } catch { /* keep existing */ }
 
       try { await this.buildSubjects(); } catch { /* subjects stay as-is */ }
+
+      // Skip re-render if the pipeline produced no entity activity
+      const journeys = this.buildEntityJourneys();
+      const hasActivity = journeys.some(j =>
+        j.gates.discover || j.gates.suggest || j.gates.link || j.gates.learn || j.gates.tune
+      );
+      if (!hasActivity) return;
+
       this.fillContent();
 
-      // Flash gates
-      for (const [, els] of this.gateEls) {
-        const gate = els.summary.parentElement?.parentElement;
-        if (gate) {
-          gate.removeClass('is-fresh');
-          void gate.offsetWidth;
-          gate.addClass('is-fresh');
-        }
+      // Flash waterfall on new pipeline
+      if (this.waterfallEl) {
+        this.waterfallEl.removeClass('is-fresh');
+        void this.waterfallEl.offsetWidth;
+        this.waterfallEl.addClass('is-fresh');
       }
     } finally {
       this.isRefreshing = false;
     }
+  }
+
+  private async refreshFooterOnly(): Promise<void> {
+    try {
+      const feedback = await this.mcpClient.wikilinkFeedbackDashboard();
+      this.dashboardData = feedback.dashboard;
+    } catch { /* keep existing */ }
+    this.fillVaultScore();
   }
 
   // =========================================================================
@@ -280,7 +401,7 @@ export class FeedbackDashboardView extends ItemView {
         for (const name of entry.resolved ?? []) subjects.add(name);
         for (const name of entry.dead ?? []) {
           subjects.add(name);
-          deadLinks.add(name);
+          if (looksLikeEntityName(name)) deadLinks.add(name);
         }
       }
     } else {
@@ -298,7 +419,7 @@ export class FeedbackDashboardView extends ItemView {
           for (const link of result.forward_links) {
             const name = link.target.replace(/\.md$/, '').split('/').pop() || link.target;
             subjects.add(name);
-            if (!link.exists) deadLinks.add(name);
+            if (!link.exists && looksLikeEntityName(name)) deadLinks.add(name);
           }
         }
       } catch { /* ignore */ }
@@ -317,10 +438,12 @@ export class FeedbackDashboardView extends ItemView {
       ? (hubStep.output.diffs as Array<{ entity: string }>) ?? [] : [];
     for (const d of diffs) subjects.add(d.entity);
 
-    // 4. Entities from wikilink_check tracked
+    // 4. Entities from wikilink_check tracked + mentions
     const wlStep = pipeline.steps.find(s => s.name === 'wikilink_check');
     const tracked = (wlStep?.output.tracked as Array<{ entities: string[] }>) ?? [];
     for (const t of tracked) for (const e of t.entities ?? []) subjects.add(e);
+    const mentionsSub = (wlStep?.output.mentions as Array<{ entities: string[] }>) ?? [];
+    for (const m of mentionsSub) for (const e of m.entities ?? []) subjects.add(e);
 
     // 5. Entities from implicit_feedback removals
     const fbStep = pipeline.steps.find(s => s.name === 'implicit_feedback');
@@ -338,24 +461,299 @@ export class FeedbackDashboardView extends ItemView {
     }
   }
 
+  // =========================================================================
+  // Entity Journeys — build per-entity gate data for waterfall
+  // =========================================================================
+
+  private buildEntityJourneys(): EntityJourney[] {
+    const pipeline = this.getActivePipeline();
+    const d = this.dashboardData;
+
+    // Step outputs
+    const entityStep = pipeline?.steps.find(s => s.name === 'entity_scan');
+    const addedRaw = (entityStep?.output.added as Array<string | { name: string; category?: string }>) ?? [];
+    const removedRaw = (entityStep?.output.removed as Array<string | { name: string }>) ?? [];
+
+    const hubStep = pipeline?.steps.find(s => s.name === 'hub_scores');
+    const diffs = (!hubStep?.skipped ? (hubStep?.output.diffs as Array<{ entity: string; before: number; after: number }>) : null) ?? [];
+
+    const wlStep = pipeline?.steps.find(s => s.name === 'wikilink_check');
+    const tracked = (wlStep?.output.tracked as Array<{ file: string; entities: string[] }>) ?? [];
+
+    const fbStep = pipeline?.steps.find(s => s.name === 'implicit_feedback');
+    const removals = (fbStep?.output.removals as Array<{ entity: string; file: string }>) ?? [];
+
+    // Read link_diffs from forward_links step (P0b)
+    const flStep = pipeline?.steps.find(s => s.name === 'forward_links');
+    const linkDiffs = (flStep?.output?.link_diffs as Array<{ file: string; added: string[]; removed: string[] }>) ?? [];
+    const linkAddMap = new Map<string, string[]>();
+    const linkRemoveMap = new Map<string, string>();
+    for (const diff of linkDiffs) {
+      for (const name of diff.added) {
+        const key = name.toLowerCase();
+        linkAddMap.set(key, [...(linkAddMap.get(key) ?? []), diff.file]);
+      }
+      for (const name of diff.removed) {
+        if (!linkRemoveMap.has(name.toLowerCase())) {
+          linkRemoveMap.set(name.toLowerCase(), diff.file);
+        }
+      }
+    }
+
+    // Read survived links from forward_links step
+    const survivedRaw = (flStep?.output?.survived as
+      Array<{ entity: string; file: string; count: number }> | undefined) ?? [];
+    const survivedMap = new Map<string, { file: string; count: number }>();
+    for (const s of survivedRaw) {
+      if (!survivedMap.has(s.entity)) {
+        survivedMap.set(s.entity, { file: s.file, count: s.count });
+      }
+    }
+
+    // Read edge weight changes from edge_weights step
+    const ewStep = pipeline?.steps.find(s => s.name === 'edge_weights');
+    const ewChanges = (ewStep?.output?.top_changes as Array<{
+      note_path: string; target: string; old_weight: number; new_weight: number;
+      delta: number; edits_survived: number; co_sessions: number; source_access: number;
+    }>) ?? [];
+    const ewChangeMap = new Map<string, typeof ewChanges[0]>();
+    for (const c of ewChanges) {
+      if (!ewChangeMap.has(c.target)) ewChangeMap.set(c.target, c);
+    }
+
+    // Read category changes from entity_scan step (P8 T1)
+    const categoryChanges = (entityStep?.output?.category_changes as Array<{ entity: string; from: string; to: string }>) ?? [];
+    const categoryChangeMap = new Map(categoryChanges.map(c => [c.entity.toLowerCase(), c]));
+
+    // Read description changes from entity_scan step (P8 T6)
+    const descriptionChanges = (entityStep?.output?.description_changes as Array<{ entity: string; from: string | null; to: string | null }>) ?? [];
+    const descriptionChangeMap = new Map(descriptionChanges.map(c => [c.entity.toLowerCase(), c]));
+
+    // Read note moves from note_moves step (P8 T4)
+    const movesStep = pipeline?.steps.find(s => s.name === 'note_moves');
+    const moveRenames = (movesStep?.output?.renames as Array<{ oldPath: string; newPath: string }>) ?? [];
+    const moveMap = new Map<string, { oldFolder: string; newFolder: string }>();
+    for (const r of moveRenames) {
+      const entityName = (r.newPath.split('/').pop() ?? r.newPath).replace(/\.md$/, '');
+      const oldFolder = r.oldPath.includes('/') ? r.oldPath.split('/').slice(0, -1).join('/') : '';
+      const newFolder = r.newPath.includes('/') ? r.newPath.split('/').slice(0, -1).join('/') : '';
+      if (oldFolder !== newFolder) moveMap.set(entityName.toLowerCase(), { oldFolder, newFolder });
+    }
+
+    // Read unwikified mentions from wikilink_check step
+    const mentionResults = (wlStep?.output.mentions as Array<{ file: string; entities: string[] }>) ?? [];
+    const mentionMap = new Map<string, string>(); // entity name → first file
+    for (const m of mentionResults) {
+      for (const entity of m.entities) {
+        if (!mentionMap.has(entity.toLowerCase())) {
+          mentionMap.set(entity.toLowerCase(), m.file);
+        }
+      }
+    }
+
+    // tracked: entity → files[] (lowercase keys for case-insensitive lookup)
+    const trackedMap = new Map<string, string[]>();
+    for (const t of tracked) {
+      for (const e of t.entities ?? []) {
+        const key = e.toLowerCase();
+        const existing = trackedMap.get(key) ?? [];
+        existing.push(t.file);
+        trackedMap.set(key, existing);
+      }
+    }
+
+    // Collect all entity names with case-insensitive dedup (first-seen casing wins)
+    const canonicalNames = new Map<string, string>(); // lowercase → display name
+    const addName = (name: string) => {
+      const key = name.toLowerCase();
+      if (!canonicalNames.has(key)) canonicalNames.set(key, name);
+    };
+    for (const e of addedRaw) addName(typeof e === 'string' ? e : e.name);
+    for (const e of removedRaw) addName(typeof e === 'string' ? e : e.name);
+    for (const d of diffs) addName(d.entity);
+    for (const t of tracked) for (const e of t.entities ?? []) addName(e);
+    for (const r of removals) addName(r.entity);
+    for (const diff of linkDiffs) {
+      for (const name of diff.added) addName(name);
+      for (const name of diff.removed) addName(name);
+    }
+    for (const c of categoryChanges) addName(c.entity);
+    for (const c of descriptionChanges) addName(c.entity);
+    for (const m of mentionResults) {
+      for (const entity of m.entities) addName(entity);
+    }
+    // Survived entities: these only fire when removals also happened (the user was
+    // curating links), so they're always meaningful retention signals worth showing.
+    for (const s of survivedRaw) addName(s.entity);
+    for (const r of moveRenames) {
+      const entityName = (r.newPath.split('/').pop() ?? r.newPath).replace(/\.md$/, '');
+      addName(entityName);
+    }
+    for (const c of ewChanges) addName(c.target);
+    // Lookup maps
+    const addedMap = new Map<string, string | undefined>();
+    for (const e of addedRaw) {
+      const name = typeof e === 'string' ? e : e.name;
+      const cat = typeof e === 'string' ? undefined : e.category;
+      addedMap.set(name, cat);
+    }
+    const removedSet = new Set(removedRaw.map(e => typeof e === 'string' ? e : e.name));
+    const diffMap = new Map(diffs.map(d => [d.entity, d]));
+
+    const removalMap = new Map(removals.map(r => [r.entity, r]));
+
+    const suppressedMap = new Map(d?.suppressed.map(s => [s.entity, s]) ?? []);
+    const boostMap = new Map<string, { label: string; boost: number; accuracy: number; total: number }>();
+    if (d) {
+      for (const tier of d.boost_tiers) {
+        for (const e of tier.entities) {
+          boostMap.set(e.entity, { label: tier.label, boost: tier.boost, accuracy: e.accuracy, total: e.total });
+        }
+      }
+    }
+    const learningMap = new Map(d?.learning.map(l => [l.entity, l]) ?? []);
+
+    // Build journeys
+    const journeys: EntityJourney[] = [];
+    for (const name of canonicalNames.values()) {
+      const journey: EntityJourney = {
+        name,
+        isDead: this.deadLinkSubjects.has(name),
+        category: addedMap.get(name),
+        gates: {},
+      };
+
+      if (addedMap.has(name)) {
+        journey.gates.discover = { action: 'added' };
+      } else if (removedSet.has(name)) {
+        journey.gates.discover = { action: 'removed' };
+      } else {
+        const catChange = categoryChangeMap.get(name.toLowerCase());
+        if (catChange) {
+          journey.gates.discover = { action: 'category_changed', detail: `${catChange.from} → ${catChange.to}` };
+        } else if (descriptionChangeMap.has(name.toLowerCase())) {
+          journey.gates.discover = { action: 'description_changed', detail: 'description updated' };
+        } else {
+          const move = moveMap.get(name.toLowerCase());
+          if (move) {
+            journey.gates.discover = { action: 'moved', detail: `${move.oldFolder || '(root)'} → ${move.newFolder || '(root)'}` };
+          }
+        }
+      }
+
+      // Hub score data → attach to discover
+      const diff = diffMap.get(name);
+      if (diff && diff.after !== diff.before) {
+        if (journey.gates.discover) {
+          // Augment existing discover action with hub data
+          journey.gates.discover.hubDelta = diff.after - diff.before;
+          journey.gates.discover.hubBefore = diff.before;
+          journey.gates.discover.hubAfter = diff.after;
+        } else {
+          // Hub change is the primary discover action
+          journey.gates.discover = {
+            action: 'hub_change',
+            detail: `hub ${diff.before} → ${diff.after}`,
+            hubDelta: diff.after - diff.before,
+            hubBefore: diff.before,
+            hubAfter: diff.after,
+          };
+        }
+      }
+
+      // Unwikified mentions → suggest gate
+      const mentionFile = mentionMap.get(name.toLowerCase());
+      if (mentionFile) {
+        journey.gates.suggest = { action: 'mention', file: mentionFile };
+      }
+
+      const files = trackedMap.get(name.toLowerCase());
+      const diffAddFiles = linkAddMap.get(name.toLowerCase());
+      if (files && files.length > 0) {
+        journey.gates.link = { action: 'tracked', files };
+      } else if (diffAddFiles && diffAddFiles.length > 0) {
+        journey.gates.link = { action: 'tracked', files: diffAddFiles };
+      }
+
+      const removal = removalMap.get(name);
+      const diffRemoveFile = linkRemoveMap.get(name.toLowerCase());
+      if (removal) {
+        journey.gates.learn = { action: 'removed', file: removal.file };
+      } else if (diffRemoveFile) {
+        journey.gates.learn = { action: 'removed', file: diffRemoveFile };
+      } else {
+        const survived = survivedMap.get(name.toLowerCase());
+        if (survived) {
+          journey.gates.learn = { action: 'survived', file: survived.file, count: survived.count };
+        }
+      }
+
+      if (!journey.gates.learn) {
+        const ewChange = ewChangeMap.get(name.toLowerCase());
+        if (ewChange) {
+          const signals: string[] = [];
+          if (ewChange.edits_survived > 0) signals.push(`${ewChange.edits_survived} edits survived`);
+          if (ewChange.co_sessions > 0) signals.push(`${ewChange.co_sessions} co-sessions`);
+          if (ewChange.source_access > 0) signals.push(`${ewChange.source_access} reads`);
+          journey.gates.learn = {
+            action: 'weight_changed',
+            delta: ewChange.delta,
+            new_weight: ewChange.new_weight,
+            signal: signals.join(', ') || 'recalculated',
+          };
+        }
+      }
+
+      if (suppressedMap.has(name)) {
+        const s = suppressedMap.get(name)!;
+        journey.gates.tune = {
+          action: 'suppressed',
+          detail: `${Math.round(s.false_positive_rate * 100)}% false positive`,
+          falsePositiveRate: s.false_positive_rate,
+        };
+      } else if (boostMap.has(name)) {
+        const b = boostMap.get(name)!;
+        journey.gates.tune = {
+          action: 'boosted',
+          detail: `${Math.round(b.accuracy * 100)}% accuracy, ${b.total} samples — ${b.label}`,
+          accuracy: b.accuracy,
+          total: b.total,
+          boost: b.boost,
+          tierLabel: b.label,
+        };
+      } else if (learningMap.has(name)) {
+        const l = learningMap.get(name)!;
+        journey.gates.tune = {
+          action: 'learning',
+          detail: `${Math.round(l.accuracy * 100)}% accuracy, ${l.total}/5 samples`,
+          accuracy: l.accuracy,
+          total: l.total,
+        };
+      }
+
+      journeys.push(journey);
+    }
+
+    // Sort: dead links last, then alpha
+    journeys.sort((a, b) => {
+      if (a.isDead !== b.isDead) return a.isDead ? 1 : -1;
+      return a.name.localeCompare(b.name);
+    });
+
+    return journeys;
+  }
+
   private fillContent(): void {
     if (!this.skeletonBuilt) return;
 
-    this.fillHeader();
+    const journeys = this.buildEntityJourneys();  // compute first
+
+    this.fillHeader(journeys);  // pass journeys for active count
     this.fillHistory();
 
-    for (const stage of STAGES) {
-      const els = this.gateEls.get(stage.id);
-      if (!els) continue;
-      els.summary.empty();
-      els.items.empty();
-      switch (stage.id) {
-        case 'discover': this.renderDiscoverGate(els.summary, els.items); break;
-        case 'suggest': this.renderSuggestGate(els.summary, els.items); break;
-        case 'apply': this.renderApplyGate(els.summary, els.items); break;
-        case 'learn': this.renderLearnGate(els.summary, els.items); break;
-        case 'adapt': this.renderAdaptGate(els.summary, els.items); break;
-      }
+    if (this.waterfallEl) {
+      this.waterfallEl.empty();
+      this.renderWaterfall(this.waterfallEl, journeys);
     }
 
     this.fillVaultScore();
@@ -383,7 +781,7 @@ export class FeedbackDashboardView extends ItemView {
   // Header — commit-centric
   // =========================================================================
 
-  private fillHeader(): void {
+  private fillHeader(journeys?: EntityJourney[]): void {
     if (!this.headerEl) return;
     this.headerEl.empty();
 
@@ -397,14 +795,23 @@ export class FeedbackDashboardView extends ItemView {
     const filename = paths.length > 0
       ? paths.length === 1 ? this.shortenPath(paths[0]) : `${paths.length} files`
       : 'vault';
-    this.headerEl.createDiv('flywheel-pipeline-title').setText(filename);
+    const titleEl = this.headerEl.createDiv('flywheel-pipeline-title');
+    titleEl.setText(filename);
+    if (paths.length > 1) {
+      titleEl.title = paths.map(p => this.shortenPath(p)).join('\n');
+    }
 
     const ago = this.formatTimestampAgo(pipeline.timestamp);
     const subjectCount = this.pipelineSubjects.length;
     const dur = Math.round(pipeline.duration_ms);
 
+    const activeCount = journeys?.filter(j =>
+      j.gates.discover || j.gates.suggest || j.gates.link || j.gates.learn || j.gates.tune
+    ).length ?? 0;
+
     const parts: string[] = [ago];
-    if (subjectCount > 0) parts.push(`${subjectCount} entities`);
+    if (activeCount > 0) parts.push(`${activeCount} active`);
+    else if (subjectCount > 0) parts.push(`${subjectCount} entities`);
     parts.push(`${dur}ms`);
 
     this.subtitleEl = this.headerEl.createDiv('flywheel-pipeline-subtitle');
@@ -431,7 +838,11 @@ export class FeedbackDashboardView extends ItemView {
       const fileText = paths.length === 0 ? 'vault'
         : paths.length === 1 ? this.shortenPath(paths[0])
         : `${paths.length} files`;
-      item.createSpan('flywheel-history-item-file').setText(fileText);
+      const fileSpan = item.createSpan('flywheel-history-item-file');
+      fileSpan.setText(fileText);
+      if (paths.length > 1) {
+        fileSpan.title = paths.map(fp => this.shortenPath(fp)).join('\n');
+      }
       item.createSpan('flywheel-history-item-time').setText(this.formatTimestampAgo(p.timestamp));
 
       const idx = i;
@@ -440,6 +851,288 @@ export class FeedbackDashboardView extends ItemView {
         try { await this.buildSubjects(); } catch { /* use existing subjects */ }
         this.fillContent();
       });
+    }
+  }
+
+  // =========================================================================
+  // Waterfall renderer — animates entity pills through gate stages
+  // =========================================================================
+
+  private renderWaterfall(container: HTMLElement, journeys: EntityJourney[]): void {
+    if (journeys.length === 0) {
+      // No entity activity — show gate structure with summaries, no pills
+      const quiet = container.createDiv('flywheel-waterfall-quiet');
+      for (const stage of STAGES) {
+        const gateDiv = quiet.createDiv('flywheel-waterfall-gate');
+        const bar = gateDiv.createDiv('flywheel-waterfall-gate-bar');
+        bar.title = GATE_TOOLTIPS[stage.id] ?? '';
+        const iconEl = bar.createDiv('flywheel-gate-icon');
+        setIcon(iconEl, stage.icon);
+        bar.createSpan('flywheel-waterfall-gate-name').setText(stage.name.toUpperCase());
+        bar.createSpan('flywheel-waterfall-gate-desc').setText(stage.desc);
+        bar.createSpan('flywheel-waterfall-gate-summary').setText(
+          this.buildGateSummary(stage.id, [], this.getActivePipeline())
+        );
+      }
+      return;
+    }
+
+    const wf = container.createDiv('flywheel-waterfall');
+
+    // Spawn row
+    wf.createDiv('flywheel-waterfall-start');
+
+    // Gate shelves
+    const gateEls: HTMLElement[] = [];
+    for (let gi = 0; gi < STAGES.length; gi++) {
+      const stage = STAGES[gi];
+      const gateDiv = wf.createDiv('flywheel-waterfall-gate');
+      gateDiv.dataset.stage = stage.id;
+      gateEls.push(gateDiv);
+
+      // Gate bar: icon + label + desc + summary text
+      const bar = gateDiv.createDiv('flywheel-waterfall-gate-bar');
+      bar.title = GATE_TOOLTIPS[stage.id] ?? '';
+      const iconEl = bar.createDiv('flywheel-gate-icon');
+      setIcon(iconEl, stage.icon);
+      bar.createSpan('flywheel-waterfall-gate-name').setText(stage.name.toUpperCase());
+      bar.createSpan('flywheel-waterfall-gate-desc').setText(stage.desc);
+      bar.createSpan('flywheel-waterfall-gate-summary').setText(
+        this.buildGateSummary(stage.id, journeys, this.getActivePipeline())
+      );
+
+      // Shelf: ghost pills for entities that had activity at this gate
+      const shelf = gateDiv.createDiv('flywheel-waterfall-shelf');
+      for (let ji = 0; ji < journeys.length; ji++) {
+        const journey = journeys[ji];
+        const gateAction = this.getGateAction(stage.id, journey);
+        if (!gateAction) continue;
+
+        const ghostColor = pillColor(journey.name, journey.isDead);
+        const ghost = shelf.createSpan('flywheel-pill-ghost');
+        ghost.style.background = ghostColor.ghost;
+        ghost.style.color = PILL_TEXT;
+        ghost.setText(journey.name);
+        ghost.title = gateAction.tooltip;
+
+        const badge = ghost.createSpan('flywheel-pill-badge');
+        badge.setText(gateAction.badge);
+
+        // Delay: pill at index ji reaches gate gi at gatePercent% of total duration (2s)
+        const ghostDelay = ji * 0.025 + 2 * (GATE_PERCENTS[gi] / 100);
+        ghost.style.setProperty('--ghost-delay', `${ghostDelay}s`);
+      }
+    }
+
+    // Falling pills — one per active entity journey, drops through the waterfall
+    for (let ji = 0; ji < journeys.length; ji++) {
+      const journey = journeys[ji];
+      const color = pillColor(journey.name, journey.isDead);
+      const pill = wf.createSpan('flywheel-pill is-falling');
+      pill.style.background = color.pill;
+      pill.style.color = PILL_TEXT;
+      pill.setText(journey.name);
+      pill.style.top = '0px';
+      pill.style.left = `${8 + (hashCode(journey.name) % 40)}%`;
+      let pillTooltip = journey.name;
+      for (const stage of STAGES) {
+        const action = this.getGateAction(stage.id, journey);
+        if (action) { pillTooltip = action.tooltip; break; }
+      }
+      pill.title = pillTooltip;
+      pill.addEventListener('click', () => this.openEntityDrilldown(journey.name));
+    }
+
+    // After layout, set CSS custom properties for gate positions and start animation
+    requestAnimationFrame(() => {
+      const wfRect = wf.getBoundingClientRect();
+      const wfTop = wfRect.top;
+
+      gateEls.forEach((gate, i) => {
+        const y = gate.getBoundingClientRect().top - wfTop;
+        wf.style.setProperty(`--gate-${i + 1}-y`, `${y}px`);
+      });
+      wf.style.setProperty('--floor-y', `${wfRect.height}px`);
+
+      const fallingPills = wf.querySelectorAll('.flywheel-pill.is-falling');
+      fallingPills.forEach((pill, i) => {
+        const el = pill as HTMLElement;
+        el.style.setProperty('--pill-delay', `${i * 0.025}s`);
+        el.style.setProperty('--pill-wobble', String(0.7 + (hashCode(el.textContent ?? '') % 100) / 167));
+      });
+
+      wf.addClass('is-animating');
+    });
+  }
+
+  private getGateAction(stageId: string, journey: EntityJourney): { badge: string; tooltip: string } | null {
+    const name = journey.name;
+    switch (stageId) {
+      case 'discover': {
+        const g = journey.gates.discover;
+        if (!g) return null;
+        if (g.action === 'added') return { badge: '+1', tooltip: `"${name}" added to entity index — will be suggested as a wikilink` };
+        if (g.action === 'removed') return { badge: '-1', tooltip: `"${name}" removed from entity index` };
+        if (g.action === 'moved') return { badge: '→', tooltip: `"${name}" moved: ${g.detail ?? ''}` };
+        if (g.action === 'description_changed') return { badge: '✎', tooltip: `"${name}" description updated` };
+        if (g.action === 'hub_change') {
+          const sign = (g.hubDelta ?? 0) >= 0 ? '+' : '';
+          return { badge: `${sign}${g.hubDelta}`, tooltip: `"${name}" hub score ${g.hubBefore} → ${g.hubAfter} — connection change` };
+        }
+        return { badge: '~', tooltip: `"${name}" category changed: ${g.detail ?? ''}` };
+      }
+      case 'suggest': {
+        const g = journey.gates.suggest;
+        if (!g) return null;
+        return { badge: '1', tooltip: `"${name}" mentioned in ${this.shortenPath(g.file)} but not yet [[wikilinked]]` };
+      }
+      case 'link': {
+        const g = journey.gates.link;
+        if (!g) return null;
+        const badge = `✓${g.files.length > 1 ? ` ×${g.files.length}` : ''}`;
+        const fileList = g.files.map(f => this.shortenPath(f)).join(', ');
+        return { badge, tooltip: `"${name}" — [[wikilink]] inserted in ${fileList}. Now tracked for retention feedback.` };
+      }
+      case 'learn': {
+        const g = journey.gates.learn;
+        if (!g) return null;
+        if (g.action === 'removed') {
+          const file = this.shortenPath(g.file);
+          return { badge: 'removed', tooltip: `"${name}" wikilink removed from ${file} — negative feedback recorded → lowers trust score and future ranking` };
+        }
+        if (g.action === 'weight_changed') {
+          const sign = g.delta > 0 ? '+' : '';
+          return {
+            badge: `${sign}${g.delta.toFixed(1)}w`,
+            tooltip: `"${name}" edge weight → ${g.new_weight.toFixed(1)} (${g.signal}) — read activity strengthening this connection`,
+          };
+        }
+        // survived
+        return {
+          badge: `+${g.count}`,
+          tooltip: `"${name}" survived ${g.count} edit${g.count === 1 ? '' : 's'} in ${this.shortenPath(g.file)} — positive retention signal → boosts trust score`,
+        };
+      }
+      case 'tune': {
+        const g = journey.gates.tune;
+        if (!g) return null;
+        if (g.action === 'suppressed') {
+          const pct = Math.round((g.falsePositiveRate ?? 0) * 100);
+          return {
+            badge: `${pct}% FP`,
+            tooltip: `"${name}" suppressed — ${pct}% false positive rate → will not be suggested until feedback improves`,
+          };
+        }
+        if (g.action === 'boosted') {
+          const pct = Math.round((g.accuracy ?? 0) * 100);
+          const sign = (g.boost ?? 0) > 0 ? '+' : '';
+          return {
+            badge: `${pct}%`,
+            tooltip: `"${name}" ${sign}${g.boost} boost — ${g.tierLabel} tier: ${pct}% accuracy over ${g.total} samples → will rank ${(g.boost ?? 0) > 0 ? 'higher' : 'lower'} in future suggestions`,
+          };
+        }
+        // learning
+        const pct = Math.round((g.accuracy ?? 0) * 100);
+        const remaining = Math.max(1, 5 - (g.total ?? 0));
+        return {
+          badge: `${g.total}/5`,
+          tooltip: `"${name}" calibrating: ${pct}% accuracy over ${g.total} samples. ${remaining} more needed → tier assignment will adjust suggestion ranking`,
+        };
+      }
+      default: return null;
+    }
+  }
+
+  private buildGateSummary(stageId: string, journeys: EntityJourney[], pipeline?: PipelineRecord): string {
+    switch (stageId) {
+      case 'discover': {
+        const added = journeys.filter(j => j.gates.discover?.action === 'added').length;
+        const removed = journeys.filter(j => j.gates.discover?.action === 'removed').length;
+        const changed = journeys.filter(j => j.gates.discover?.action === 'category_changed').length;
+        const moved = journeys.filter(j => j.gates.discover?.action === 'moved').length;
+        // dead count is already filtered through looksLikeEntityName via deadLinkSubjects
+        const dead = journeys.filter(j => j.isDead).length;
+        const parts: string[] = [];
+        if (added) parts.push(`+${added}`);
+        if (removed) parts.push(`-${removed}`);
+        if (changed) parts.push(`${changed} reclassified`);
+        if (moved) parts.push(`${moved} moved`);
+        if (dead) parts.push(`${dead} unresolved`);
+        const hubChanges = journeys.filter(j => j.gates.discover?.action === 'hub_change');
+        if (hubChanges.length > 0) {
+          const up = hubChanges.filter(j => (j.gates.discover?.hubDelta ?? 0) > 0).length;
+          const down = hubChanges.filter(j => (j.gates.discover?.hubDelta ?? 0) < 0).length;
+          if (up) parts.push(`↑${up} connections`);
+          if (down) parts.push(`↓${down} connections`);
+        }
+        if (parts.length) return parts.join(' ');
+        // Fallback: show total from step data (filter dead links through heuristic)
+        const entityStep = pipeline?.steps.find(s => s.name === 'entity_scan');
+        const flStep = pipeline?.steps.find(s => s.name === 'forward_links');
+        const entityCount = (entityStep?.output?.entity_count as number) ?? 0;
+        const flLinks = (flStep?.output?.links as Array<{ dead?: string[] }>) ?? [];
+        const filteredDead = flLinks.reduce(
+          (n, entry) => n + (entry.dead ?? []).filter(looksLikeEntityName).length, 0,
+        );
+        if (entityCount && filteredDead) return `${entityCount} indexed · ${filteredDead} unresolved`;
+        if (entityCount) return `${entityCount} indexed`;
+        return 'scanned';
+      }
+      case 'suggest': {
+        const mentions = journeys.filter(j => j.gates.suggest).length;
+        if (!mentions) {
+          const wlStep = pipeline?.steps.find(s => s.name === 'wikilink_check');
+          const mentionData = wlStep?.output?.mentions as Array<{ file: string; entities: string[] }> | undefined;
+          const totalMentions = mentionData?.reduce((s, m) => s + m.entities.length, 0) ?? 0;
+          if (totalMentions > 0) return `${totalMentions} mentions`;
+          return 'no mentions';
+        }
+        return `${mentions} mention${mentions !== 1 ? 's' : ''}`;
+      }
+      case 'link': {
+        const tracked = journeys.filter(j => j.gates.link?.action === 'tracked').length;
+        if (tracked) return `${tracked} linked`;
+        const wlStep = pipeline?.steps.find(s => s.name === 'wikilink_check');
+        if (wlStep && !wlStep.skipped) return 'no mentions';
+        return 'skipped';
+      }
+      case 'learn': {
+        const survived = journeys.filter(j => j.gates.learn?.action === 'survived').length;
+        const removed  = journeys.filter(j => j.gates.learn?.action === 'removed').length;
+        const weighted = journeys.filter(j => j.gates.learn?.action === 'weight_changed').length;
+        if (survived || removed || weighted) {
+          const parts: string[] = [];
+          if (survived) parts.push(`${survived} survived`);
+          if (removed) parts.push(`${removed} removed`);
+          if (weighted) parts.push(`${weighted} reweighted`);
+          return parts.join(', ');
+        }
+        const fbStep = pipeline?.steps.find(s => s.name === 'implicit_feedback');
+        if (fbStep && !fbStep.skipped) return 'no link changes';
+        return 'skipped';
+      }
+      case 'tune': {
+        const adapted = journeys.filter(j => j.gates.tune).length;
+        if (adapted) {
+          const boosted = journeys.filter(j => j.gates.tune?.action === 'boosted').length;
+          const suppressed = journeys.filter(j => j.gates.tune?.action === 'suppressed').length;
+          const learning = journeys.filter(j => j.gates.tune?.action === 'learning').length;
+          const parts: string[] = [];
+          if (boosted) parts.push(`${boosted} trusted`);
+          if (suppressed) parts.push(`${suppressed} suppressed`);
+          if (learning) parts.push(`${learning} calibrating`);
+          return parts.join(', ');
+        }
+        const d = this.dashboardData;
+        if (d) {
+          const total = (d.suppressed?.length ?? 0)
+            + (d.boost_tiers?.reduce((n, t) => n + t.entities.length, 0) ?? 0)
+            + (d.learning?.length ?? 0);
+          if (total) return `${total} in trust db`;
+        }
+        return 'calibrating';
+      }
+      default: return '';
     }
   }
 
@@ -462,9 +1155,20 @@ export class FeedbackDashboardView extends ItemView {
 
     const nameEl = item.createDiv('flywheel-gate-item-name');
     if (entityClickable) {
-      const link = nameEl.createSpan('flywheel-viz-entity-link');
-      link.setText(name);
-      link.dataset.entity = entityClickable;
+      // Separate entity link from any suffix (e.g. "entity in file.md")
+      const idx = name.indexOf(entityClickable);
+      if (idx >= 0) {
+        if (idx > 0) nameEl.appendText(name.slice(0, idx));
+        const link = nameEl.createSpan('flywheel-viz-entity-link');
+        link.setText(entityClickable);
+        link.dataset.entity = entityClickable;
+        const after = name.slice(idx + entityClickable.length);
+        if (after) nameEl.appendText(after);
+      } else {
+        const link = nameEl.createSpan('flywheel-viz-entity-link');
+        link.setText(name);
+        link.dataset.entity = entityClickable;
+      }
     } else {
       nameEl.setText(name);
     }
@@ -502,7 +1206,7 @@ export class FeedbackDashboardView extends ItemView {
   }
 
   // =========================================================================
-  // DISCOVER — entities added/removed + pass-through for existing subjects
+  // DISCOVER — @deprecated data extraction only, see renderWaterfall()
   // =========================================================================
 
   private renderDiscoverGate(summaryEl: HTMLElement, itemsEl: HTMLElement): void {
@@ -572,7 +1276,7 @@ export class FeedbackDashboardView extends ItemView {
   }
 
   // =========================================================================
-  // SUGGEST — hub score diffs, separating primary subjects from ripple effects
+  // SUGGEST — @deprecated data extraction only, see renderWaterfall()
   // =========================================================================
 
   private renderSuggestGate(summaryEl: HTMLElement, itemsEl: HTMLElement): void {
@@ -639,7 +1343,7 @@ export class FeedbackDashboardView extends ItemView {
   }
 
   // =========================================================================
-  // APPLY — auto-wikilinks tracked, with pass-through for other subjects
+  // LINK (was APPLY) — @deprecated data extraction only, see renderWaterfall()
   // =========================================================================
 
   private renderApplyGate(summaryEl: HTMLElement, itemsEl: HTMLElement): void {
@@ -655,7 +1359,7 @@ export class FeedbackDashboardView extends ItemView {
         for (const entity of t.entities) {
           this.createGateItem(
             itemsEl, '\u2713', `${entity} in ${shortFile}`, '+1', 'is-positive',
-            `Auto-wikilink tracked in ${shortFile}`, entity);
+            `[[wikilink]] inserted in ${shortFile}`, entity);
           trackedNames.add(entity);
           total++;
         }
@@ -681,7 +1385,7 @@ export class FeedbackDashboardView extends ItemView {
   }
 
   // =========================================================================
-  // LEARN — feedback signals, with pass-through for other subjects
+  // LEARN — @deprecated data extraction only, see renderWaterfall()
   // =========================================================================
 
   private renderLearnGate(summaryEl: HTMLElement, itemsEl: HTMLElement): void {
@@ -719,7 +1423,7 @@ export class FeedbackDashboardView extends ItemView {
   }
 
   // =========================================================================
-  // ADAPT — trust status for all pipeline subjects
+  // TUNE (was ADAPT) — @deprecated data extraction only, see renderWaterfall()
   // =========================================================================
 
   private renderAdaptGate(summaryEl: HTMLElement, itemsEl: HTMLElement): void {
@@ -790,6 +1494,19 @@ export class FeedbackDashboardView extends ItemView {
       if (deadCount > 0) parts.push(`${deadCount} dead`);
       summaryEl.setText(parts.join(', '));
     }
+
+    // Edge weight confidence stats
+    const ewStep = this.getStep('edge_weights');
+    if (ewStep && !ewStep.skipped) {
+      const totalWeighted = (ewStep.output.total_weighted as number) ?? 0;
+      const avgWeight = (ewStep.output.avg_weight as number) ?? 0;
+      const strongCount = (ewStep.output.strong_count as number) ?? 0;
+      if (totalWeighted > 0) {
+        this.createGateItem(itemsEl, '⚖️',
+          `Edge confidence: ${totalWeighted} weighted links · avg ${avgWeight.toFixed(1)} · ${strongCount} strong (>3.0)`,
+          '—', 'is-neutral', 'Edge weight distribution across note links');
+      }
+    }
   }
 
   // =========================================================================
@@ -825,7 +1542,15 @@ export class FeedbackDashboardView extends ItemView {
     addStat('notes', (h?.note_count ?? 0).toLocaleString());
 
     if (d) {
-      addStat('accuracy', `${Math.round(d.overall_accuracy * 100)}%`);
+      const accText = d.total_feedback > 0
+        ? `${Math.round(d.overall_accuracy * 100)}%`
+        : '—';
+      const accStat = row.createSpan('flywheel-score-stat');
+      accStat.title = d.total_feedback > 0
+        ? `${d.total_correct} correct out of ${d.total_feedback} feedback events`
+        : 'No feedback recorded yet — delete an auto-inserted [[wikilink]] to generate the first signal';
+      accStat.createSpan('flywheel-score-stat-value').setText(accText);
+      accStat.createSpan('flywheel-score-stat-label').setText('accuracy');
       const trusted = d.boost_tiers.reduce((sum, t) => sum + (t.boost > 0 ? t.entities.length : 0), 0);
       if (trusted > 0) addStat('trusted', trusted.toLocaleString());
     }
@@ -977,9 +1702,17 @@ export class FeedbackDashboardView extends ItemView {
         return r.length > 0 ? `${r.length} entries` : 'No feedback';
       })() },
       { icon: 'sliders-horizontal', label: 'Adapted', detail: (() => {
-        if (this.dashboardData?.suppressed.some(s => s.entity === entityName)) return 'Suppressed';
-        const tier = this.dashboardData?.boost_tiers.find(t => t.entities.some(e => e.entity === entityName));
-        return tier ? `${tier.label} (+${tier.boost})` : 'Neutral';
+        const d = this.dashboardData;
+        if (!d) return 'No data';
+        const supp = d.suppressed.find(s => s.entity === entityName);
+        if (supp) return `Suppressed (${Math.round(supp.false_positive_rate * 100)}% FP)`;
+        for (const tier of d.boost_tiers) {
+          const e = tier.entities.find(e => e.entity === entityName);
+          if (e) return `${Math.round(e.accuracy * 100)}% accuracy, ${e.total} samples — ${tier.label}`;
+        }
+        const learn = d.learning.find(l => l.entity === entityName);
+        if (learn) return `${Math.round(learn.accuracy * 100)}% accuracy, ${learn.total}/5 samples`;
+        return 'Neutral';
       })() },
     ];
 
@@ -1138,6 +1871,10 @@ export class FeedbackDashboardView extends ItemView {
     if (this.healthUnsub) {
       this.healthUnsub();
       this.healthUnsub = null;
+    }
+    if (this.feedbackUnsub) {
+      this.feedbackUnsub();
+      this.feedbackUnsub = null;
     }
   }
 }

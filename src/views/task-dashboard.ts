@@ -58,6 +58,7 @@ export class TaskDashboardView extends ItemView {
   private cacheReady = false;
   private healthUnsub: (() => void) | null = null;
   private collapsedFolders = new Map<string, boolean>();
+  private showUndated = true;
 
   constructor(leaf: WorkspaceLeaf, mcpClient: FlywheelMcpClient) {
     super(leaf);
@@ -170,8 +171,11 @@ export class TaskDashboardView extends ItemView {
     const header = container.createDiv('flywheel-task-header');
     const filters = header.createDiv('flywheel-task-filters');
 
+    const openCount = (!this.showUndated && this.filter === 'open')
+      ? this.tasks.filter(t => t.due_date != null).length
+      : this.counts.open;
     const filterOptions: { label: string; value: StatusFilter; count?: number }[] = [
-      { label: 'Open', value: 'open', count: this.counts.open },
+      { label: 'Open', value: 'open', count: openCount },
       { label: 'Upcoming', value: 'upcoming', count: this.counts.upcoming },
       { label: 'Done', value: 'completed', count: this.counts.completed },
       { label: 'All', value: 'all' },
@@ -233,16 +237,36 @@ export class TaskDashboardView extends ItemView {
       });
     }
 
+    // Undated toggle (only relevant for Open view)
+    if (this.filter === 'open') {
+      const undatedBtn = sorts.createEl('button', {
+        cls: `flywheel-task-sort-btn${this.showUndated ? ' is-active' : ''}`,
+      });
+      const undatedIcon = undatedBtn.createSpan('flywheel-task-sort-dir');
+      setIcon(undatedIcon, 'calendar-off');
+      undatedBtn.setAttribute('aria-label', this.showUndated ? 'Hide undated tasks' : 'Show undated tasks');
+      undatedBtn.addEventListener('click', () => {
+        this.showUndated = !this.showUndated;
+        this.render();
+      });
+    }
+
     // Task list
     const list = container.createDiv('flywheel-task-list');
 
-    if (this.tasks.length === 0) {
+    // Apply undated filter for open view
+    let displayTasks = this.tasks;
+    if (this.filter === 'open' && !this.showUndated) {
+      displayTasks = displayTasks.filter(t => t.due_date != null);
+    }
+
+    if (displayTasks.length === 0) {
       const empty = list.createDiv('flywheel-task-empty');
-      empty.setText('No tasks found');
+      empty.setText(this.filter === 'open' && !this.showUndated ? 'No dated tasks' : 'No tasks found');
       return;
     }
 
-    const sortedTasks = this.sortTasks(this.tasks);
+    const sortedTasks = this.sortTasks(displayTasks);
     const groups = groupTasksByFolder(sortedTasks);
     for (const [folder, tasks] of groups) {
       this.renderFolder(list, folder, tasks);
