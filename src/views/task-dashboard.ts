@@ -58,7 +58,7 @@ export class TaskDashboardView extends ItemView {
   private cacheReady = false;
   private healthUnsub: (() => void) | null = null;
   private collapsedFolders = new Map<string, boolean>();
-  private showUndated = true;
+  private showUndated = false;
 
   constructor(leaf: WorkspaceLeaf, mcpClient: FlywheelMcpClient) {
     super(leaf);
