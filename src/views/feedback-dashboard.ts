@@ -89,10 +89,21 @@ function looksLikeEntityName(text: string): boolean {
   if (text.includes('[[') || text.includes(']]')) return false;
   if (text === text.toUpperCase() && text.length <= 5) return false;
 
+  // Reject path-style targets (e.g., "tech/flywheel/Graph-Quality-Validation")
+  if (text.includes('/')) return false;
+
+  // Reject targets containing tilde or equals (e.g., "~41 / realistic 35")
+  if (text.includes('~') || text.includes('=')) return false;
+
   const PROSE_OPENERS = new Set([
     'if', 'and', 'so', 'are', 'is', 'of', 'the', 'but', 'for', 'from',
     'or', 'at', 'in', 'on', 'a', 'an', 'hey', 'as', 'with', 'by', 'to',
     'not', 'do', 'did',
+    // Agent action verbs, interrogatives, determiners, quantifiers
+    'does', 'how', 'your', 'my', 'its', 'their', 'our', 'this', 'that',
+    'what', 'when', 'where', 'why', 'which', 'who', 'whom',
+    'created', 'updated', 'deleted', 'added', 'removed', 'fixed',
+    'lots', 'many', 'some', 'all', 'no', 'none', 'every',
   ]);
   const firstWord = text.trim().split(/\s+/)[0].toLowerCase();
   if (PROSE_OPENERS.has(firstWord)) return false;
@@ -710,6 +721,7 @@ export class FeedbackDashboardView extends ItemView {
           action: 'suppressed',
           detail: `${Math.round(s.false_positive_rate * 100)}% false positive`,
           falsePositiveRate: s.false_positive_rate,
+          total: s.total,
         };
       } else if (boostMap.has(name)) {
         const b = boostMap.get(name)!;
@@ -1019,24 +1031,21 @@ export class FeedbackDashboardView extends ItemView {
         if (g.action === 'suppressed') {
           const pct = Math.round((g.falsePositiveRate ?? 0) * 100);
           return {
-            badge: `${pct}% FP`,
-            tooltip: `"${name}" suppressed — ${pct}% false positive rate → will not be suggested until feedback improves`,
+            badge: `Suppressed ${pct}% ×${g.total ?? '?'}`,
+            tooltip: `"${name}" suppressed — ${pct}% false positive rate over ${g.total ?? '?'} samples → will not be suggested until feedback improves`,
           };
         }
         if (g.action === 'boosted') {
           const pct = Math.round((g.accuracy ?? 0) * 100);
-          const sign = (g.boost ?? 0) > 0 ? '+' : '';
           return {
-            badge: `${pct}%`,
-            tooltip: `"${name}" ${sign}${g.boost} boost — ${g.tierLabel} tier: ${pct}% accuracy over ${g.total} samples → will rank ${(g.boost ?? 0) > 0 ? 'higher' : 'lower'} in future suggestions`,
+            badge: `${g.tierLabel} ${pct}% ×${g.total}`,
+            tooltip: `"${name}" ${g.tierLabel} tier: ${pct}% accuracy over ${g.total} samples → ${(g.boost ?? 0) > 0 ? `+${g.boost} boost, ranks higher` : `${g.boost} penalty, ranks lower`} in future suggestions`,
           };
         }
         // learning
-        const pct = Math.round((g.accuracy ?? 0) * 100);
-        const remaining = Math.max(1, 5 - (g.total ?? 0));
         return {
-          badge: `${g.total}/5`,
-          tooltip: `"${name}" calibrating: ${pct}% accuracy over ${g.total} samples. ${remaining} more needed → tier assignment will adjust suggestion ranking`,
+          badge: `Calibrating ${g.total}/5`,
+          tooltip: `"${name}" calibrating: ${Math.round((g.accuracy ?? 0) * 100)}% accuracy over ${g.total} samples. ${Math.max(1, 5 - (g.total ?? 0))} more needed → tier assignment will adjust suggestion ranking`,
         };
       }
       default: return null;
@@ -1459,7 +1468,7 @@ export class FeedbackDashboardView extends ItemView {
         const s = suppressedMap.get(name)!;
         this.createGateItem(itemsEl, '\uD83D\uDEAB', `${name}: suppressed`,
           '\u2014', 'is-negative',
-          `${Math.round(s.false_positive_rate * 100)}% false positive rate`, name);
+          `${Math.round(s.false_positive_rate * 100)}% false positive rate, ${s.total} samples`, name);
         shown++;
       } else if (boostMap.has(name)) {
         const b = boostMap.get(name)!;
