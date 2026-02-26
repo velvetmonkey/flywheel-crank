@@ -135,6 +135,8 @@ export interface McpHealthCheckResponse {
   embeddings_count?: number;
   tasks_ready?: boolean;
   tasks_building?: boolean;
+  watcher_state?: 'starting' | 'ready' | 'rebuilding' | 'dirty' | 'error';
+  watcher_pending?: number;
   recommendations: string[];
 }
 
@@ -496,6 +498,26 @@ export interface McpFeedbackDashboardResponse {
     topEntities?: Array<{ entity: string; suggestionCount: number; avgScore: number; passRate: number }>;
     feedbackTrend?: Array<{ day: string; count: number }>;
     suppressionChanges?: Array<{ entity: string; falsePositiveRate: number; updatedAt: string }>;
+    productionQuality?: {
+      survivalTrend: Array<{
+        week: string;
+        kept: number;
+        removed: number;
+        manualAdded: number;
+        survivalRate: number;
+      }>;
+      removalHotspots: Array<{
+        entity: string;
+        removals: number;
+        kept: number;
+        survivalRate: number;
+      }>;
+      recallGaps: Array<{
+        entity: string;
+        manualAdds: number;
+        wasSuggested: boolean;
+      }>;
+    };
   };
 }
 

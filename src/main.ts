@@ -372,6 +372,7 @@ export default class FlywheelCrankPlugin extends Plugin {
         : health.embeddings_ready ? `ready (${health.embeddings_count} embeddings)` : 'not built';
       const tasksLabel = health.tasks_building ? 'building...'
         : health.tasks_ready ? 'ready' : 'waiting';
+      const watcherLabel = health.watcher_state === 'rebuilding' ? 'processing...' : 'watching';
       const tooltip = [
         `Vault: ${health.note_count} notes · ${health.entity_count} entities · ${health.tag_count} tags`,
         '',
@@ -379,6 +380,7 @@ export default class FlywheelCrankPlugin extends Plugin {
         `Keyword search: ${fts5Label}`,
         `Semantic search: ${semanticLabel}`,
         `Task cache: ${tasksLabel}`,
+        `File watcher: ${watcherLabel}`,
       ].join('\n');
 
       // Still building secondary indexes
@@ -388,6 +390,12 @@ export default class FlywheelCrankPlugin extends Plugin {
       }
       if (health.embeddings_building) {
         this.setStatus(`embedding ${health.embeddings_count ?? 0} notes...`, true, tooltip);
+        return;
+      }
+
+      // Watcher is processing a batch — show spinner
+      if (health.watcher_state === 'rebuilding') {
+        this.setStatus('processing...', true, tooltip);
         return;
       }
 

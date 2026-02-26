@@ -4494,3 +4494,165 @@
   color: var(--text-muted);
   margin-bottom: 4px;
 }
+
+/* =========================================================================
+   Production Quality — survival chart, removal hotspots, recall gaps
+   ========================================================================= */
+
+.flywheel-quality-section {
+  padding: 8px 12px;
+}
+
+.flywheel-quality-chart {
+  display: flex;
+  align-items: flex-end;
+  gap: 6px;
+  height: 80px;
+  padding: 4px 0 0;
+}
+
+.flywheel-quality-chart-col {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  height: 100%;
+  position: relative;
+}
+
+.flywheel-quality-chart-bar {
+  width: 100%;
+  display: flex;
+  flex-direction: column-reverse;
+  border-radius: 3px 3px 0 0;
+  overflow: hidden;
+  margin-top: auto;
+}
+
+.flywheel-quality-seg {
+  width: 100%;
+  min-height: 1px;
+}
+
+.flywheel-quality-seg.is-kept {
+  background-color: var(--color-green);
+  opacity: 0.7;
+}
+
+.flywheel-quality-seg.is-removed {
+  background-color: var(--color-red);
+  opacity: 0.8;
+}
+
+.flywheel-quality-seg.is-manual {
+  background-color: var(--color-blue);
+  opacity: 0.7;
+}
+
+.flywheel-quality-chart-rate {
+  font-size: 10px;
+  color: var(--text-muted);
+  margin-bottom: 2px;
+  order: -1;
+}
+
+.flywheel-quality-chart-label {
+  font-size: 9px;
+  color: var(--text-faint);
+  margin-top: 2px;
+}
+
+.flywheel-quality-legend {
+  display: flex;
+  gap: 12px;
+  justify-content: center;
+  margin-top: 6px;
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.flywheel-quality-legend-item {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.flywheel-quality-legend-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 2px;
+}
+
+.flywheel-quality-legend-dot.is-kept {
+  background-color: var(--color-green);
+  opacity: 0.7;
+}
+
+.flywheel-quality-legend-dot.is-removed {
+  background-color: var(--color-red);
+  opacity: 0.8;
+}
+
+.flywheel-quality-legend-dot.is-manual {
+  background-color: var(--color-blue);
+  opacity: 0.7;
+}
+
+.flywheel-quality-tables {
+  display: flex;
+  gap: 12px;
+  margin-top: 8px;
+}
+
+.flywheel-quality-table-section {
+  flex: 1;
+  min-width: 0;
+}
+
+.flywheel-quality-table-title {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-muted);
+  margin-bottom: 4px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.flywheel-quality-table {
+  font-size: 12px;
+}
+
+.flywheel-quality-table-row {
+  display: grid;
+  grid-template-columns: 1fr auto auto auto;
+  gap: 8px;
+  padding: 2px 0;
+  align-items: center;
+}
+
+.flywheel-quality-table-row.is-header {
+  font-weight: 600;
+  color: var(--text-muted);
+  border-bottom: 1px solid var(--background-modifier-border);
+  padding-bottom: 4px;
+  margin-bottom: 2px;
+}
+
+.flywheel-quality-table-row .is-ok {
+  color: var(--color-green);
+}
+
+.flywheel-quality-table-row .is-poor {
+  color: var(--color-red);
+}
+
+.flywheel-quality-table-row .is-threshold {
+  color: var(--text-muted);
+  font-size: 11px;
+}
+
+.flywheel-quality-table-row .is-blind-spot {
+  color: var(--color-orange);
+  font-size: 11px;
+  font-weight: 600;
+}

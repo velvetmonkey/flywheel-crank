@@ -203,6 +203,7 @@ export class FeedbackDashboardView extends ItemView {
   private gateEls: Map<string, { summary: HTMLElement; items: HTMLElement }> = new Map();
   private waterfallEl: HTMLElement | null = null;
   private scoreEl: HTMLElement | null = null;
+  private qualityEl: HTMLElement | null = null;
 
   constructor(leaf: WorkspaceLeaf, mcpClient: FlywheelMcpClient) {
     super(leaf);
@@ -316,6 +317,7 @@ export class FeedbackDashboardView extends ItemView {
     }
 
     lc.createDiv('flywheel-pipeline-connector');
+    this.qualityEl = lc.createDiv('flywheel-quality-section');
     this.scoreEl = lc.createDiv('flywheel-pipeline-score');
 
     this.skeletonBuilt = true;
@@ -768,6 +770,7 @@ export class FeedbackDashboardView extends ItemView {
       this.renderWaterfall(this.waterfallEl, journeys);
     }
 
+    this.fillProductionQuality();
     this.fillVaultScore();
   }
 
@@ -1515,6 +1518,145 @@ export class FeedbackDashboardView extends ItemView {
           `Edge confidence: ${totalWeighted} weighted links · avg ${avgWeight.toFixed(1)} · ${strongCount} strong (>3.0)`,
           '—', 'is-neutral', 'Edge weight distribution across note links');
       }
+    }
+  }
+
+  // =========================================================================
+  // Production quality — survival rate, removal hotspots, recall gaps
+  // =========================================================================
+
+  private fillProductionQuality(): void {
+    if (!this.qualityEl) return;
+    this.qualityEl.empty();
+
+    const pq = this.dashboardData?.productionQuality;
+    if (!pq) return;
+
+    const hasTrend = pq.survivalTrend.length > 0;
+    const hasHotspots = pq.removalHotspots.length > 0;
+    const hasGaps = pq.recallGaps.length > 0;
+    if (!hasTrend && !hasHotspots && !hasGaps) return;
+
+    this.qualityEl.createDiv('flywheel-loop-section-title').setText('Production Quality');
+
+    // T5: Survival rate chart
+    if (hasTrend) {
+      this.renderSurvivalChart(this.qualityEl, pq.survivalTrend);
+    }
+
+    // T6 + T7: Hotspots and recall gaps side by side
+    if (hasHotspots || hasGaps) {
+      const tables = this.qualityEl.createDiv('flywheel-quality-tables');
+      if (hasHotspots) this.renderRemovalHotspots(tables, pq.removalHotspots);
+      if (hasGaps) this.renderRecallGaps(tables, pq.recallGaps);
+    }
+  }
+
+  private renderSurvivalChart(
+    parent: HTMLElement,
+    trend: Array<{ week: string; kept: number; removed: number; manualAdded: number; survivalRate: number }>,
+  ): void {
+    const chart = parent.createDiv('flywheel-quality-chart');
+    const maxTotal = Math.max(...trend.map(w => w.kept + w.removed + w.manualAdded), 1);
+
+    for (const week of trend) {
+      const col = chart.createDiv('flywheel-quality-chart-col');
+      const total = week.kept + week.removed + week.manualAdded;
+      const heightPct = (total / maxTotal) * 100;
+
+      const bar = col.createDiv('flywheel-quality-chart-bar');
+      bar.style.height = `${Math.max(heightPct, 4)}%`;
+
+      // Stack: kept (green) on bottom, removed (red), manual added (blue) on top
+      if (week.kept > 0) {
+        const seg = bar.createDiv('flywheel-quality-seg is-kept');
+        seg.style.height = `${(week.kept / total) * 100}%`;
+      }
+      if (week.removed > 0) {
+        const seg = bar.createDiv('flywheel-quality-seg is-removed');
+        seg.style.height = `${(week.removed / total) * 100}%`;
+      }
+      if (week.manualAdded > 0) {
+        const seg = bar.createDiv('flywheel-quality-seg is-manual');
+        seg.style.height = `${(week.manualAdded / total) * 100}%`;
+      }
+
+      // Rate label above bar
+      const rate = col.createDiv('flywheel-quality-chart-rate');
+      rate.setText(`${Math.round(week.survivalRate * 100)}%`);
+
+      // Week label below bar
+      const label = col.createDiv('flywheel-quality-chart-label');
+      label.setText(week.week.replace(/^\d{4}-/, ''));
+
+      col.title = `${week.week}: ${week.kept} kept, ${week.removed} removed, ${week.manualAdded} manual adds (${Math.round(week.survivalRate * 100)}% survival)`;
+    }
+
+    // Legend
+    const legend = parent.createDiv('flywheel-quality-legend');
+    const addLegendItem = (cls: string, text: string) => {
+      const item = legend.createSpan('flywheel-quality-legend-item');
+      item.createSpan(`flywheel-quality-legend-dot ${cls}`);
+      item.createSpan().setText(text);
+    };
+    addLegendItem('is-kept', 'Kept');
+    addLegendItem('is-removed', 'Removed');
+    addLegendItem('is-manual', 'Manual adds');
+  }
+
+  private renderRemovalHotspots(
+    parent: HTMLElement,
+    hotspots: Array<{ entity: string; removals: number; kept: number; survivalRate: number }>,
+  ): void {
+    const section = parent.createDiv('flywheel-quality-table-section');
+    section.createDiv('flywheel-quality-table-title').setText('Removal hotspots');
+
+    const table = section.createDiv('flywheel-quality-table');
+
+    // Header
+    const header = table.createDiv('flywheel-quality-table-row is-header');
+    header.createSpan().setText('Entity');
+    header.createSpan().setText('Removed');
+    header.createSpan().setText('Kept');
+    header.createSpan().setText('Rate');
+
+    for (const h of hotspots.slice(0, 10)) {
+      const row = table.createDiv('flywheel-quality-table-row');
+      const nameEl = row.createSpan('flywheel-viz-entity-link');
+      nameEl.setText(h.entity);
+      nameEl.dataset.entity = h.entity;
+      row.createSpan().setText(`${h.removals}`);
+      row.createSpan().setText(`${h.kept}`);
+      const rateEl = row.createSpan();
+      rateEl.setText(`${Math.round(h.survivalRate * 100)}%`);
+      rateEl.addClass(h.survivalRate >= 0.7 ? 'is-ok' : 'is-poor');
+    }
+  }
+
+  private renderRecallGaps(
+    parent: HTMLElement,
+    gaps: Array<{ entity: string; manualAdds: number; wasSuggested: boolean }>,
+  ): void {
+    const section = parent.createDiv('flywheel-quality-table-section');
+    section.createDiv('flywheel-quality-table-title').setText('Recall gaps');
+
+    const table = section.createDiv('flywheel-quality-table');
+
+    // Header
+    const header = table.createDiv('flywheel-quality-table-row is-header');
+    header.createSpan().setText('Entity');
+    header.createSpan().setText('Adds');
+    header.createSpan().setText('Suggested?');
+
+    for (const g of gaps.slice(0, 10)) {
+      const row = table.createDiv('flywheel-quality-table-row');
+      const nameEl = row.createSpan('flywheel-viz-entity-link');
+      nameEl.setText(g.entity);
+      nameEl.dataset.entity = g.entity;
+      row.createSpan().setText(`${g.manualAdds}`);
+      const sugEl = row.createSpan();
+      sugEl.setText(g.wasSuggested ? 'Yes (below threshold)' : 'No (blind spot)');
+      sugEl.addClass(g.wasSuggested ? 'is-threshold' : 'is-blind-spot');
     }
   }
 
