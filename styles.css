@@ -910,69 +910,18 @@
 }
 
 /* Context Cloud */
-.flywheel-cloud { display: flex; flex-wrap: wrap; gap: 4px 6px; padding: 10px 16px; align-items: center; }
-.flywheel-cloud-item {
-  cursor: pointer;
-  white-space: nowrap;
-  display: inline-flex;
-  align-items: center;
-  padding: 2px 8px;
-  border-radius: 10px;
-  font-size: var(--font-smallest);
-  transition: filter 0.1s ease, opacity 0.1s ease;
-}
-.flywheel-cloud-item:hover { filter: brightness(1.15); }
-.flywheel-cloud-name { line-height: 1.4; }
-/* Source-based pill coloring — vivid on dark backgrounds */
-.flywheel-cloud-item[data-source="backlink"] { background: hsla(215, 85%, 50%, 0.35); }
-.flywheel-cloud-item[data-source="backlink"] .flywheel-cloud-name { color: hsl(215, 100%, 84%); }
-.flywheel-cloud-item[data-source="forward"] { background: hsla(215, 25%, 55%, 0.25); }
-.flywheel-cloud-item[data-source="forward"] .flywheel-cloud-name { color: hsl(215, 30%, 80%); }
-.flywheel-cloud-item[data-source="suggested"] { background: hsla(25, 90%, 48%, 0.35); }
-.flywheel-cloud-item[data-source="suggested"] .flywheel-cloud-name { color: hsl(28, 100%, 78%); }
-.flywheel-cloud-item[data-source="similar"] { background: hsla(160, 75%, 42%, 0.35); }
-.flywheel-cloud-item[data-source="similar"] .flywheel-cloud-name { color: hsl(160, 80%, 76%); }
-.flywheel-cloud-item[data-source="semantic"] { background: hsla(270, 70%, 58%, 0.35); }
-.flywheel-cloud-item[data-source="semantic"] .flywheel-cloud-name { color: hsl(270, 85%, 82%); }
-.flywheel-cloud-item[data-multi="true"] { background: hsla(45, 80%, 48%, 0.3); border: 1px solid hsla(45, 80%, 55%, 0.35); }
-.flywheel-cloud-item[data-multi="true"] .flywheel-cloud-name { color: hsl(45, 100%, 82%); font-weight: var(--font-semibold); }
-.flywheel-cloud-dead { cursor: default; opacity: 0.5; }
-.flywheel-cloud-dead .flywheel-cloud-name { color: var(--text-faint); text-decoration: line-through; }
-.flywheel-cloud-dead:hover { filter: none; }
+/* Context Cloud — continuous sizing via inline styles */
+.flywheel-cloud { display: flex; flex-wrap: wrap; gap: 6px 10px; padding: 10px 16px; align-items: baseline; }
+.flywheel-cloud-item { cursor: pointer; color: var(--text-accent); white-space: nowrap; transition: opacity 0.1s ease; }
+.flywheel-cloud-item:hover { text-decoration: underline; }
+.flywheel-cloud-dead { color: var(--text-faint); text-decoration: line-through; cursor: default; }
+.flywheel-cloud-dead:hover { text-decoration: line-through; }
 .flywheel-cloud-label {
   padding: 6px 16px 0;
   font-size: var(--font-smallest);
   color: var(--text-faint);
   text-transform: uppercase;
   letter-spacing: 0.04em;
-}
-
-/* Cloud pulse animation — entity highlight on pipeline update */
-.flywheel-cloud-pulse {
-  animation: flywheel-cloud-pulse 0.6s ease-out;
-}
-@keyframes flywheel-cloud-pulse {
-  0% { transform: scale(1); }
-  50% { transform: scale(1.15); }
-  100% { transform: scale(1); }
-}
-
-/* Floating score delta — animates up from entity and fades out */
-.flywheel-cloud-score-float {
-  position: absolute;
-  pointer-events: none;
-  font-size: 12px;
-  font-weight: var(--font-semibold);
-  font-family: var(--font-monospace);
-  transform: translateX(-50%);
-  animation: flywheel-score-float 1.2s ease-out forwards;
-  z-index: 10;
-}
-.flywheel-cloud-score-float-up { color: hsl(145, 60%, 45%); }
-.flywheel-cloud-score-float-down { color: hsl(0, 65%, 55%); }
-@keyframes flywheel-score-float {
-  0% { opacity: 1; transform: translateX(-50%) translateY(0); }
-  100% { opacity: 0; transform: translateX(-50%) translateY(-20px); }
 }
 
 /* Score badge — small pill for similarity/mention scores */
@@ -3277,144 +3226,6 @@
   color: var(--text-on-accent);
 }
 
-/* =========================================================================
-   Waterfall pipeline view
-   ========================================================================= */
-
-.flywheel-waterfall-container {
-  position: relative;
-}
-
-.flywheel-waterfall {
-  position: relative;
-  overflow: hidden;
-  min-height: 600px;
-}
-
-.flywheel-waterfall-start {
-  height: 32px;
-}
-
-.flywheel-waterfall-gate {
-  margin-bottom: 4px;
-}
-
-.flywheel-waterfall-gate-bar {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 4px 8px;
-  border-top: 1px solid var(--background-modifier-border);
-  font-size: var(--font-ui-small);
-  font-weight: var(--font-semibold);
-}
-
-.flywheel-waterfall-gate-name {
-  color: var(--text-muted);
-  letter-spacing: 0.04em;
-}
-
-.flywheel-waterfall-gate-desc {
-  color: var(--text-faint);
-  font-size: var(--font-ui-smaller);
-  font-weight: normal;
-  font-style: italic;
-  margin-left: 4px;
-}
-
-.flywheel-waterfall-gate-summary {
-  color: var(--text-faint);
-  font-size: var(--font-ui-smaller);
-  font-weight: normal;
-  margin-left: auto;
-}
-
-.flywheel-waterfall-shelf {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 4px;
-  padding: 4px 8px 8px;
-  min-height: 24px;
-}
-
-.flywheel-waterfall-floor {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  padding: 8px;
-  border-top: 1px solid var(--background-modifier-border);
-  margin-top: 4px;
-}
-
-.flywheel-waterfall-empty {
-  padding: 16px 8px;
-  color: var(--text-faint);
-  font-size: var(--font-ui-small);
-  font-style: italic;
-}
-
-/* Pills */
-.flywheel-pill {
-  display: inline-flex;
-  align-items: center;
-  gap: 3px;
-  padding: 2px 8px;
-  border-radius: 12px;
-  font-size: 11px;
-  white-space: nowrap;
-  cursor: pointer;
-  background: var(--background-modifier-hover);
-  will-change: transform, opacity;
-}
-
-.flywheel-pill-ghost {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  padding: 2px 8px;
-  border-radius: 12px;
-  font-size: 11px;
-  opacity: 0.55;
-  background: var(--background-modifier-hover);
-}
-
-.theme-dark .flywheel-pill-ghost {
-  opacity: 0.7;
-}
-
-.flywheel-pill-badge {
-  font-size: 9px;
-  font-weight: 600;
-  opacity: 0.8;
-}
-
-.theme-dark .flywheel-pill-badge {
-  opacity: 1;
-}
-
-.flywheel-pill.is-floor {
-  opacity: 0.3;
-  cursor: default;
-}
-
-.flywheel-pill.is-falling {
-  position: absolute;
-}
-
-.flywheel-pill:not(.is-falling):not(.is-floor):hover {
-  filter: brightness(1.08) saturate(1.15);
-  transform: scale(1.04);
-  transition: filter 0.15s, transform 0.15s;
-  cursor: pointer;
-}
-
-.flywheel-pill-ghost:hover {
-  filter: brightness(1.1) saturate(1.2);
-  transform: scale(1.05);
-  transition: filter 0.15s, transform 0.15s;
-  cursor: default;
-}
-
 /* Broken links create button */
 .flywheel-health-create-btn {
   display: inline-flex;
@@ -3450,48 +3261,6 @@
   font-size: var(--font-smallest);
   color: var(--text-muted);
 }
-
-/* =========================================================================
-   Waterfall animation
-   ========================================================================= */
-
-@keyframes pill-journey {
-  0%   { top: 0; opacity: 1; transform: rotate(0deg) translateX(0); }
-  8%   { top: var(--gate-1-y, 100px); transform: rotate(calc(3deg  * var(--pill-wobble, 1))) translateX(2px); }
-  12%  { top: var(--gate-1-y, 100px); transform: rotate(calc(-2deg * var(--pill-wobble, 1))) translateX(-1px); }
-  20%  { top: var(--gate-2-y, 200px); transform: rotate(calc(4deg  * var(--pill-wobble, 1))) translateX(3px); }
-  24%  { top: var(--gate-2-y, 200px); transform: rotate(calc(-3deg * var(--pill-wobble, 1))) translateX(-2px); }
-  32%  { top: var(--gate-3-y, 300px); transform: rotate(calc(2deg  * var(--pill-wobble, 1))) translateX(1px); }
-  36%  { top: var(--gate-3-y, 300px); transform: rotate(calc(-1deg * var(--pill-wobble, 1))) translateX(0); }
-  44%  { top: var(--gate-4-y, 400px); transform: rotate(calc(3deg  * var(--pill-wobble, 1))) translateX(2px); }
-  48%  { top: var(--gate-4-y, 400px); transform: rotate(calc(-2deg * var(--pill-wobble, 1))) translateX(-1px); }
-  56%  { top: var(--gate-5-y, 500px); transform: rotate(calc(1deg  * var(--pill-wobble, 1))) translateX(1px); }
-  60%  { top: var(--gate-5-y, 500px); transform: rotate(0deg); }
-  100% { top: var(--floor-y, 600px); opacity: 0; transform: rotate(0deg); }
-}
-
-@keyframes ghost-appear {
-  0%   { opacity: 0; transform: scale(0.8); }
-  50%  { opacity: 0.6; transform: scale(1.05); }
-  100% { opacity: 0.5; transform: scale(1); }
-}
-
-.flywheel-waterfall.is-animating .flywheel-pill.is-falling {
-  animation: pill-journey var(--pill-duration, 2s) ease-in-out forwards;
-  animation-delay: var(--pill-delay, 0s);
-}
-
-.flywheel-waterfall.is-animating .flywheel-pill-ghost {
-  opacity: 0;
-  animation: ghost-appear 0.3s ease-out forwards;
-  animation-delay: var(--ghost-delay, 0s);
-}
-
-/* Flash animation when new pipeline arrives */
-.flywheel-waterfall-container.is-fresh {
-  animation: flywheel-pulse 0.6s ease-out;
-}
-
 
 /* ===================================================================
    Entity Inbox
@@ -3712,18 +3481,6 @@
   text-decoration-style: solid;
   text-decoration-color: var(--interactive-accent);
   background: hsla(var(--interactive-accent-hsl), 0.08);
-  border-radius: 2px;
-}
-
-.flywheel-inline-prospect {
-  text-decoration: underline dashed hsl(35, 65%, 55%);
-  text-decoration-thickness: 1.5px;
-  text-underline-offset: 2px;
-  cursor: pointer;
-}
-
-.flywheel-inline-prospect:hover {
-  background: hsla(35, 65%, 55%, 0.12);
   border-radius: 2px;
 }
 
