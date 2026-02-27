@@ -910,18 +910,69 @@
 }
 
 /* Context Cloud */
-/* Context Cloud — continuous sizing via inline styles */
-.flywheel-cloud { display: flex; flex-wrap: wrap; gap: 6px 10px; padding: 10px 16px; align-items: baseline; }
-.flywheel-cloud-item { cursor: pointer; color: var(--text-accent); white-space: nowrap; transition: opacity 0.1s ease; }
-.flywheel-cloud-item:hover { text-decoration: underline; }
-.flywheel-cloud-dead { color: var(--text-faint); text-decoration: line-through; cursor: default; }
-.flywheel-cloud-dead:hover { text-decoration: line-through; }
+.flywheel-cloud { display: flex; flex-wrap: wrap; gap: 4px 6px; padding: 10px 16px; align-items: center; }
+.flywheel-cloud-item {
+  cursor: pointer;
+  white-space: nowrap;
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 8px;
+  border-radius: 10px;
+  font-size: var(--font-smallest);
+  transition: filter 0.1s ease, opacity 0.1s ease;
+}
+.flywheel-cloud-item:hover { filter: brightness(1.15); }
+.flywheel-cloud-name { line-height: 1.4; }
+/* Source-based pill coloring — vivid on dark backgrounds */
+.flywheel-cloud-item[data-source="backlink"] { background: hsla(215, 85%, 50%, 0.35); }
+.flywheel-cloud-item[data-source="backlink"] .flywheel-cloud-name { color: hsl(215, 100%, 84%); }
+.flywheel-cloud-item[data-source="forward"] { background: hsla(215, 25%, 55%, 0.25); }
+.flywheel-cloud-item[data-source="forward"] .flywheel-cloud-name { color: hsl(215, 30%, 80%); }
+.flywheel-cloud-item[data-source="suggested"] { background: hsla(25, 90%, 48%, 0.35); }
+.flywheel-cloud-item[data-source="suggested"] .flywheel-cloud-name { color: hsl(28, 100%, 78%); }
+.flywheel-cloud-item[data-source="similar"] { background: hsla(160, 75%, 42%, 0.35); }
+.flywheel-cloud-item[data-source="similar"] .flywheel-cloud-name { color: hsl(160, 80%, 76%); }
+.flywheel-cloud-item[data-source="semantic"] { background: hsla(270, 70%, 58%, 0.35); }
+.flywheel-cloud-item[data-source="semantic"] .flywheel-cloud-name { color: hsl(270, 85%, 82%); }
+.flywheel-cloud-item[data-multi="true"] { background: hsla(45, 80%, 48%, 0.3); border: 1px solid hsla(45, 80%, 55%, 0.35); }
+.flywheel-cloud-item[data-multi="true"] .flywheel-cloud-name { color: hsl(45, 100%, 82%); font-weight: var(--font-semibold); }
+.flywheel-cloud-dead { cursor: default; opacity: 0.5; }
+.flywheel-cloud-dead .flywheel-cloud-name { color: var(--text-faint); text-decoration: line-through; }
+.flywheel-cloud-dead:hover { filter: none; }
 .flywheel-cloud-label {
   padding: 6px 16px 0;
   font-size: var(--font-smallest);
   color: var(--text-faint);
   text-transform: uppercase;
   letter-spacing: 0.04em;
+}
+
+/* Cloud pulse animation — entity highlight on pipeline update */
+.flywheel-cloud-pulse {
+  animation: flywheel-cloud-pulse 0.6s ease-out;
+}
+@keyframes flywheel-cloud-pulse {
+  0% { transform: scale(1); }
+  50% { transform: scale(1.15); }
+  100% { transform: scale(1); }
+}
+
+/* Floating score delta — animates up from entity and fades out */
+.flywheel-cloud-score-float {
+  position: absolute;
+  pointer-events: none;
+  font-size: 12px;
+  font-weight: var(--font-semibold);
+  font-family: var(--font-monospace);
+  transform: translateX(-50%);
+  animation: flywheel-score-float 1.2s ease-out forwards;
+  z-index: 10;
+}
+.flywheel-cloud-score-float-up { color: hsl(145, 60%, 45%); }
+.flywheel-cloud-score-float-down { color: hsl(0, 65%, 55%); }
+@keyframes flywheel-score-float {
+  0% { opacity: 1; transform: translateX(-50%) translateY(0); }
+  100% { opacity: 0; transform: translateX(-50%) translateY(-20px); }
 }
 
 /* Score badge — small pill for similarity/mention scores */
@@ -3661,6 +3712,18 @@
   text-decoration-style: solid;
   text-decoration-color: var(--interactive-accent);
   background: hsla(var(--interactive-accent-hsl), 0.08);
+  border-radius: 2px;
+}
+
+.flywheel-inline-prospect {
+  text-decoration: underline dashed hsl(35, 65%, 55%);
+  text-decoration-thickness: 1.5px;
+  text-underline-offset: 2px;
+  cursor: pointer;
+}
+
+.flywheel-inline-prospect:hover {
+  background: hsla(35, 65%, 55%, 0.12);
   border-radius: 2px;
 }
 

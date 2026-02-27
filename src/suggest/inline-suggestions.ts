@@ -3,6 +3,9 @@
  *
  * Shows dotted underline decorations on high-confidence entity mentions.
  * Click to accept: replaces the text span with [[entity]].
+ *
+ * Prospects (dead link targets + implicit entities) are shown with an
+ * amber dashed underline to distinguish them from known-entity suggestions.
  */
 
 import {
@@ -21,6 +24,7 @@ interface InlineSuggestion {
   entity: string;
   target: string;
   confidence: string;
+  isProspect?: boolean;
 }
 
 class InlineSuggestionPlugin {
@@ -77,7 +81,7 @@ class InlineSuggestionPlugin {
       const confidenceMap = new Map(scored.map(s => [s.entity.toLowerCase(), s.confidence]));
       const docLen = this.view.state.doc.length;
 
-      this.suggestions = positioned
+      const knownSuggestions: InlineSuggestion[] = positioned
         // Only high-confidence (medium is too noisy for inline decoration)
         .filter(s => confidenceMap.get(s.entity.toLowerCase()) === 'high')
         .map(s => ({
@@ -86,7 +90,20 @@ class InlineSuggestionPlugin {
           entity: s.entity,
           target: s.target ?? s.entity,
           confidence: confidenceMap.get(s.entity.toLowerCase()) ?? 'high',
-        }))
+        }));
+
+      // Prospects: dead link targets + implicit entities with positions
+      const prospectSuggestions: InlineSuggestion[] = (resp.prospects ?? [])
+        .map(p => ({
+          from: from + p.start,
+          to: from + p.end,
+          entity: p.entity,
+          target: p.entity,
+          confidence: p.confidence,
+          isProspect: true,
+        }));
+
+      this.suggestions = [...knownSuggestions, ...prospectSuggestions]
         // Filter out positions already inside [[ ]]
         .filter(s => {
           const before = this.view.state.doc.sliceString(Math.max(0, s.from - 2), s.from);
@@ -128,11 +145,13 @@ class InlineSuggestionPlugin {
 
     for (const s of filtered) {
       builder.add(s.from, s.to, Decoration.mark({
-        class: 'flywheel-inline-suggestion',
+        class: s.isProspect ? 'flywheel-inline-prospect' : 'flywheel-inline-suggestion',
         attributes: {
           'data-entity': s.entity,
           'data-target': s.target,
-          title: `Link as [[${s.entity}]] — click to accept`,
+          title: s.isProspect
+            ? `Prospect: [[${s.entity}]] — click to create link`
+            : `Link as [[${s.entity}]] — click to accept`,
         },
       }));
     }
@@ -144,7 +163,8 @@ class InlineSuggestionPlugin {
 
   private handleClick(e: MouseEvent): void {
     const target = e.target as HTMLElement;
-    if (!target.classList.contains('flywheel-inline-suggestion')) return;
+    if (!target.classList.contains('flywheel-inline-suggestion') &&
+        !target.classList.contains('flywheel-inline-prospect')) return;
 
     const entity = target.dataset.entity;
     if (!entity) return;

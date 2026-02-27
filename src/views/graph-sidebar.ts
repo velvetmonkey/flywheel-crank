@@ -1190,23 +1190,27 @@ export class GraphSidebarView extends ItemView {
 
     for (const entry of entries) {
       const t = (entry.score - minScore) / scoreRange; // 0..1
-      const opacity = 0.65 + t * 0.35; // 0.65 to 1.0
 
-      const span = cloudEl.createEl('span', { cls: 'flywheel-cloud-item' });
-      span.style.opacity = String(opacity.toFixed(2));
-      span.setText(entry.name);
+      const item = cloudEl.createEl('span', { cls: 'flywheel-cloud-item' });
 
       // Set data-source for CSS coloring — pick primary source
       const isMulti = entry.sources.size > 1;
       if (isMulti) {
-        span.dataset.multi = 'true';
+        item.dataset.multi = 'true';
       } else {
         const primarySource = SOURCE_PRIORITY.find(s => entry.sources.has(s)) ?? 'suggested';
-        span.dataset.source = primarySource;
+        item.dataset.source = primarySource;
       }
 
       // Store entity name for pipeline pulse matching
-      span.dataset.entity = entry.name;
+      item.dataset.entity = entry.name;
+
+      // Name label
+      const nameEl = item.createEl('span', { cls: 'flywheel-cloud-name' });
+      nameEl.setText(entry.name);
+      nameEl.style.opacity = String((0.65 + t * 0.35).toFixed(2));
+
+      const pct = Math.round(entry.score * 100);
 
       // Tooltip: score + source signals + reasons
       const sourceLabels: string[] = [];
@@ -1216,19 +1220,19 @@ export class GraphSidebarView extends ItemView {
       if (entry.sources.has('similar')) sourceLabels.push('similar');
       if (entry.sources.has('semantic')) sourceLabels.push('semantic');
       const tooltipLines = [
-        `Score: ${Math.round(entry.score * 100)} · ${sourceLabels.join(', ')}`,
+        `${pct} · ${sourceLabels.join(', ')}`,
         ...entry.reasons,
       ];
-      span.setAttribute('aria-label', tooltipLines.join('\n'));
+      item.setAttribute('aria-label', tooltipLines.join('\n'));
 
       // Navigate on click — use path if available, otherwise try name (entity resolution)
       const navTarget = entry.path ?? entry.name;
       if (entry.path || entry.sources.has('semantic') || entry.sources.has('suggested')) {
-        span.addEventListener('click', () => {
+        item.addEventListener('click', () => {
           this.app.workspace.openLinkText(navTarget, '', false);
         });
       } else {
-        span.addClass('flywheel-cloud-dead');
+        item.addClass('flywheel-cloud-dead');
       }
     }
   }

@@ -253,6 +253,14 @@ export interface McpSuggestWikilinksResponse {
   returned_count: number;
   suggestions: Array<{ entity: string; start: number; end: number; target: string }>;
   scored_suggestions?: McpScoredSuggestion[];
+  prospects?: Array<{
+    entity: string;
+    start: number;
+    end: number;
+    source: 'dead_link' | 'implicit' | 'both';
+    confidence: 'high' | 'medium' | 'low';
+    backlink_count?: number;
+  }>;
 }
 
 // Entity index (from list_entities)
@@ -788,10 +796,10 @@ export class FlywheelMcpClient {
       // No custom path — use npx
       if (isWindows) {
         command = 'npx.cmd';
-        args = ['-y', '@velvetmonkey/flywheel-memory'];
+        args = ['-y', '@velvetmonkey/flywheel-memory@2.0.55'];
       } else {
         command = 'npx';
-        args = ['-y', '@velvetmonkey/flywheel-memory'];
+        args = ['-y', '@velvetmonkey/flywheel-memory@2.0.55'];
       }
     }
 
