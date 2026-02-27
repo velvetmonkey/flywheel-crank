@@ -985,6 +985,43 @@ export class VaultHealthView extends ItemView {
         const entities = out.updated_entities as string[] | undefined;
         return entities?.length ? `${entities.length} embeddings updated` : null;
       }
+      case 'prospect_scan': {
+        const prospects = out.prospects as any[] | undefined;
+        if (!prospects?.length) return null;
+        const implicitCount = prospects.reduce((s: number, p: any) => s + (p.implicit?.length ?? 0), 0);
+        const deadCount = prospects.reduce((s: number, p: any) => s + (p.deadLinkMatches?.length ?? 0), 0);
+        const parts: string[] = [];
+        if (implicitCount > 0) parts.push(`${implicitCount} implicit`);
+        if (deadCount > 0) parts.push(`${deadCount} prospects`);
+        return parts.length > 0 ? parts.join(', ') : null;
+      }
+      case 'suggestion_scoring': {
+        const scored = out.scored_files as number | undefined;
+        return scored ? `${scored} files scored` : null;
+      }
+      case 'forward_links': {
+        const newDead = out.new_dead_links as any[] | undefined;
+        const totalDead = out.total_dead as number | undefined;
+        const totalResolved = out.total_resolved as number | undefined;
+        const parts: string[] = [];
+        if (totalResolved) parts.push(`${totalResolved} resolved`);
+        if (totalDead) parts.push(`${totalDead} dead`);
+        if (newDead?.length) {
+          const count = newDead.reduce((s: number, d: any) => s + (d.targets?.length ?? 0), 0);
+          if (count > 0) parts.push(`${count} new dead`);
+        }
+        return parts.length > 0 ? parts.join(', ') : null;
+      }
+      case 'implicit_feedback': {
+        const removals = out.removals as unknown[] | undefined;
+        const additions = out.additions as unknown[] | undefined;
+        const suppressed = out.newly_suppressed as string[] | undefined;
+        const parts: string[] = [];
+        if (removals?.length) parts.push(`${removals.length} negative`);
+        if (additions?.length) parts.push(`${additions.length} positive`);
+        if (suppressed?.length) parts.push(`${suppressed.length} suppressed`);
+        return parts.length > 0 ? parts.join(', ') : null;
+      }
       default:
         return null;
     }

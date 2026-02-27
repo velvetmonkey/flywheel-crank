@@ -33,6 +33,7 @@ class InlineSuggestionPlugin {
   constructor(
     private view: EditorView,
     private mcpClient: FlywheelMcpClient,
+    private getNotePath?: () => string | undefined,
   ) {
     this.decorations = Decoration.none;
     this.clickHandler = this.handleClick.bind(this);
@@ -65,25 +66,26 @@ class InlineSuggestionPlugin {
       const text = this.view.state.doc.sliceString(from, to);
       if (text.length < 20) { this.pending = false; return; }
 
-      const resp = await this.mcpClient.suggestWikilinks(text, true);
+      const notePath = this.getNotePath?.();
+      const resp = await this.mcpClient.suggestWikilinks(text, true, notePath);
       const scored = resp.scored_suggestions ?? [];
       const positioned = resp.suggestions ?? [];
 
       // McpScoredSuggestion has confidence but no position.
       // McpSuggestWikilinksResponse.suggestions has position but no confidence.
       // Join by entity name to get both.
-      const confidenceMap = new Map(scored.map(s => [s.entity, s.confidence]));
+      const confidenceMap = new Map(scored.map(s => [s.entity.toLowerCase(), s.confidence]));
       const docLen = this.view.state.doc.length;
 
       this.suggestions = positioned
         // Only high-confidence (medium is too noisy for inline decoration)
-        .filter(s => confidenceMap.get(s.entity) === 'high')
+        .filter(s => confidenceMap.get(s.entity.toLowerCase()) === 'high')
         .map(s => ({
           from: from + s.start,
           to: from + s.end,
           entity: s.entity,
           target: s.target ?? s.entity,
-          confidence: confidenceMap.get(s.entity) ?? 'high',
+          confidence: confidenceMap.get(s.entity.toLowerCase()) ?? 'high',
         }))
         // Filter out positions already inside [[ ]]
         .filter(s => {
@@ -167,9 +169,9 @@ class InlineSuggestionPlugin {
   }
 }
 
-export function createInlineSuggestionPlugin(mcpClient: FlywheelMcpClient) {
+export function createInlineSuggestionPlugin(mcpClient: FlywheelMcpClient, getNotePath?: () => string | undefined) {
   return ViewPlugin.define(
-    (view) => new InlineSuggestionPlugin(view, mcpClient),
+    (view) => new InlineSuggestionPlugin(view, mcpClient, getNotePath),
     { decorations: (v) => v.decorations },
   );
 }

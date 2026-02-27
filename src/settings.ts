@@ -82,17 +82,6 @@ export class FlywheelCrankSettingTab extends PluginSettingTab {
         })
       );
 
-    new Setting(containerEl)
-      .setName('Feedback dashboard')
-      .setDesc('Visualise the wikilink feedback loop: discover, suggest, apply, learn, adapt')
-      .addToggle(toggle => toggle
-        .setValue(this.plugin.settings.enableFeedbackDashboard)
-        .onChange(async (value) => {
-          this.plugin.settings.enableFeedbackDashboard = value;
-          await this.plugin.saveSettings();
-        })
-      );
-
     // Search settings
     containerEl.createEl('h3', { text: 'Search' });
 

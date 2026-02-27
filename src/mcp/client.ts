@@ -1036,11 +1036,12 @@ export class FlywheelMcpClient {
   /**
    * Suggest wikilinks for a given text.
    */
-  async suggestWikilinks(text: string, detail = false): Promise<McpSuggestWikilinksResponse> {
+  async suggestWikilinks(text: string, detail = false, notePath?: string): Promise<McpSuggestWikilinksResponse> {
     return this.callTool<McpSuggestWikilinksResponse>('suggest_wikilinks', {
       text,
       limit: 30,
       detail,
+      ...(notePath ? { note_path: notePath } : {}),
     });
   }
 
