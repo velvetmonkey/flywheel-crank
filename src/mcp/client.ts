@@ -651,6 +651,21 @@ export interface McpMutationResponse {
 }
 
 // ---------------------------------------------------------------------------
+// Errors
+// ---------------------------------------------------------------------------
+
+export class McpToolError extends Error {
+  constructor(
+    public readonly toolName: string,
+    message: string,
+    public readonly stderr?: string[],
+  ) {
+    super(`${toolName}: ${message}`);
+    this.name = 'McpToolError';
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Client
 // ---------------------------------------------------------------------------
 
@@ -667,6 +682,9 @@ export class FlywheelMcpClient {
   private _lastError: string | null = null;
   private _stderrLines: string[] = [];
   private connectionStateCallbacks = new Set<() => void>();
+
+  // Last tool error for status display
+  private _lastToolError: McpToolError | null = null;
 
   // Entity category + hub score cache
   private entityCategoryCache: Map<string, string> | null = null;
@@ -706,6 +724,10 @@ export class FlywheelMcpClient {
 
   get stderrOutput(): string[] {
     return [...this._stderrLines];
+  }
+
+  get lastToolError(): McpToolError | null {
+    return this._lastToolError;
   }
 
   /** Subscribe to connection state changes. Returns unsubscribe function. */
@@ -939,30 +961,46 @@ export class FlywheelMcpClient {
    */
   private async callTool<T>(name: string, args: Record<string, unknown>, timeout?: number): Promise<T> {
     if (!this.client || !this._connected) {
-      throw new Error('MCP client not connected');
+      throw new McpToolError(name, 'not connected');
     }
 
-    return this.cache.get<T>(name, args, async () => {
-      const result = await this.client!.callTool(
-        { name, arguments: args },
-        undefined,
-        timeout ? { timeout } : undefined,
-      );
+    try {
+      const value = await this.cache.get<T>(name, args, async () => {
+        const result = await this.client!.callTool(
+          { name, arguments: args },
+          undefined,
+          timeout ? { timeout } : undefined,
+        );
 
-      // The MCP SDK returns content as an array of content blocks.
-      const content = result.content as Array<{ type: string; text?: string }>;
-      const textBlock = content?.find(c => c.type === 'text');
-      if (!textBlock?.text) {
-        throw new Error(`No text response from tool ${name}`);
+        // The MCP SDK returns content as an array of content blocks.
+        const content = result.content as Array<{ type: string; text?: string }>;
+        const textBlock = content?.find(c => c.type === 'text');
+        if (!textBlock?.text) {
+          throw new McpToolError(name, 'invalid response');
+        }
+
+        // Check for error responses (e.g. index still building)
+        if (result.isError) {
+          throw new McpToolError(name, textBlock.text, this._stderrLines);
+        }
+
+        try {
+          return JSON.parse(textBlock.text) as T;
+        } catch {
+          throw new McpToolError(name, 'invalid response');
+        }
+      });
+      this._lastToolError = null;
+      return value;
+    } catch (err) {
+      if (err instanceof McpToolError) {
+        this._lastToolError = err;
+        throw err;
       }
-
-      // Check for error responses (e.g. index still building)
-      if (result.isError) {
-        throw new Error(textBlock.text);
-      }
-
-      return JSON.parse(textBlock.text) as T;
-    });
+      const toolErr = new McpToolError(name, err instanceof Error ? err.message : String(err));
+      this._lastToolError = toolErr;
+      throw toolErr;
+    }
   }
 
   /**

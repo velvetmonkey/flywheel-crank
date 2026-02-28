@@ -19,7 +19,7 @@ import { EntityPageView, ENTITY_PAGE_VIEW_TYPE } from './views/entity-page';
 import { WeeklyDigestModal } from './views/weekly-digest';
 import { WikilinkSuggest } from './suggest/wikilink-suggest';
 import { createInlineSuggestionPlugin } from './suggest/inline-suggestions';
-import { FlywheelMcpClient, McpEntityItem } from './mcp/client';
+import { FlywheelMcpClient, McpEntityItem, McpToolError } from './mcp/client';
 
 export default class FlywheelCrankPlugin extends Plugin {
   settings: FlywheelCrankSettings = DEFAULT_SETTINGS;
@@ -46,7 +46,7 @@ export default class FlywheelCrankPlugin extends Plugin {
     if (statusBar) statusBar.prepend(this.statusBarEl);
     this.statusBarEl.style.cursor = 'pointer';
     this.statusBarEl.addEventListener('click', () => {
-      if (this.mcpClient.connectionState === 'error') {
+      if (this.mcpClient.connectionState === 'error' || this.mcpClient.connectionState === 'disconnected') {
         this.initialize();
       }
     });
@@ -119,6 +119,12 @@ export default class FlywheelCrankPlugin extends Plugin {
       id: 'open-connection-explorer',
       name: 'Explore connections between notes',
       callback: () => new ConnectionExplorerModal(this.app, this.mcpClient).open(),
+    });
+
+    this.addCommand({
+      id: 'mcp-reconnect',
+      name: 'Reconnect to MCP server',
+      callback: () => this.initialize(),
     });
 
     // Ribbon icons
@@ -219,8 +225,9 @@ export default class FlywheelCrankPlugin extends Plugin {
               try {
                 await this.mcpClient.reportWikilinkFeedback(entity, notePath, true);
                 new Notice(`Feedback: "${entity}" is correct`);
-              } catch {
-                new Notice('Failed to record feedback');
+              } catch (e) {
+                const detail = e instanceof McpToolError ? ` (${e.toolName})` : '';
+                new Notice(`Failed to record feedback${detail}`);
               }
             });
         });
@@ -239,8 +246,9 @@ export default class FlywheelCrankPlugin extends Plugin {
                 }
                 await this.mcpClient.reportWikilinkFeedback(entity, notePath, false, true);
                 new Notice(`Feedback: "${entity}" is wrong — brackets removed`);
-              } catch {
-                new Notice('Failed to record feedback');
+              } catch (e) {
+                const detail = e instanceof McpToolError ? ` (${e.toolName})` : '';
+                new Notice(`Failed to record feedback${detail}`);
               }
             });
         });
@@ -308,8 +316,9 @@ export default class FlywheelCrankPlugin extends Plugin {
         return this.initialize(attempt + 1);
       }
 
-      this.setStatus('connection failed', false, this.mcpClient.lastError ?? undefined);
-      new Notice(`Flywheel Crank: ${err instanceof Error ? err.message : 'Connection failed'}`);
+      const errorMsg = err instanceof Error ? err.message : 'Connection failed';
+      this.setStatus('connection failed', false, `MCP: error — ${errorMsg}\nClick to reconnect`);
+      new Notice(`Flywheel Crank: ${errorMsg}`);
     }
   }
 
@@ -351,14 +360,19 @@ export default class FlywheelCrankPlugin extends Plugin {
         : health.embeddings_ready ? `ready (${health.embeddings_count} embeddings)` : 'not built';
       const tasksLabel = health.tasks_building ? 'building...'
         : health.tasks_ready ? 'ready' : 'waiting';
-      const tooltip = [
-        `Vault: ${health.note_count} notes · ${health.entity_count} entities · ${health.tag_count} tags`,
+      const tooltipLines = [
+        `MCP: connected · ${health.note_count} notes · ${agoText}`,
+        `Entities: ${health.entity_count} · Tags: ${health.tag_count}`,
         '',
         `Graph index: ready (${agoText})`,
         `Keyword search: ${fts5Label}`,
         `Semantic search: ${semanticLabel}`,
         `Task cache: ${tasksLabel}`,
-      ].join('\n');
+      ];
+      if (this.mcpClient.lastToolError) {
+        tooltipLines.push('', `Last error: ${this.mcpClient.lastToolError.message}`);
+      }
+      const tooltip = tooltipLines.join('\n');
 
       // Still building secondary indexes
       if (health.fts5_building) {
@@ -501,7 +515,8 @@ export default class FlywheelCrankPlugin extends Plugin {
       new Notice(`Semantic index built (${result.embedded} notes embedded)`);
     } catch (err) {
       this.setStatus('ready');
-      new Notice(`${err instanceof Error ? err.message : 'Embedding failed'}`);
+      const detail = err instanceof McpToolError ? ` (${err.toolName})` : '';
+      new Notice(`Embedding failed${detail}: ${err instanceof Error ? err.message : 'unknown error'}`);
       console.error('Flywheel Crank: semantic build failed', err);
     } finally {
       this.indexing = false;
@@ -528,7 +543,8 @@ export default class FlywheelCrankPlugin extends Plugin {
       new Notice(`Index rebuilt (${result.note_count} notes, ${result.duration_ms}ms)`);
     } catch (err) {
       this.setStatus('ready');
-      new Notice(`${err instanceof Error ? err.message : 'Rebuild failed'}`);
+      const detail = err instanceof McpToolError ? ` (${err.toolName})` : '';
+      new Notice(`Rebuild failed${detail}: ${err instanceof Error ? err.message : 'unknown error'}`);
     } finally {
       this.indexing = false;
     }
