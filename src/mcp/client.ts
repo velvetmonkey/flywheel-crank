@@ -824,10 +824,10 @@ export class FlywheelMcpClient {
       // No custom path — use npx
       if (isWindows) {
         command = 'npx.cmd';
-        args = ['-y', '@velvetmonkey/flywheel-memory@2.0.59']; // Pin version — bump when releasing new flywheel-memory
+        args = ['-y', '@velvetmonkey/flywheel-memory@2.0.60']; // Pin version — bump when releasing new flywheel-memory
       } else {
         command = 'npx';
-        args = ['-y', '@velvetmonkey/flywheel-memory@2.0.59']; // Pin version — bump when releasing new flywheel-memory
+        args = ['-y', '@velvetmonkey/flywheel-memory@2.0.60']; // Pin version — bump when releasing new flywheel-memory
       }
     }
 
