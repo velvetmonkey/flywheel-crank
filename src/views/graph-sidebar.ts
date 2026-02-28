@@ -5,7 +5,7 @@
  * Note Intelligence (when a note is active). All data from MCP tool calls.
  */
 
-import { ItemView, WorkspaceLeaf, TFile, setIcon, MarkdownView } from 'obsidian';
+import { ItemView, WorkspaceLeaf, TFile, setIcon } from 'obsidian';
 import type {
   FlywheelMcpClient,
   McpBacklinksResponse,
@@ -14,6 +14,7 @@ import type {
   McpSimilarResponse,
   McpHealthCheckResponse,
   McpAliasSuggestionsResponse,
+  McpStrongConnectionsResponse,
 } from '../mcp/client';
 
 export const GRAPH_VIEW_TYPE = 'flywheel-graph';
@@ -28,12 +29,39 @@ interface GraphNode {
   radius: number;
   color: string;
   isCurrent: boolean;
+  /** 2-hop node — rendered smaller and more faded */
+  isSecondary?: boolean;
+  /** Periodic note (daily, weekly, etc.) — dimmed and pushed outward */
+  isPeriodic?: boolean;
 }
 
 interface GraphEdge {
   source: string;
   target: string;
+  weight: number;
 }
+
+/** Solid category colors for canvas rendering — maximally distinct hues. */
+const CATEGORY_CANVAS_COLORS: Record<string, string> = {
+  people:        '#5b9bf5', // blue
+  projects:      '#43d17a', // green
+  technologies:  '#a78bfa', // violet
+  locations:     '#f59e42', // orange
+  organizations: '#06b6d4', // cyan
+  concepts:      '#ec4899', // hot pink
+  animals:       '#84cc16', // lime
+  media:         '#d946ef', // magenta
+  events:        '#eab308', // yellow
+  documents:     '#78716c', // warm gray
+  vehicles:      '#e67635', // burnt orange
+  health:        '#ef4444', // red
+  finance:       '#10b981', // emerald
+  food:          '#f5a623', // amber
+  hobbies:       '#8b5cf6', // purple
+  acronyms:      '#38bdf8', // sky blue
+  periodical:    '#6b7280', // slate
+  other:         '#a1a1aa', // zinc
+};
 
 export class GraphSidebarView extends ItemView {
   private mcpClient: FlywheelMcpClient;
@@ -227,6 +255,49 @@ export class GraphSidebarView extends ItemView {
 
     if (fields.length === 0 && (!conv.computed_field_suggestions || conv.computed_field_suggestions.length === 0) && !conv.naming_pattern) {
       container.createDiv('flywheel-graph-section-empty').setText('No conventions detected');
+    }
+  }
+
+  // ---------------------------------------------------------------------------
+  // Folder chips (compact frontmatter suggestions)
+  // ---------------------------------------------------------------------------
+
+  private async renderFolderChips(file: TFile, generation: number): Promise<void> {
+    const folder = file.path.split('/').slice(0, -1).join('/') || '';
+    try {
+      const conv = await this.mcpClient.folderConventions(folder).catch(() => null);
+      if (generation !== this.renderGeneration || !conv) return;
+      const fm = this.app.metadataCache.getFileCache(file)?.frontmatter ?? {};
+
+      const chips: { name: string; value: string; rawValue: unknown }[] = [];
+      for (const field of conv.inferred_fields ?? []) {
+        if (field.name in fm || field.frequency < 0.5) continue;
+        if (field.name === 'position' || field.name === 'word_count' || field.name === 'link_count') continue;
+        const topValue = field.common_values?.[0];
+        if (topValue != null) {
+          chips.push({ name: field.name, value: String(topValue), rawValue: topValue });
+        }
+      }
+
+      if (chips.length > 0) {
+        const chipBar = this.noteContainer.createDiv('flywheel-folder-chips');
+        // Insert after header
+        const header = this.noteContainer.querySelector('.flywheel-graph-header');
+        if (header?.nextSibling) {
+          this.noteContainer.insertBefore(chipBar, header.nextSibling);
+        }
+        for (const { name, value, rawValue } of chips.slice(0, 3)) {
+          const chip = chipBar.createEl('span', { cls: 'flywheel-folder-chip' });
+          chip.setText(`+${name}:${value}`);
+          chip.setAttribute('aria-label', `Set ${name}: ${value}`);
+          chip.addEventListener('click', async () => {
+            await this.mcpClient.updateFrontmatter(file.path, { [name]: rawValue });
+            this.refresh(true);
+          });
+        }
+      }
+    } catch {
+      // Folder conventions not available — skip chips silently
     }
   }
 
@@ -512,6 +583,72 @@ export class GraphSidebarView extends ItemView {
     const container = target ?? this.noteContainer;
     const header = container.createDiv('flywheel-graph-header');
     header.createDiv('flywheel-graph-note-title').setText(file.basename);
+
+    // Category badge — loads async, renders when ready
+    const catBadge = header.createEl('span', { cls: 'flywheel-header-category' });
+    catBadge.setText('\u2026'); // placeholder while loading
+
+    this.loadCategoryBadge(file, header, catBadge);
+  }
+
+  private async loadCategoryBadge(file: TFile, header: HTMLElement, catBadge: HTMLElement): Promise<void> {
+    // Prefer frontmatter type (instant, no index lag) over entity index
+    const fm = this.app.metadataCache.getFileCache(file)?.frontmatter;
+    const fmType = fm?.type as string | undefined;
+
+    // Detect periodic notes by path or date-like filename
+    const isPeriodic = this.periodicPrefixes.some(prefix => file.path.startsWith(prefix))
+      || /^\d{4}-\d{2}-\d{2}/.test(file.basename) || /^\d{4}-W\d{2}/.test(file.basename);
+
+    const cat = (fmType && fmType in CATEGORY_CANVAS_COLORS ? fmType : null)
+      ?? (isPeriodic ? 'periodical' : null)
+      ?? await this.mcpClient.getEntityCategory(file.path).catch(() => null)
+      ?? await this.mcpClient.getEntityCategory(file.basename).catch(() => null)
+      ?? 'other';
+    catBadge.dataset.category = cat;
+    catBadge.empty();
+    const badgeDot = catBadge.createEl('span', { cls: 'flywheel-cat-dot' });
+    badgeDot.style.background = CATEGORY_CANVAS_COLORS[cat] ?? CATEGORY_CANVAS_COLORS.other;
+    catBadge.createEl('span').setText(cat);
+    catBadge.setAttribute('aria-label', 'Click to change category');
+
+    const sortedCategories = Object.keys(CATEGORY_CANVAS_COLORS).sort();
+
+    catBadge.addEventListener('click', (e) => {
+      e.stopPropagation();
+      // Remove existing dropdown if any
+      const existing = catBadge.querySelector('.flywheel-category-dropdown');
+      if (existing) { existing.remove(); return; }
+
+      const dropdown = catBadge.createDiv('flywheel-category-dropdown');
+      for (const c of sortedCategories) {
+        const opt = dropdown.createDiv('flywheel-category-option');
+        const dot = opt.createEl('span', { cls: 'flywheel-cat-dot' });
+        dot.style.background = CATEGORY_CANVAS_COLORS[c];
+        opt.createEl('span').setText(c);
+        if (c === cat) opt.addClass('is-active');
+        opt.addEventListener('click', async () => {
+          dropdown.remove();
+          // Optimistic update — show chosen category immediately
+          catBadge.dataset.category = c;
+          catBadge.empty();
+          const newDot = catBadge.createEl('span', { cls: 'flywheel-cat-dot' });
+          newDot.style.background = CATEGORY_CANVAS_COLORS[c] ?? CATEGORY_CANVAS_COLORS.other;
+          catBadge.createEl('span').setText(c);
+          await this.mcpClient.updateFrontmatter(file.path, { type: c });
+          this.mcpClient.bustEntityCache();
+        });
+      }
+
+      // Close dropdown on outside click
+      const close = (ev: MouseEvent) => {
+        if (!dropdown.contains(ev.target as Node)) {
+          dropdown.remove();
+          document.removeEventListener('click', close, true);
+        }
+      };
+      setTimeout(() => document.addEventListener('click', close, true), 0);
+    });
   }
 
   private async renderNoteSections(file: TFile, generation: number, freshContainer?: HTMLElement): Promise<void> {
@@ -521,13 +658,15 @@ export class GraphSidebarView extends ItemView {
       if (generation !== this.renderGeneration) return;
 
       const noteContent = await this.app.vault.cachedRead(file);
-      const [backlinksResp, forwardLinksResp, suggestResp, similarResp, health, semanticResp] = await Promise.all([
+      const [backlinksResp, forwardLinksResp, suggestResp, similarResp, health, semanticResp, connectionsResp, entityHubScores] = await Promise.all([
         this.mcpClient.getBacklinks(notePath).catch(() => null),
         this.mcpClient.getForwardLinks(notePath).catch(() => null),
         this.mcpClient.suggestWikilinks(noteContent, true).catch(() => null),
         this.mcpClient.findSimilar(notePath, 15).catch(() => null),
         this.mcpClient.healthCheck().catch(() => null),
         this.mcpClient.noteIntelligence(notePath, 'semantic_links').catch(() => null),
+        this.mcpClient.getStrongConnections(notePath, 30).catch(() => null as McpStrongConnectionsResponse | null),
+        this.mcpClient.getEntityHubScores().catch(() => new Map<string, number>()),
       ]);
 
       if (generation !== this.renderGeneration) return;
@@ -559,128 +698,86 @@ export class GraphSidebarView extends ItemView {
         return true;
       });
 
-      // Folder section (first — most actionable)
-      await this.renderFolderSection(file, generation);
+      // Folder chips — compact frontmatter suggestions below header
+      await this.renderFolderChips(file, generation);
 
-      // Local Graph section — force-directed 1-hop neighborhood
       const safeBacklinks: McpBacklinksResponse = backlinksResp ?? { backlinks: [] };
       const safeForwardLinks: McpForwardLinksResponse = forwardLinksResp ?? { forward_links: [] };
 
+      // Build edge weight map (used by both cloud tooltips and local graph)
+      const edgeWeightMap = new Map<string, number>();
+      // Also build a simpler path→weight map for cloud tooltips
+      const connectionWeights = new Map<string, number>();
+      if (connectionsResp?.connections) {
+        for (const conn of connectionsResp.connections) {
+          const key = conn.direction === 'outgoing'
+            ? `${notePath}\u2192${conn.node}`
+            : `${conn.node}\u2192${notePath}`;
+          edgeWeightMap.set(key, conn.weight);
+          connectionWeights.set(conn.node, conn.weight);
+        }
+      }
+
+      // Context Cloud — rendered directly (no section wrapper)
+      await this.renderContextCloud(safeBacklinks, safeForwardLinks, suggestResp, similarResp, semanticResp, connectionWeights, entityHubScores);
+
       {
-        const W = 280;
-        const H = 200;
-        const { nodes, edges } = this.buildLocalGraph(notePath, safeBacklinks, safeForwardLinks);
+        const { nodes, edges } = await this.buildLocalGraph(notePath, safeBacklinks, safeForwardLinks, edgeWeightMap, entityHubScores, suggestResp, similarResp, connectionsResp);
         const dpr = window.devicePixelRatio || 1;
 
-        this.renderSection('Local Graph', 'git-fork', undefined, (sectionContent) => {
-          if (nodes.length <= 1) {
-            sectionContent.createDiv('flywheel-graph-section-empty').setText('No connections yet');
-            return;
-          }
-          this.layoutGraph(nodes, edges, W, H);
-          const canvas = this.renderLocalGraphCanvas(sectionContent, nodes, edges, W, H);
-          const cx = W / 2;
-          const cy = H / 2;
+        if (nodes.length > 1) {
+          const graphZone = this.noteContainer.createDiv('flywheel-graph-zone');
 
-          const hitTest = (e: MouseEvent): GraphNode | null => {
-            const rect = canvas.getBoundingClientRect();
-            const mx = (e.clientX - rect.left) * (canvas.width / rect.width / dpr) - cx;
-            const my = (e.clientY - rect.top) * (canvas.height / rect.height / dpr) - cy;
-            for (const n of nodes) {
-              const dx = mx - n.x;
-              const dy = my - n.y;
-              if (dx * dx + dy * dy <= (n.radius + 3) ** 2) return n;
-            }
-            return null;
+          const renderGraph = () => {
+            graphZone.empty();
+            const W = Math.max(200, this.noteContainer.clientWidth);
+            const H = Math.round(W * 0.75);
+            this.layoutGraph(nodes, edges, W, H);
+            const canvas = this.renderLocalGraphCanvas(graphZone, nodes, edges, W, H);
+            const cx = W / 2;
+            const cy = H / 2;
+
+            const hitTest = (e: MouseEvent): GraphNode | null => {
+              const rect = canvas.getBoundingClientRect();
+              const mx = (e.clientX - rect.left) * (canvas.width / rect.width / dpr) - cx;
+              const my = (e.clientY - rect.top) * (canvas.height / rect.height / dpr) - cy;
+              for (const n of nodes) {
+                const dx = mx - n.x;
+                const dy = my - n.y;
+                if (dx * dx + dy * dy <= (n.radius + 3) ** 2) return n;
+              }
+              return null;
+            };
+
+            canvas.addEventListener('click', (e) => {
+              const node = hitTest(e);
+              if (node && !node.isCurrent) {
+                this.app.workspace.openLinkText(node.id, '', false);
+              }
+            });
+
+            canvas.addEventListener('mousemove', (e) => {
+              const node = hitTest(e);
+              canvas.style.cursor = node ? 'pointer' : 'default';
+              canvas.title = node ? node.label : '';
+            });
           };
 
-          canvas.addEventListener('click', (e) => {
-            const node = hitTest(e);
-            if (node && !node.isCurrent) {
-              this.app.workspace.openLinkText(node.id, '', false);
+          renderGraph();
+
+          // Re-render graph on pane resize
+          let lastWidth = this.noteContainer.clientWidth;
+          const resizeObs = new ResizeObserver(() => {
+            const newWidth = this.noteContainer.clientWidth;
+            if (Math.abs(newWidth - lastWidth) > 10) {
+              lastWidth = newWidth;
+              renderGraph();
             }
           });
-
-          canvas.addEventListener('mousemove', (e) => {
-            const node = hitTest(e);
-            canvas.style.cursor = node ? 'pointer' : 'default';
-            canvas.title = node ? node.label : '';
-          });
-        }, true, undefined, 'localGraph');
-      }
-
-      // Context Cloud — unified view of all related notes
-      this.renderContextCloud(safeBacklinks, safeForwardLinks, suggestResp, similarResp, semanticResp);
-
-      const MAX_ITEMS = 5;
-
-      // Backlinks section — group by source, sorted by mention count desc
-      const blGrouped = new Map<string, { source: string; count: number; lines: number[]; context?: string }>();
-      for (const bl of safeBacklinks.backlinks) {
-        const existing = blGrouped.get(bl.source);
-        if (existing) {
-          existing.count++;
-          existing.lines.push(bl.line);
-          if (!existing.context && bl.context) existing.context = bl.context;
-        } else {
-          blGrouped.set(bl.source, { source: bl.source, count: 1, lines: [bl.line], context: bl.context });
+          resizeObs.observe(this.noteContainer);
+          this.register(() => resizeObs.disconnect());
         }
       }
-      const blSorted = [...blGrouped.values()].sort((a, b) => b.count - a.count);
-      const uniqueBacklinks = blSorted.length;
-
-      const backlinksInfo = 'Notes that link to this note. Grouped by source note \u2014 ' +
-        'the count shows how many times each note links here.';
-      this.renderSection('Backlinks', 'arrow-left', uniqueBacklinks, (container) => {
-        if (!backlinksResp) {
-          container.createDiv('flywheel-graph-section-empty').setText('Failed to load backlinks');
-          return;
-        }
-        if (blSorted.length === 0) {
-          container.createDiv('flywheel-graph-section-empty').setText('No backlinks');
-          return;
-        }
-        container.addClass('flywheel-graph-grid-2col');
-
-        const visible = blSorted.slice(0, MAX_ITEMS);
-        for (const bl of visible) {
-          this.renderBacklinkGrouped(container, bl);
-        }
-
-        const remaining = blSorted.length - visible.length;
-        if (remaining > 0) {
-          this.renderShowMore(container, remaining, blSorted.slice(MAX_ITEMS), (bl) => {
-            this.renderBacklinkGrouped(container, bl);
-          });
-        }
-      }, false, undefined, undefined, backlinksInfo);
-
-      // Forward links section
-      const forwardInfo = 'Outgoing wikilinks from this note. Dead links (marked \'missing\') ' +
-        'point to notes that don\'t exist yet.';
-      this.renderSection('Forward Links', 'arrow-right', uniqueLinks.length, (container) => {
-        if (!forwardLinksResp) {
-          container.createDiv('flywheel-graph-section-empty').setText('Failed to load forward links');
-          return;
-        }
-        if (uniqueLinks.length === 0) {
-          container.createDiv('flywheel-graph-section-empty').setText('No outgoing links');
-          return;
-        }
-        container.addClass('flywheel-graph-grid-2col');
-
-        const visible = uniqueLinks.slice(0, MAX_ITEMS);
-        for (const link of visible) {
-          this.renderForwardLink(container, link);
-        }
-
-        const remaining = uniqueLinks.length - visible.length;
-        if (remaining > 0) {
-          this.renderShowMore(container, remaining, uniqueLinks.slice(MAX_ITEMS), (link) => {
-            this.renderForwardLink(container, link);
-          });
-        }
-      }, false, undefined, undefined, forwardInfo);
     } catch (err) {
       console.error('Flywheel Crank: graph sidebar error', err);
       // Retry once after 3s (server may still be starting)
@@ -692,114 +789,6 @@ export class GraphSidebarView extends ItemView {
         }, 3000);
       }
     }
-  }
-
-  /** Open a note and scroll to a specific line with a brief flash highlight. */
-  private async navigateToLine(source: string, line: number): Promise<void> {
-    await this.app.workspace.openLinkText(source, '', false);
-    // Find the leaf with the target file — getActiveViewOfType returns null from sidebar context
-    const target = source.replace(/\.md$/, '');
-    const leaf = this.app.workspace.getLeavesOfType('markdown').find(l => {
-      const f = (l.view as MarkdownView).file;
-      return f && f.path.replace(/\.md$/, '') === target;
-    });
-    if (!leaf) return;
-    const view = leaf.view as MarkdownView;
-    this.app.workspace.setActiveLeaf(leaf, { focus: true });
-    // Small delay for focus to settle, then scroll and flash-select the line
-    setTimeout(() => {
-      if (!view.editor) return;
-      const ln = Math.max(0, line - 1);
-      const text = view.editor.getLine(ln);
-      view.editor.setSelection({ line: ln, ch: 0 }, { line: ln, ch: text.length });
-      view.editor.scrollIntoView({ from: { line: ln, ch: 0 }, to: { line: ln, ch: text.length } }, true);
-      setTimeout(() => view.editor.setCursor({ line: ln, ch: 0 }), 250);
-    }, 50);
-  }
-
-  private renderBacklink(container: HTMLDivElement, bl: { source: string; line: number; context?: string }): void {
-    const item = container.createDiv('flywheel-graph-link-item');
-    item.addEventListener('click', () => this.navigateToLine(bl.source, bl.line));
-
-    const title = bl.source.replace(/\.md$/, '').split('/').pop() || bl.source;
-    const nameRow = item.createDiv('flywheel-graph-link-name-row');
-    nameRow.createSpan('flywheel-graph-link-name').setText(title);
-    nameRow.createSpan('flywheel-graph-link-line').setText(`L${bl.line}`);
-
-    const folder = bl.source.split('/').slice(0, -1).join('/');
-    if (folder) item.createDiv('flywheel-graph-link-path').setText(folder);
-
-    if (bl.context) {
-      const snippetEl = item.createDiv('flywheel-graph-link-snippet');
-      snippetEl.setText(bl.context);
-    }
-  }
-
-  private renderBacklinkGrouped(
-    container: HTMLDivElement,
-    bl: { source: string; count: number; lines: number[]; context?: string },
-  ): void {
-    const item = container.createDiv('flywheel-graph-link-item');
-    item.addEventListener('click', () => bl.lines.length > 0
-      ? this.navigateToLine(bl.source, bl.lines[0])
-      : this.app.workspace.openLinkText(bl.source, '', false));
-
-    const title = bl.source.replace(/\.md$/, '').split('/').pop() || bl.source;
-    const nameRow = item.createDiv('flywheel-graph-link-name-row');
-    nameRow.createSpan('flywheel-graph-link-name').setText(title);
-    if (bl.count > 1) {
-      nameRow.createSpan('flywheel-graph-score-badge').setText(`${bl.count}x`);
-    }
-    nameRow.createSpan('flywheel-graph-link-line').setText(
-      bl.lines.length <= 3
-        ? bl.lines.map(l => `L${l}`).join(', ')
-        : `L${bl.lines[0]}, +${bl.lines.length - 1} more`,
-    );
-
-    const folder = bl.source.split('/').slice(0, -1).join('/');
-    if (folder) item.createDiv('flywheel-graph-link-path').setText(folder);
-
-    if (bl.context) {
-      item.createDiv('flywheel-graph-link-snippet').setText(bl.context);
-    }
-  }
-
-  private renderForwardLink(container: HTMLDivElement, link: { target: string; exists: boolean; resolved_path?: string }): void {
-    const item = container.createDiv('flywheel-graph-link-item');
-    if (link.exists && link.resolved_path) {
-      item.addEventListener('click', () => this.app.workspace.openLinkText(link.resolved_path!, '', false));
-    } else {
-      item.addClass('flywheel-graph-dead-link');
-      item.setAttribute('aria-label',
-        `"${link.target}" doesn't exist yet.\n\n` +
-        'Flywheel tracks dead links as signals:\n' +
-        '• graph_analysis dead_ends mode surfaces these\n' +
-        '• They lower the linking note\'s graph health score\n' +
-        '• Creating this note would strengthen the graph\n' +
-        '• suggest_wikilinks avoids suggesting dead targets'
-      );
-      item.addClass('has-tooltip');
-    }
-    item.createDiv('flywheel-graph-link-name').setText(link.target);
-
-    if (link.exists && link.resolved_path) {
-      const folder = link.resolved_path.split('/').slice(0, -1).join('/');
-      if (folder) item.createDiv('flywheel-graph-link-path').setText(folder);
-    } else if (!link.exists) {
-      item.createDiv('flywheel-graph-badge flywheel-graph-badge-dead').setText('missing');
-      item.createDiv('flywheel-graph-link-hint').setText('Create this note to strengthen the graph');
-    }
-  }
-
-  private renderShowMore<T>(container: HTMLDivElement, remaining: number, items: T[], render: (item: T) => void): void {
-    const moreEl = container.createDiv('flywheel-graph-more');
-    moreEl.setText(`+ ${remaining} more`);
-    moreEl.addEventListener('click', () => {
-      moreEl.remove();
-      for (const item of items) {
-        render(item);
-      }
-    });
   }
 
   // ---------------------------------------------------------------------------
@@ -992,28 +981,57 @@ export class GraphSidebarView extends ItemView {
   // Context Cloud
   // ---------------------------------------------------------------------------
 
-  private renderContextCloud(
+  private async renderContextCloud(
     backlinksResp: McpBacklinksResponse,
     forwardLinksResp: McpForwardLinksResponse,
     suggestResp: McpSuggestWikilinksResponse | null,
     similarResp: McpSimilarResponse | null,
     semanticResp: import('../mcp/client').McpNoteIntelligenceResponse | null,
-  ): void {
+    connectionWeights?: Map<string, number>,
+    hubScores?: Map<string, number>,
+  ): Promise<void> {
     interface CloudEntry {
       name: string;
       path: string | null;
       score: number;
       reasons: string[];
       sources: Set<string>;
+      breakdown?: {
+        contentMatch: number;
+        cooccurrenceBoost: number;
+        typeBoost: number;
+        contextBoost: number;
+        recencyBoost: number;
+        crossFolderBoost: number;
+        hubBoost: number;
+        feedbackAdjustment: number;
+        suppressionPenalty?: number;
+        semanticBoost?: number;
+        edgeWeightBoost?: number;
+      };
     }
 
     const cloud = new Map<string, CloudEntry>();
 
     const mergeEntry = (key: string, entry: Omit<CloudEntry, 'sources'> & { source: string }) => {
-      const existing = cloud.get(key);
+      let existing = cloud.get(key);
+
+      // If no exact key match, check for existing entry with same name
+      // (handles path vs bare-name key mismatch from semantic sources)
+      if (!existing) {
+        for (const [k, v] of cloud) {
+          if (v.name.toLowerCase() === entry.name.toLowerCase()) {
+            existing = v;
+            key = k;
+            break;
+          }
+        }
+      }
+
       if (existing) {
         if (entry.score > existing.score) existing.score = entry.score;
         if (!existing.path && entry.path) existing.path = entry.path;
+        if (entry.breakdown && !existing.breakdown) existing.breakdown = entry.breakdown;
         // Deduplicate reasons
         for (const r of entry.reasons) {
           if (!existing.reasons.includes(r)) existing.reasons.push(r);
@@ -1026,6 +1044,7 @@ export class GraphSidebarView extends ItemView {
           score: entry.score,
           reasons: [...entry.reasons],
           sources: new Set([entry.source]),
+          breakdown: entry.breakdown,
         });
       }
     };
@@ -1088,6 +1107,7 @@ export class GraphSidebarView extends ItemView {
           score,
           reasons: [reason],
           source: 'suggested',
+          breakdown: sug.breakdown,
         });
       }
     }
@@ -1138,46 +1158,60 @@ export class GraphSidebarView extends ItemView {
       return false;
     };
 
-    const MAX_MAIN = 30;
-    const MAX_PERIODIC = 15;
+    const MIN_CLOUD_SCORE = 0.15;
+    const MAX_CLOUD_ITEMS = 50;
 
     const allEntries = [...cloud.values()].filter(e => e.score > 0);
     const mainEntries = allEntries
-      .filter(e => !isPeriodic(e))
+      .filter(e => !isPeriodic(e) && e.score >= MIN_CLOUD_SCORE)
       .sort((a, b) => b.score - a.score)
-      .slice(0, MAX_MAIN)
+      .slice(0, MAX_CLOUD_ITEMS)
       .sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: 'base' }));
     const periodicEntries = allEntries
-      .filter(e => isPeriodic(e))
+      .filter(e => isPeriodic(e) && e.score >= MIN_CLOUD_SCORE)
       .sort((a, b) => b.score - a.score)
-      .slice(0, MAX_PERIODIC)
+      .slice(0, MAX_CLOUD_ITEMS)
       .sort((a, b) => b.name.localeCompare(a.name, undefined, { sensitivity: 'base' }));
 
-    const contextInfo = 'Each note\'s size reflects how strongly it relates to the current note. ' +
-      'Scoring factors: direct links (backlinks/forward), content similarity (BM25), ' +
-      'wikilink suggestion strength (11-layer entity scoring), and semantic similarity ' +
-      '(when embeddings are built). Hover individual items for a detailed breakdown.';
+    // Fetch entity categories for pill coloring
+    const categoryKeys = allEntries.map(e => e.path ?? e.name);
+    const categories = await this.mcpClient.getEntityCategories(categoryKeys).catch(() => new Map<string, string>());
 
-    this.renderSection('Context', 'cloud', mainEntries.length + periodicEntries.length, (container) => {
-      // Main cloud
-      if (mainEntries.length > 0) {
-        this.renderCloudItems(container, mainEntries, 11, 18);
-      }
+    // Override periodic entries to 'periodical' category
+    for (const entry of periodicEntries) {
+      const key = entry.path ?? entry.name;
+      categories.set(key, 'periodical');
+    }
 
-      // Periodic cloud — smaller, more compact
-      if (periodicEntries.length > 0) {
-        const periodicLabel = container.createDiv('flywheel-cloud-label');
-        periodicLabel.setText('periodic');
-        this.renderCloudItems(container, periodicEntries, 10, 14);
-      }
-    }, false, undefined, undefined, contextInfo);
+    // Render cloud directly (no section wrapper)
+    const cloudZone = this.noteContainer.createDiv('flywheel-cloud-zone');
+
+    if (mainEntries.length > 0) {
+      this.renderCloudItems(cloudZone, mainEntries, categories, connectionWeights, hubScores);
+    }
+
+    if (periodicEntries.length > 0) {
+      const periodicToggle = cloudZone.createDiv('flywheel-cloud-label flywheel-periodic-toggle');
+      periodicToggle.setText(`periodic (${periodicEntries.length})`);
+      const periodicWrap = cloudZone.createDiv('flywheel-periodic-wrap');
+      periodicWrap.style.display = 'none';
+      this.renderCloudItems(periodicWrap, periodicEntries, categories, connectionWeights, hubScores);
+      periodicToggle.addEventListener('click', () => {
+        const hidden = periodicWrap.style.display === 'none';
+        periodicWrap.style.display = hidden ? '' : 'none';
+        periodicToggle.toggleClass('is-expanded', hidden);
+      });
+    }
+
+    this.renderCloudLegend(cloudZone, [...mainEntries, ...periodicEntries], categories);
   }
 
   private renderCloudItems(
     container: HTMLDivElement,
-    entries: Array<{ name: string; path: string | null; score: number; reasons: string[]; sources: Set<string> }>,
-    _minFontSize?: number,
-    _maxFontSize?: number,
+    entries: Array<{ name: string; path: string | null; score: number; reasons: string[]; sources: Set<string>; breakdown?: Record<string, number> }>,
+    categories: Map<string, string>,
+    connectionWeights?: Map<string, number>,
+    hubScores?: Map<string, number>,
   ): void {
     const minScore = Math.min(...entries.map(e => e.score));
     const maxScore = Math.max(...entries.map(e => e.score));
@@ -1185,7 +1219,7 @@ export class GraphSidebarView extends ItemView {
 
     const cloudEl = container.createDiv('flywheel-cloud');
 
-    // Source priority for coloring (when multiple sources, pick highest priority)
+    // Source priority for border styling (when multiple sources, pick highest priority)
     const SOURCE_PRIORITY = ['backlink', 'forward', 'suggested', 'similar', 'semantic'];
 
     for (const entry of entries) {
@@ -1193,36 +1227,74 @@ export class GraphSidebarView extends ItemView {
 
       const item = cloudEl.createEl('span', { cls: 'flywheel-cloud-item' });
 
-      // Set data-source for CSS coloring — pick primary source
+      // Category for pill coloring (aligned with graph node colors)
+      const cat = categories.get(entry.path ?? '')
+        ?? categories.get(entry.name)
+        ?? 'other';
+      item.dataset.category = cat;
+
+      // Source indicator via left border style
       const isMulti = entry.sources.size > 1;
+      const primarySource = SOURCE_PRIORITY.find(s => entry.sources.has(s)) ?? 'suggested';
       if (isMulti) {
         item.dataset.multi = 'true';
-      } else {
-        const primarySource = SOURCE_PRIORITY.find(s => entry.sources.has(s)) ?? 'suggested';
-        item.dataset.source = primarySource;
       }
+      item.dataset.source = primarySource;
 
       // Store entity name for pipeline pulse matching
       item.dataset.entity = entry.name;
 
-      // Name label
+      // Name label — inner span for CSS pill text coloring
       const nameEl = item.createEl('span', { cls: 'flywheel-cloud-name' });
       nameEl.setText(entry.name);
       nameEl.style.opacity = String((0.65 + t * 0.35).toFixed(2));
 
-      const pct = Math.round(entry.score * 100);
-
-      // Tooltip: score + source signals + reasons
+      // Tooltip: name, sources, reasons first — then 12-stage scores at bottom
       const sourceLabels: string[] = [];
       if (entry.sources.has('backlink')) sourceLabels.push('backlink');
       if (entry.sources.has('forward')) sourceLabels.push('linked');
       if (entry.sources.has('suggested')) sourceLabels.push('suggested');
       if (entry.sources.has('similar')) sourceLabels.push('similar');
       if (entry.sources.has('semantic')) sourceLabels.push('semantic');
+
+      const ew = connectionWeights?.get(entry.path ?? '');
+      const nameKey = entry.name.toLowerCase();
+      const hs = hubScores?.get(nameKey);
+
       const tooltipLines = [
-        `${pct} · ${sourceLabels.join(', ')}`,
-        ...entry.reasons,
+        `${entry.name} (${cat})`,
+        `Sources: ${sourceLabels.join(', ')}`,
       ];
+      if (ew != null) tooltipLines.push(`Edge weight: ${ew.toFixed(1)}`);
+      if (hs != null && hs > 0) tooltipLines.push(`Hub score: ${hs.toFixed(1)}`);
+      if (entry.reasons.length > 0) tooltipLines.push(...entry.reasons);
+
+      // 12-stage scoring breakdown at the bottom
+      if (entry.breakdown) {
+        const bd = entry.breakdown;
+        const total = bd.contentMatch + bd.cooccurrenceBoost + bd.typeBoost
+          + bd.contextBoost + bd.recencyBoost + bd.crossFolderBoost
+          + bd.hubBoost + bd.feedbackAdjustment
+          + (bd.edgeWeightBoost ?? 0) + (bd.suppressionPenalty ?? 0)
+          + (bd.semanticBoost ?? 0);
+
+        const fmt = (v: number) => { const s = v > 0 ? '+' : ''; return `${s}${Math.round(v)}`; };
+        tooltipLines.push(
+          `\u2500\u2500\u2500 Scoring: ${Math.round(total)} \u2500\u2500\u2500`,
+          `  Content:  ${fmt(bd.contentMatch)}`,
+          `  Co-occur: ${fmt(bd.cooccurrenceBoost)}`,
+          `  Type:     ${fmt(bd.typeBoost)}`,
+          `  Context:  ${fmt(bd.contextBoost)}`,
+          `  Recency:  ${fmt(bd.recencyBoost)}`,
+          `  X-folder: ${fmt(bd.crossFolderBoost)}`,
+          `  Hub:      ${fmt(bd.hubBoost)}`,
+          `  Edge wt:  ${fmt(bd.edgeWeightBoost ?? 0)}`,
+          `  Feedback: ${fmt(bd.feedbackAdjustment)}`,
+          `  Suppress: ${fmt(bd.suppressionPenalty ?? 0)}`,
+          `  Semantic: ${fmt(bd.semanticBoost ?? 0)}`,
+        );
+      }
+
       item.setAttribute('aria-label', tooltipLines.join('\n'));
 
       // Navigate on click — use path if available, otherwise try name (entity resolution)
@@ -1233,6 +1305,68 @@ export class GraphSidebarView extends ItemView {
         });
       } else {
         item.addClass('flywheel-cloud-dead');
+      }
+    }
+  }
+
+  private renderCloudLegend(
+    container: HTMLDivElement,
+    entries: Array<{ name: string; path: string | null; sources: Set<string> }>,
+    categories: Map<string, string>,
+  ): void {
+    // Collect unique categories present in the cloud
+    const presentCats = new Map<string, number>();
+    for (const entry of entries) {
+      const cat = categories.get(entry.path ?? '') ?? categories.get(entry.name) ?? 'other';
+      presentCats.set(cat, (presentCats.get(cat) ?? 0) + 1);
+    }
+
+    // Sort by count descending, show top 6
+    const topCats = [...presentCats.entries()]
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 6);
+
+    if (topCats.length === 0) return;
+
+    const legendWrap = container.createDiv('flywheel-cloud-legend-wrap');
+
+    // Category row
+    const catRow = legendWrap.createDiv('flywheel-cloud-legend');
+    for (const [cat] of topCats) {
+      const item = catRow.createEl('span', { cls: 'flywheel-legend-item' });
+      const dot = item.createEl('span', { cls: 'flywheel-legend-dot' });
+      dot.style.background = CATEGORY_CANVAS_COLORS[cat] ?? CATEGORY_CANVAS_COLORS.other;
+      item.createEl('span').setText(cat);
+    }
+
+    // Source border row
+    const sourceStyles: [string, string, string][] = [
+      ['backlink', '#60a5fa', 'solid'],
+      ['forward', '#4ade80', 'solid'],
+      ['suggested', '#fb923c', 'dashed'],
+      ['similar', '#c084fc', 'dotted'],
+      ['semantic', '#22d3ee', 'double'],
+    ];
+
+    const presentSources = new Set<string>();
+    for (const entry of entries) {
+      for (const s of entry.sources) presentSources.add(s);
+    }
+
+    const activeSources = sourceStyles.filter(([label]) => presentSources.has(label));
+    if (activeSources.length > 0) {
+      const srcRow = legendWrap.createDiv('flywheel-cloud-legend');
+      for (const [label, color, style] of activeSources) {
+        const item = srcRow.createEl('span', { cls: 'flywheel-legend-item' });
+        const line = item.createEl('span', { cls: 'flywheel-legend-line' });
+        line.style.borderTop = `2.5px ${style} ${color}`;
+        item.createEl('span').setText(label);
+      }
+      if (presentSources.size > 1) {
+        const item = srcRow.createEl('span', { cls: 'flywheel-legend-item' });
+        const line = item.createEl('span', { cls: 'flywheel-legend-line' });
+        line.style.borderTop = '3px solid var(--text-accent)';
+        item.createEl('span').setText('multi');
       }
     }
   }
@@ -1311,58 +1445,258 @@ export class GraphSidebarView extends ItemView {
   // Local Graph: force-directed 1-hop neighborhood
   // ---------------------------------------------------------------------------
 
-  private buildLocalGraph(
+  private async buildLocalGraph(
     notePath: string,
     backlinksResp: McpBacklinksResponse | null,
     forwardLinksResp: McpForwardLinksResponse | null,
-  ): { nodes: GraphNode[]; edges: GraphEdge[] } {
+    edgeWeightMap: Map<string, number>,
+    hubScores: Map<string, number>,
+    suggestResp?: McpSuggestWikilinksResponse | null,
+    similarResp?: McpSimilarResponse | null,
+    connectionsResp?: McpStrongConnectionsResponse | null,
+  ): Promise<{ nodes: GraphNode[]; edges: GraphEdge[] }> {
     const nodeMap = new Map<string, GraphNode>();
     const edges: GraphEdge[] = [];
     const edgeSet = new Set<string>();
 
-    const PALETTE = [
-      '#6e9bf5', '#f5a623', '#7ec699', '#e06c75', '#c678dd',
-      '#56b6c2', '#d19a66', '#98c379', '#e5c07b', '#61afef',
-      '#be5046', '#e6c07b', '#c3a6ff', '#56d5a0', '#ff9e64',
-    ];
-    const colorFor = (p: string) => {
-      let h = 0;
-      for (let i = 0; i < p.length; i++) h = ((h << 5) - h + p.charCodeAt(i)) | 0;
-      return PALETTE[Math.abs(h) % PALETTE.length];
-    };
     const nameOf = (p: string) => p.replace(/\.md$/, '').split('/').pop() || p;
+    // Case-insensitive key for nodeMap — prevents duplicates from
+    // different MCP sources returning variant casings of the same path
+    const nk = (p: string) => p.toLowerCase();
+    // Retrieve canonical node ID (original casing) for edge references
+    const canonId = (p: string) => nodeMap.get(nk(p))?.id ?? p;
 
-    nodeMap.set(notePath, {
+    const isPeriodicPath = (p: string): boolean => {
+      if (this.periodicPrefixes.length > 0) {
+        return this.periodicPrefixes.some(prefix => p.startsWith(prefix));
+      }
+      // Fallback: detect date-like filenames (e.g. 2026-02-28, 2026-W09)
+      const stem = nameOf(p);
+      return /^\d{4}-\d{2}-\d{2}/.test(stem) || /^\d{4}-W\d{2}/.test(stem);
+    };
+
+    // Hub score → node radius: base 6, scale by hub score, cap at 14
+    const radiusFor = (p: string): number => {
+      const name = nameOf(p).toLowerCase();
+      const hs = hubScores.get(name) ?? 0;
+      return Math.max(6, Math.min(14, 7 + hs * 0.4));
+    };
+
+    nodeMap.set(nk(notePath), {
       id: notePath, label: nameOf(notePath),
       x: 0, y: 0, vx: 0, vy: 0,
-      radius: 7, color: 'var(--interactive-accent)', isCurrent: true,
+      radius: 10, color: 'var(--interactive-accent)', isCurrent: true,
     });
+
+    const neighborPaths: string[] = [];
 
     for (const b of backlinksResp?.backlinks ?? []) {
       const p = b.source;
-      if (!nodeMap.has(p)) {
-        nodeMap.set(p, {
+      if (!nodeMap.has(nk(p))) {
+        const periodic = isPeriodicPath(p);
+        neighborPaths.push(p);
+        nodeMap.set(nk(p), {
           id: p, label: nameOf(p),
           x: (Math.random() - 0.5) * 200, y: (Math.random() - 0.5) * 200,
-          vx: 0, vy: 0, radius: 5, color: colorFor(p), isCurrent: false,
+          vx: 0, vy: 0, radius: periodic ? Math.max(4, radiusFor(p) * 0.7) : radiusFor(p),
+          color: CATEGORY_CANVAS_COLORS.other, isCurrent: false,
+          isPeriodic: periodic || undefined,
         });
       }
-      const key = `${p}→${notePath}`;
-      if (!edgeSet.has(key)) { edgeSet.add(key); edges.push({ source: p, target: notePath }); }
+      const cid = canonId(p);
+      const key = `${cid}\u2192${notePath}`;
+      if (!edgeSet.has(key)) {
+        edgeSet.add(key);
+        const weight = edgeWeightMap.get(key) ?? 1.0;
+        edges.push({ source: cid, target: notePath, weight });
+      }
     }
 
     for (const f of forwardLinksResp?.forward_links ?? []) {
       const p = f.resolved_path ?? f.target;
       if (!p || !f.exists) continue;
-      if (!nodeMap.has(p)) {
-        nodeMap.set(p, {
+      if (!nodeMap.has(nk(p))) {
+        const periodic = isPeriodicPath(p);
+        neighborPaths.push(p);
+        nodeMap.set(nk(p), {
           id: p, label: nameOf(p),
           x: (Math.random() - 0.5) * 200, y: (Math.random() - 0.5) * 200,
-          vx: 0, vy: 0, radius: 5, color: colorFor(p), isCurrent: false,
+          vx: 0, vy: 0, radius: periodic ? Math.max(4, radiusFor(p) * 0.7) : radiusFor(p),
+          color: CATEGORY_CANVAS_COLORS.other, isCurrent: false,
+          isPeriodic: periodic || undefined,
         });
       }
-      const key = `${notePath}→${p}`;
-      if (!edgeSet.has(key)) { edgeSet.add(key); edges.push({ source: notePath, target: p }); }
+      const cid = canonId(p);
+      const key = `${notePath}\u2192${cid}`;
+      if (!edgeSet.has(key)) {
+        edgeSet.add(key);
+        const weight = edgeWeightMap.get(key) ?? 1.0;
+        edges.push({ source: notePath, target: cid, weight });
+      }
+    }
+
+    // Cap neighbors to avoid overcrowded graphs — keep highest-weight edges
+    const MAX_NEIGHBORS = 8;
+    if (neighborPaths.length > MAX_NEIGHBORS) {
+      const ranked = edges
+        .map(e => ({ path: e.source === notePath ? e.target : e.source, weight: e.weight }))
+        .sort((a, b) => b.weight - a.weight);
+      const keep = new Set(ranked.slice(0, MAX_NEIGHBORS).map(r => r.path));
+      for (const p of neighborPaths) {
+        if (!keep.has(p)) {
+          nodeMap.delete(nk(p));
+        }
+      }
+      // Remove edges to pruned nodes
+      edges.length = 0;
+      for (const key of edgeSet) {
+        const [src, tgt] = key.split('\u2192');
+        if (nodeMap.has(nk(src)) && nodeMap.has(nk(tgt))) {
+          edges.push({ source: src, target: tgt, weight: edgeWeightMap.get(key) ?? 1.0 });
+        }
+      }
+    }
+
+    // Fill graph with context from suggestions, similar, and strong connections
+    // so the graph is always dense-ish (target ~15 primary nodes)
+    const TARGET_PRIMARY = 15;
+    const currentPrimaryCount = [...nodeMap.values()].filter(n => !n.isSecondary).length;
+    const slotsAvailable = Math.max(0, TARGET_PRIMARY - currentPrimaryCount);
+
+    if (slotsAvailable > 0) {
+      // Collect candidate paths from all context sources, ranked by relevance
+      const candidates: { path: string; weight: number; source: 'suggestion' | 'similar' | 'connection' }[] = [];
+
+      // Strong connections not already in graph
+      if (connectionsResp?.connections) {
+        for (const conn of connectionsResp.connections) {
+          if (!nodeMap.has(nk(conn.node)) && nk(conn.node) !== nk(notePath)) {
+            candidates.push({ path: conn.node, weight: conn.weight, source: 'connection' });
+          }
+        }
+      }
+
+      // Suggested wikilinks (entity name → need to resolve path; use name as ID)
+      if (suggestResp?.scored_suggestions) {
+        for (const sug of suggestResp.scored_suggestions) {
+          const p = sug.existing_note ?? sug.entity;
+          if (!nodeMap.has(nk(p)) && nk(p) !== nk(notePath) && sug.confidence !== 'low') {
+            candidates.push({ path: p, weight: sug.score / 30, source: 'suggestion' });
+          }
+        }
+      }
+
+      // Similar notes
+      if (similarResp?.similar) {
+        for (const sim of similarResp.similar) {
+          if (!nodeMap.has(nk(sim.path)) && nk(sim.path) !== nk(notePath)) {
+            candidates.push({ path: sim.path, weight: sim.score / 100, source: 'similar' });
+          }
+        }
+      }
+
+      // Sort by weight descending, take what we need
+      candidates.sort((a, b) => b.weight - a.weight);
+      const fillNodes = candidates.slice(0, slotsAvailable);
+
+      for (const c of fillNodes) {
+        if (nodeMap.has(nk(c.path))) continue; // skip if added by earlier candidate
+        const periodic = isPeriodicPath(c.path);
+        nodeMap.set(nk(c.path), {
+          id: c.path, label: nameOf(c.path),
+          x: (Math.random() - 0.5) * 200, y: (Math.random() - 0.5) * 200,
+          vx: 0, vy: 0,
+          radius: periodic ? Math.max(4, radiusFor(c.path) * 0.7) : radiusFor(c.path),
+          color: CATEGORY_CANVAS_COLORS.other, isCurrent: false,
+          isPeriodic: periodic || undefined,
+        });
+        // Add a soft edge to the current note
+        const eKey = `${notePath}\u2192${c.path}`;
+        if (!edgeSet.has(eKey)) {
+          edgeSet.add(eKey);
+          edges.push({ source: notePath, target: c.path, weight: Math.max(0.3, c.weight * 0.5) });
+        }
+      }
+    }
+
+    // N+1 hops: expand top hub neighbors to show bridge structure
+    try {
+      const MAX_SECONDARY = 5; // expand up to 5 hub neighbors
+      const MAX_SECONDARY_EDGES = 6; // up to 6 connections per expanded hub
+      const currentNeighbors = [...nodeMap.keys()].filter(p => p !== notePath);
+      const hubNeighbors = currentNeighbors
+        .map(p => ({ path: p, hs: hubScores.get(nameOf(p).toLowerCase()) ?? 0 }))
+        .filter(n => n.hs > 0)
+        .sort((a, b) => b.hs - a.hs)
+        .slice(0, MAX_SECONDARY);
+
+      if (hubNeighbors.length > 0) {
+        const secondaryFetches = hubNeighbors.map(n =>
+          this.mcpClient.getStrongConnections(n.path, MAX_SECONDARY_EDGES + 2).catch(() => null)
+        );
+        const secondaryResults = await Promise.all(secondaryFetches);
+
+        for (let i = 0; i < hubNeighbors.length; i++) {
+          const hubPath = hubNeighbors[i].path;
+          const conns = secondaryResults[i]?.connections;
+          if (!conns) continue;
+
+          for (const conn of conns.slice(0, MAX_SECONDARY_EDGES)) {
+            const p2 = conn.node;
+            // Skip if already in graph or is the current note
+            if (nodeMap.has(nk(p2)) || nk(p2) === nk(notePath)) {
+              // Still add the inter-neighbor edge if both nodes exist
+              const cid2 = canonId(p2);
+              const cidHub = canonId(hubPath);
+              if (nodeMap.has(nk(p2)) && nk(p2) !== nk(notePath)) {
+                const dir = conn.direction ?? 'outgoing';
+                const eKey = dir === 'outgoing' ? `${cidHub}\u2192${cid2}` : `${cid2}\u2192${cidHub}`;
+                if (!edgeSet.has(eKey)) {
+                  edgeSet.add(eKey);
+                  edges.push({ source: cidHub, target: cid2, weight: conn.weight * 0.5 });
+                }
+              }
+              continue;
+            }
+
+            // Add secondary node — smaller, faded
+            const hubNode = nodeMap.get(nk(hubPath))!;
+            const periodic2 = isPeriodicPath(p2);
+            nodeMap.set(nk(p2), {
+              id: p2, label: nameOf(p2),
+              x: hubNode.x + (Math.random() - 0.5) * 80,
+              y: hubNode.y + (Math.random() - 0.5) * 80,
+              vx: 0, vy: 0,
+              radius: Math.max(4, radiusFor(p2) * 0.7),
+              color: CATEGORY_CANVAS_COLORS.other,
+              isCurrent: false,
+              isSecondary: true,
+              isPeriodic: periodic2 || undefined,
+            });
+
+            const cidHub = canonId(hubPath);
+            const dir = conn.direction ?? 'outgoing';
+            const eKey = dir === 'outgoing' ? `${cidHub}\u2192${p2}` : `${p2}\u2192${cidHub}`;
+            if (!edgeSet.has(eKey)) {
+              edgeSet.add(eKey);
+              edges.push({ source: cidHub, target: p2, weight: conn.weight * 0.5 });
+            }
+          }
+        }
+      }
+    } catch (err) {
+      console.error('Flywheel: N+1 hub expansion failed, skipping', err);
+    }
+
+    // Batch-fetch category colors for all visible nodes
+    // Use original node IDs (not lowercase keys) for the MCP category query
+    const visibleNodes = [...nodeMap.values()].filter(n => !n.isCurrent);
+    const visibleIds = visibleNodes.map(n => n.id);
+    const catMap = await this.mcpClient.getEntityCategories(visibleIds).catch(() => new Map<string, string>());
+    for (const node of visibleNodes) {
+      // Periodic notes get their own muted color regardless of entity category
+      const cat = node.isPeriodic ? 'periodical' : (catMap.get(node.id) ?? 'other');
+      node.color = CATEGORY_CANVAS_COLORS[cat] ?? CATEGORY_CANVAS_COLORS.other;
     }
 
     return { nodes: Array.from(nodeMap.values()), edges };
@@ -1407,6 +1741,16 @@ export class GraphSidebarView extends ItemView {
         tgt.vx += fx; tgt.vy += fy;
       }
 
+      // Push periodic notes away from center (centrifugal force)
+      for (const n of nodes) {
+        if (n.isPeriodic && !n.isCurrent) {
+          const dist = Math.max(Math.sqrt(n.x * n.x + n.y * n.y), 0.01);
+          const push = k * 1.5; // strong outward force
+          n.vx += (n.x / dist) * push;
+          n.vy += (n.y / dist) * push;
+        }
+      }
+
       for (const n of nodes) {
         if (n.isCurrent) continue;
         const disp = Math.sqrt(n.vx * n.vx + n.vy * n.vy);
@@ -1415,8 +1759,8 @@ export class GraphSidebarView extends ItemView {
           n.x += (n.vx / disp) * capped;
           n.y += (n.vy / disp) * capped;
         }
-        const hw = width / 2 - 20;
-        const hh = height / 2 - 20;
+        const hw = width / 2 - 40;
+        const hh = height / 2 - 40;
         n.x = Math.max(-hw, Math.min(hw, n.x));
         n.y = Math.max(-hh, Math.min(hh, n.y));
       }
@@ -1447,8 +1791,7 @@ export class GraphSidebarView extends ItemView {
 
     ctx.clearRect(0, 0, width, height);
 
-    // Edges
-    ctx.lineWidth = 1;
+    // Edges — thickness + opacity scaled by edge weight
     for (const e of edges) {
       const src = nodes.find(n => n.id === e.source);
       const tgt = nodes.find(n => n.id === e.target);
@@ -1456,8 +1799,13 @@ export class GraphSidebarView extends ItemView {
       ctx.beginPath();
       ctx.moveTo(cx + src.x, cy + src.y);
       ctx.lineTo(cx + tgt.x, cy + tgt.y);
-      ctx.strokeStyle = 'rgba(128, 128, 128, 0.3)';
-      ctx.setLineDash([]);
+      const isPeriodicEdge = src.isPeriodic || tgt.isPeriodic;
+      const isSecondaryEdge = src.isSecondary || tgt.isSecondary;
+      const isDimEdge = isPeriodicEdge || isSecondaryEdge;
+      ctx.lineWidth = isDimEdge ? 1 : Math.min(1 + e.weight * 0.8, 5);
+      const alpha = isPeriodicEdge ? 0.15 : isSecondaryEdge ? 0.25 : Math.min(0.3 + e.weight * 0.15, 0.7);
+      ctx.strokeStyle = `rgba(128, 128, 128, ${alpha.toFixed(2)})`;
+      ctx.setLineDash(isDimEdge ? [3, 3] : []);
       ctx.stroke();
     }
 
@@ -1465,6 +1813,7 @@ export class GraphSidebarView extends ItemView {
     for (const n of nodes) {
       ctx.beginPath();
       ctx.arc(cx + n.x, cy + n.y, n.radius, 0, Math.PI * 2);
+      ctx.globalAlpha = n.isPeriodic ? 0.3 : n.isSecondary ? 0.45 : 1;
       // Resolve CSS var for current node color
       if (n.isCurrent) {
         ctx.fillStyle = getComputedStyle(container).getPropertyValue('--interactive-accent').trim() || '#7c3aed';
@@ -1472,6 +1821,7 @@ export class GraphSidebarView extends ItemView {
         ctx.fillStyle = n.color;
       }
       ctx.fill();
+      ctx.globalAlpha = 1;
     }
 
     // Labels
@@ -1479,10 +1829,15 @@ export class GraphSidebarView extends ItemView {
     ctx.textAlign = 'center';
     ctx.textBaseline = 'top';
     for (const n of nodes) {
+      ctx.globalAlpha = n.isPeriodic ? 0.25 : n.isSecondary ? 0.4 : 1;
       ctx.fillStyle = textColor;
-      ctx.font = n.isCurrent ? 'bold 11px -apple-system, sans-serif' : '10px -apple-system, sans-serif';
-      const label = n.label.length > 18 ? n.label.slice(0, 16) + '\u2026' : n.label;
+      ctx.font = n.isCurrent ? 'bold 14px -apple-system, sans-serif'
+        : (n.isSecondary || n.isPeriodic) ? '11px -apple-system, sans-serif'
+        : '12px -apple-system, sans-serif';
+      const maxLen = n.isSecondary ? 14 : 18;
+      const label = n.label.length > maxLen ? n.label.slice(0, maxLen - 2) + '\u2026' : n.label;
       ctx.fillText(label, cx + n.x, cy + n.y + n.radius + 3);
+      ctx.globalAlpha = 1;
     }
 
     return canvas;

@@ -242,7 +242,9 @@ export interface McpScoredSuggestion {
     crossFolderBoost: number;
     hubBoost: number;
     feedbackAdjustment: number;
+    suppressionPenalty?: number;
     semanticBoost?: number;
+    edgeWeightBoost?: number;
   };
   confidence: 'high' | 'medium' | 'low';
 }
@@ -629,6 +631,19 @@ export interface McpAliasSuggestionsResponse {
   suggestions: McpAliasSuggestion[];
 }
 
+// Strong connections (edge weights)
+export interface McpStrongConnection {
+  node: string;
+  weight: number;
+  direction: 'outgoing' | 'incoming';
+}
+
+export interface McpStrongConnectionsResponse {
+  note: string;
+  count: number;
+  connections: McpStrongConnection[];
+}
+
 // Write tool responses
 export interface McpMutationResponse {
   success: boolean;
@@ -652,6 +667,19 @@ export class FlywheelMcpClient {
   private _lastError: string | null = null;
   private _stderrLines: string[] = [];
   private connectionStateCallbacks = new Set<() => void>();
+
+  // Entity category + hub score cache
+  private entityCategoryCache: Map<string, string> | null = null;
+  private entityHubScoreCache: Map<string, number> | null = null;
+  private entityCategoryCacheTime = 0;
+  private static ENTITY_CACHE_TTL = 5 * 60 * 1000; // 5 min
+
+  /** Invalidate entity category/hub score cache so next access re-fetches. */
+  bustEntityCache(): void {
+    this.entityCategoryCache = null;
+    this.entityHubScoreCache = null;
+    this.entityCategoryCacheTime = 0;
+  }
 
   // Retry callbacks
   private retryCallbacks = new Set<() => void>();
@@ -796,10 +824,10 @@ export class FlywheelMcpClient {
       // No custom path — use npx
       if (isWindows) {
         command = 'npx.cmd';
-        args = ['-y', '@velvetmonkey/flywheel-memory@2.0.58'];
+        args = ['-y', '@velvetmonkey/flywheel-memory'];
       } else {
         command = 'npx';
-        args = ['-y', '@velvetmonkey/flywheel-memory@2.0.58'];
+        args = ['-y', '@velvetmonkey/flywheel-memory'];
       }
     }
 
@@ -1449,5 +1477,64 @@ export class FlywheelMcpClient {
       timestamp_before: timestampBefore,
       timestamp_after: timestampAfter,
     });
+  }
+
+  // -------------------------------------------------------------------------
+  // Entity category / hub score cache
+  // -------------------------------------------------------------------------
+
+  async getEntityCategory(nameOrPath: string): Promise<string | null> {
+    await this.ensureEntityCache();
+    return this.entityCategoryCache?.get(nameOrPath.toLowerCase()) ?? null;
+  }
+
+  async getEntityCategories(items: string[]): Promise<Map<string, string>> {
+    await this.ensureEntityCache();
+    const result = new Map<string, string>();
+    for (const item of items) {
+      const cat = this.entityCategoryCache?.get(item.toLowerCase());
+      if (cat) result.set(item, cat);
+    }
+    return result;
+  }
+
+  async getEntityHubScores(): Promise<Map<string, number>> {
+    await this.ensureEntityCache();
+    return this.entityHubScoreCache ?? new Map();
+  }
+
+  private async ensureEntityCache(): Promise<void> {
+    if (this.entityCategoryCache && Date.now() - this.entityCategoryCacheTime < FlywheelMcpClient.ENTITY_CACHE_TTL) return;
+
+    const resp = await this.listEntities();
+    const catMap = new Map<string, string>();
+    const hubMap = new Map<string, number>();
+    for (const [category, items] of Object.entries(resp)) {
+      if (category.startsWith('_')) continue;
+      for (const item of items as McpEntityItem[]) {
+        catMap.set(item.name.toLowerCase(), category);
+        if (item.path) catMap.set(item.path.toLowerCase(), category);
+        for (const alias of item.aliases ?? []) catMap.set(alias.toLowerCase(), category);
+        if (item.hubScore != null && item.hubScore > 0) {
+          hubMap.set(item.name.toLowerCase(), item.hubScore);
+        }
+      }
+    }
+    this.entityCategoryCache = catMap;
+    this.entityHubScoreCache = hubMap;
+    this.entityCategoryCacheTime = Date.now();
+  }
+
+  invalidateEntityCache(): void {
+    this.entityCategoryCache = null;
+    this.entityHubScoreCache = null;
+  }
+
+  // -------------------------------------------------------------------------
+  // Strong connections (edge weights)
+  // -------------------------------------------------------------------------
+
+  async getStrongConnections(path: string, limit = 20): Promise<McpStrongConnectionsResponse> {
+    return this.callTool<McpStrongConnectionsResponse>('get_strong_connections', { path, limit });
   }
 }

@@ -15,7 +15,6 @@ import { GraphSidebarView, GRAPH_VIEW_TYPE } from './views/graph-sidebar';
 import { EntityBrowserView, ENTITY_BROWSER_VIEW_TYPE } from './views/entity-browser';
 import { VaultHealthView, VAULT_HEALTH_VIEW_TYPE } from './views/vault-health';
 import { TaskDashboardView, TASK_DASHBOARD_VIEW_TYPE } from './views/task-dashboard';
-import { EntityInboxView, ENTITY_INBOX_VIEW_TYPE } from './views/entity-inbox';
 import { EntityPageView, ENTITY_PAGE_VIEW_TYPE } from './views/entity-page';
 import { WeeklyDigestModal } from './views/weekly-digest';
 import { WikilinkSuggest } from './suggest/wikilink-suggest';
@@ -34,8 +33,6 @@ export default class FlywheelCrankPlugin extends Plugin {
   private lastRebuildTimestamp = 0;
   private lastPipelineTimestamp = 0;
   private pipelineActiveTimer: number | null = null;
-  private reviewCount = 0;
-  private inboxCountFetched = false;
 
   async onload(): Promise<void> {
     console.log('Flywheel Crank: loading plugin');
@@ -51,8 +48,6 @@ export default class FlywheelCrankPlugin extends Plugin {
     this.statusBarEl.addEventListener('click', () => {
       if (this.mcpClient.connectionState === 'error') {
         this.initialize();
-      } else if (this.reviewCount > 0) {
-        this.activateView(ENTITY_INBOX_VIEW_TYPE);
       }
     });
     this.setStatus('connecting...', true);
@@ -66,11 +61,6 @@ export default class FlywheelCrankPlugin extends Plugin {
     });
     this.registerView(VAULT_HEALTH_VIEW_TYPE, (leaf) => new VaultHealthView(leaf, this.mcpClient));
     this.registerView(TASK_DASHBOARD_VIEW_TYPE, (leaf) => new TaskDashboardView(leaf, this.mcpClient));
-    this.registerView(ENTITY_INBOX_VIEW_TYPE, (leaf) => {
-      const view = new EntityInboxView(leaf, this.mcpClient);
-      view.onOpenEntityPage = (name) => this.openEntityPage(name);
-      return view;
-    });
     this.registerView(ENTITY_PAGE_VIEW_TYPE, (leaf) => new EntityPageView(leaf, this.mcpClient));
 
     // Settings tab
@@ -105,12 +95,6 @@ export default class FlywheelCrankPlugin extends Plugin {
       id: 'open-task-dashboard',
       name: 'Open task dashboard',
       callback: () => this.activateView(TASK_DASHBOARD_VIEW_TYPE),
-    });
-
-    this.addCommand({
-      id: 'open-entity-inbox',
-      name: 'Open entity inbox',
-      callback: () => this.activateView(ENTITY_INBOX_VIEW_TYPE),
     });
 
     this.addCommand({
@@ -154,7 +138,10 @@ export default class FlywheelCrankPlugin extends Plugin {
 
     // Inline entity suggestions (dotted underlines on entity mentions)
     if (this.settings.enableInlineSuggestions !== false) {
-      this.registerEditorExtension(createInlineSuggestionPlugin(this.mcpClient));
+      this.registerEditorExtension(createInlineSuggestionPlugin(
+        this.mcpClient,
+        () => this.app.workspace.getActiveFile()?.path,
+      ));
     }
 
     // Initialize on layout ready
@@ -384,12 +371,6 @@ export default class FlywheelCrankPlugin extends Plugin {
       }
 
       this.setStatus(`ready · ${agoText}`, false, tooltip);
-
-      // Seed inbox count once after index is ready (non-blocking)
-      if (!this.inboxCountFetched) {
-        this.inboxCountFetched = true;
-        this.refreshInboxCount();
-      }
       return;
     }
 
@@ -420,26 +401,6 @@ export default class FlywheelCrankPlugin extends Plugin {
       this.wikilinkEntitiesLoaded = false; // allow retry on next poll
       console.error('Flywheel Crank: failed to load entities for wikilink suggest', err);
     }
-  }
-
-  /** Fetch merge suggestion count to seed the inbox badge. Fire-and-forget. */
-  private async refreshInboxCount(): Promise<void> {
-    try {
-      const merges = await this.mcpClient.suggestEntityMerges(5);
-      this.reviewCount = merges.total_candidates ?? merges.suggestions?.length ?? 0;
-      // Re-render status bar to show/hide badge
-      const health = this.mcpClient.lastHealth;
-      if (health) this.handleHealthUpdate(health);
-    } catch {
-      // Non-critical — badge stays hidden on error
-    }
-  }
-
-  /** Allow external callers (e.g. Entity Inbox) to update the review count. */
-  setReviewCount(count: number): void {
-    this.reviewCount = count;
-    const health = this.mcpClient.lastHealth;
-    if (health) this.handleHealthUpdate(health);
   }
 
   private updateGraphSidebar(force = false): void {
@@ -672,11 +633,6 @@ export default class FlywheelCrankPlugin extends Plugin {
     }
 
     this.statusBarEl.createSpan().setText(` Flywheel ${text}`);
-
-    if (!active && this.reviewCount > 0) {
-      const badge = this.statusBarEl.createSpan('flywheel-status-badge');
-      badge.setText(`${this.reviewCount}`);
-    }
 
     if (tooltip) {
       this.statusBarEl.setAttribute('aria-label', tooltip);

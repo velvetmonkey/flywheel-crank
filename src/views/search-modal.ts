@@ -206,6 +206,8 @@ export class SearchModal extends Modal {
       return;
     }
 
+    const topRrf = this.results[0]?.rrf_score || 1;
+
     this.results.forEach((result, i) => {
       const item = this.resultsEl.createDiv({
         cls: `flywheel-search-result-item ${i === this.selectedIndex ? 'is-selected' : ''}`,
@@ -253,12 +255,12 @@ export class SearchModal extends Modal {
         }
       }
 
-      // Score badge
-      if (result.rrf_score != null) {
-        const pct = Math.round(result.rrf_score * 100);
+      // Score badge — normalize relative to top result
+      if (result.rrf_score != null && topRrf > 0) {
+        const pct = Math.round((result.rrf_score / topRrf) * 100);
         const badge = titleRow.createDiv('flywheel-search-score-badge');
         badge.setText(`${pct}%`);
-        badge.style.opacity = String(0.4 + result.rrf_score * 0.6);
+        badge.style.opacity = String(0.4 + (result.rrf_score / topRrf) * 0.6);
       }
 
       // Folder path

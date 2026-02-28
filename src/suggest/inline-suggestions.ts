@@ -30,9 +30,11 @@ interface InlineSuggestion {
 class InlineSuggestionPlugin {
   decorations: DecorationSet;
   private pending = false;
+  private needsRefetch = false;
   private suggestions: InlineSuggestion[] = [];
   private debounceTimer: ReturnType<typeof setTimeout> | null = null;
   private clickHandler: (e: MouseEvent) => void;
+  private connectionUnsub: (() => void) | null = null;
 
   constructor(
     private view: EditorView,
@@ -42,11 +44,18 @@ class InlineSuggestionPlugin {
     this.decorations = Decoration.none;
     this.clickHandler = this.handleClick.bind(this);
     this.view.dom.addEventListener('click', this.clickHandler);
+    // Re-fetch when MCP connects (handles editors open before connection)
+    this.connectionUnsub = this.mcpClient.onConnectionStateChange(() => {
+      if (this.mcpClient.connected) this.scheduleUpdate();
+    });
     this.scheduleUpdate();
   }
 
   update(update: ViewUpdate): void {
-    if (update.docChanged || update.viewportChanged) {
+    if (update.docChanged) {
+      this.scheduleUpdate();
+    } else if (update.viewportChanged && this.view.state.doc.length > 50_000) {
+      // Only re-fetch on scroll for very large documents (viewport-only mode)
       this.scheduleUpdate();
     }
   }
@@ -54,6 +63,7 @@ class InlineSuggestionPlugin {
   destroy(): void {
     this.view.dom.removeEventListener('click', this.clickHandler);
     if (this.debounceTimer) clearTimeout(this.debounceTimer);
+    if (this.connectionUnsub) { this.connectionUnsub(); this.connectionUnsub = null; }
   }
 
   private scheduleUpdate(): void {
@@ -62,28 +72,49 @@ class InlineSuggestionPlugin {
   }
 
   private async fetchSuggestions(): Promise<void> {
-    if (this.pending || !this.mcpClient.connected) return;
+    if (this.pending) {
+      this.needsRefetch = true;
+      return;
+    }
+    if (!this.mcpClient.connected) {
+      return;
+    }
     this.pending = true;
 
     try {
-      const { from, to } = this.view.viewport;
+      // Scan the full document (up to 50k chars) so entities outside the
+      // viewport are still decorated. For very large documents, fall back
+      // to viewport-only scanning.
+      const docLen = this.view.state.doc.length;
+      const MAX_SCAN = 50_000;
+      const from = docLen <= MAX_SCAN ? 0 : this.view.viewport.from;
+      const to = docLen <= MAX_SCAN ? docLen : this.view.viewport.to;
       const text = this.view.state.doc.sliceString(from, to);
       if (text.length < 20) { this.pending = false; return; }
 
       const notePath = this.getNotePath?.();
       const resp = await this.mcpClient.suggestWikilinks(text, true, notePath);
+      if (!resp) {
+        console.warn('Flywheel inline suggestions: empty response from suggestWikilinks');
+        return;
+      }
       const scored = resp.scored_suggestions ?? [];
       const positioned = resp.suggestions ?? [];
+      console.debug(`Flywheel inline: ${positioned.length} positioned, ${scored.length} scored, ${(resp.prospects ?? []).length} prospects`);
 
       // McpScoredSuggestion has confidence but no position.
       // McpSuggestWikilinksResponse.suggestions has position but no confidence.
-      // Join by entity name to get both.
+      // Join by entity name to get both. Positioned entities that aren't in the
+      // scored list are treated as high confidence — they're confirmed text matches
+      // of real entities in the vault.
       const confidenceMap = new Map(scored.map(s => [s.entity.toLowerCase(), s.confidence]));
-      const docLen = this.view.state.doc.length;
 
       const knownSuggestions: InlineSuggestion[] = positioned
-        // Only high-confidence (medium is too noisy for inline decoration)
-        .filter(s => confidenceMap.get(s.entity.toLowerCase()) === 'high')
+        // Exclude only if explicitly scored as 'low'
+        .filter(s => {
+          const conf = confidenceMap.get(s.entity.toLowerCase());
+          return conf !== 'low'; // keep high, medium, and unscored (not in map)
+        })
         .map(s => ({
           from: from + s.start,
           to: from + s.end,
@@ -92,8 +123,19 @@ class InlineSuggestionPlugin {
           confidence: confidenceMap.get(s.entity.toLowerCase()) ?? 'high',
         }));
 
-      // Prospects: dead link targets + implicit entities with positions
+      // Prospects: dead link targets + implicit entities with positions (high confidence only)
+      // Filter out common single words that aren't real entity names
+      const looksLikeEntity = (name: string): boolean => {
+        if (name.length < 4) return false;
+        // Multi-word names are more likely real entities
+        if (name.includes(' ') && name.length >= 6) return true;
+        // Single words: reject if all lowercase (likely a common word, not a proper noun/entity)
+        if (name === name.toLowerCase() && !name.includes(' ')) return false;
+        return true;
+      };
+
       const prospectSuggestions: InlineSuggestion[] = (resp.prospects ?? [])
+        .filter(p => p.confidence === 'high' && looksLikeEntity(p.entity))
         .map(p => ({
           from: from + p.start,
           to: from + p.end,
@@ -124,6 +166,10 @@ class InlineSuggestionPlugin {
       console.error('Flywheel inline suggestions: fetch failed', err);
     } finally {
       this.pending = false;
+      if (this.needsRefetch) {
+        this.needsRefetch = false;
+        this.scheduleUpdate();
+      }
     }
   }
 
@@ -144,14 +190,21 @@ class InlineSuggestionPlugin {
     }
 
     for (const s of filtered) {
+      // Preview the actual wikilink that will be inserted
+      const noteName = s.target
+        ? s.target.replace(/\.md$/, '').split('/').pop() || s.entity
+        : s.entity;
+      const isAlias = noteName.toLowerCase() !== s.entity.toLowerCase();
+      const linkPreview = isAlias ? `[[${noteName}|${s.entity}]]` : `[[${s.entity}]]`;
+
       builder.add(s.from, s.to, Decoration.mark({
         class: s.isProspect ? 'flywheel-inline-prospect' : 'flywheel-inline-suggestion',
         attributes: {
           'data-entity': s.entity,
           'data-target': s.target,
           title: s.isProspect
-            ? `Prospect: [[${s.entity}]] — click to create link`
-            : `Link as [[${s.entity}]] — click to accept`,
+            ? `Prospect: ${linkPreview} — click to create link`
+            : `${linkPreview} — click to accept`,
         },
       }));
     }
@@ -162,30 +215,53 @@ class InlineSuggestionPlugin {
   }
 
   private handleClick(e: MouseEvent): void {
-    const target = e.target as HTMLElement;
-    if (!target.classList.contains('flywheel-inline-suggestion') &&
-        !target.classList.contains('flywheel-inline-prospect')) return;
+    const targetEl = e.target as HTMLElement;
+    if (!targetEl.classList.contains('flywheel-inline-suggestion') &&
+        !targetEl.classList.contains('flywheel-inline-prospect')) return;
 
-    const entity = target.dataset.entity;
+    const entity = targetEl.dataset.entity;
+    const targetNote = targetEl.dataset.target;
     if (!entity) return;
 
     e.preventDefault();
     e.stopPropagation();
 
     // Find the decoration range for this click position
-    const pos = this.view.posAtDOM(target);
+    const pos = this.view.posAtDOM(targetEl);
     const suggestion = this.suggestions.find(s => s.from <= pos && pos <= s.to);
     if (!suggestion) return;
 
-    // Replace the text span with [[entity]]
+    // Build the wikilink — use [[Target|alias]] when text differs from note name
+    const noteName = targetNote
+      ? targetNote.replace(/\.md$/, '').split('/').pop() || entity
+      : entity;
+    const wikilink = noteName.toLowerCase() !== entity.toLowerCase()
+      ? `[[${noteName}|${entity}]]`
+      : `[[${entity}]]`;
+
+    const oldLen = suggestion.to - suggestion.from;
+    const delta = wikilink.length - oldLen;
+
+    // Apply the edit
     this.view.dispatch({
       changes: {
         from: suggestion.from,
         to: suggestion.to,
-        insert: `[[${entity}]]`,
+        insert: wikilink,
       },
     });
-    // docChanged will trigger re-scan, clearing the stale decoration
+
+    // Immediately update remaining suggestions: remove the clicked one
+    // and adjust positions for everything after the insertion point
+    this.suggestions = this.suggestions
+      .filter(s => s !== suggestion)
+      .map(s => {
+        if (s.from >= suggestion.to) {
+          return { ...s, from: s.from + delta, to: s.to + delta };
+        }
+        return s;
+      });
+    this.buildDecorations();
   }
 }
 
