@@ -10,11 +10,19 @@
 
 ## Features
 
+- **Entity inbox** -- Triage new and pending entity suggestions
+- **Inline suggestions** -- Context-aware wikilink suggestions as you type
+- **Entity page** -- Deep-dive view for any entity (backlinks, co-occurrence, feedback history)
 - **Graph sidebar** -- Interactive graph visualization of your vault's link structure
 - **Entity browser** -- Browse and explore extracted entities across your vault
 - **Semantic search** -- Hybrid search (BM25 + embeddings) via search modal
-- **Vault health** -- Diagnostics view for orphans, broken links, and vault stats
-- **Wikilink suggestions** -- Inline completions powered by entity index and scoring
+- **Connection explorer** -- Discover paths and relationships between entities
+- **Task dashboard** -- Query and visualize tasks across your vault
+- **Weekly digest** -- Summary of vault activity and emerging patterns
+- **Vault health** -- Diagnostics for orphans, broken links, and vault stats
+- **Wikilink suggest** -- Editor completions powered by entity index and scoring
+- **Context menu feedback** -- Right-click to approve/reject wikilink suggestions
+- **Status bar pulse** -- Live connection status and index freshness indicator
 
 ## Installation
 
@@ -42,7 +50,8 @@ flywheel-crank/
 │   ├── main.ts                      # Plugin entry point
 │   ├── settings.ts                  # Plugin settings tab
 │   ├── mcp/
-│   │   └── client.ts                # MCP client (connects to flywheel-memory)
+│   │   ├── client.ts                # MCP client (connects to flywheel-memory)
+│   │   └── cache.ts                 # MCP response caching
 │   ├── core/
 │   │   ├── types.ts                 # Shared type definitions
 │   │   ├── protectedZones.ts        # Code block / frontmatter protection
@@ -61,11 +70,17 @@ flywheel-crank/
 │   │   ├── fts5.ts                  # Full-text search (FTS5)
 │   │   └── embeddings.ts            # Semantic embeddings (local)
 │   ├── suggest/
-│   │   └── wikilink-suggest.ts      # Inline wikilink completion
+│   │   ├── wikilink-suggest.ts      # Wikilink completion provider
+│   │   └── inline-suggestions.ts    # Context-aware inline suggestions
 │   └── views/
+│       ├── entity-inbox.ts          # Entity triage inbox
+│       ├── entity-page.ts           # Single-entity deep-dive
 │       ├── graph-sidebar.ts         # Graph visualization panel
 │       ├── entity-browser.ts        # Entity browser view
 │       ├── search-modal.ts          # Search modal (hybrid search)
+│       ├── connection-explorer.ts   # Entity relationship explorer
+│       ├── task-dashboard.ts        # Task query and visualization
+│       ├── weekly-digest.ts         # Weekly vault activity digest
 │       └── vault-health.ts          # Vault health diagnostics
 ├── manifest.json                    # Obsidian plugin manifest
 ├── styles.css                       # Plugin styles
