@@ -74,25 +74,17 @@ export async function buildFTS5Index(app: App): Promise<FTS5State> {
     db.exec('DELETE FROM notes_fts');
 
     const files = app.vault.getMarkdownFiles().filter(f => shouldIndexFile(f.path));
-    const insert = db.prepare('INSERT INTO notes_fts (path, title, content) VALUES (?, ?, ?)');
+    const insert = db.prepare('INSERT INTO notes_fts (path, title, frontmatter, content) VALUES (?, ?, ?, ?)');
 
     let indexed = 0;
-    // Use transaction for performance
-    const txn = db.transaction(() => {
-      for (const file of files) {
-        if (file.stat.size > MAX_INDEX_FILE_SIZE) continue;
-        // We'll read content asynchronously below
-      }
-    });
 
-    // For sql.js (synchronous), we need to read all content first
     for (const file of files) {
       if (file.stat.size > MAX_INDEX_FILE_SIZE) continue;
 
       try {
         const content = await app.vault.cachedRead(file);
         const title = file.basename;
-        insert.run(file.path, title, content);
+        insert.run(file.path, title, '', content);
         indexed++;
       } catch {
         // Skip files we can't read
@@ -133,7 +125,7 @@ export function searchFTS5(query: string, limit: number = 10): FTS5Result[] {
       SELECT
         path,
         title,
-        snippet(notes_fts, 2, '<mark>', '</mark>', '...', 20) as snippet,
+        snippet(notes_fts, 3, '<mark>', '</mark>', '...', 20) as snippet,
         rank
       FROM notes_fts
       WHERE notes_fts MATCH ?
@@ -193,7 +185,7 @@ export async function indexSingleFile(app: App, file: TFile): Promise<void> {
     // Add new entry
     const content = await app.vault.cachedRead(file);
     const title = file.basename;
-    db.prepare('INSERT INTO notes_fts (path, title, content) VALUES (?, ?, ?)').run(file.path, title, content);
+    db.prepare('INSERT INTO notes_fts (path, title, frontmatter, content) VALUES (?, ?, ?, ?)').run(file.path, title, '', content);
   } catch {
     // Skip on error
   }
