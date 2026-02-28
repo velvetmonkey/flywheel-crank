@@ -1,7 +1,7 @@
 {
   "id": "flywheel-crank",
   "name": "Flywheel Crank",
-  "version": "2.0.58",
+  "version": "2.0.59",
   "minAppVersion": "0.15.0",
   "description": "Graph intelligence & semantic search for your vault",
   "author": "Velvet Monkey",

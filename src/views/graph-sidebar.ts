@@ -1460,11 +1460,28 @@ export class GraphSidebarView extends ItemView {
     const edgeSet = new Set<string>();
 
     const nameOf = (p: string) => p.replace(/\.md$/, '').split('/').pop() || p;
-    // Case-insensitive key for nodeMap — prevents duplicates from
-    // different MCP sources returning variant casings of the same path
+    // Case-insensitive dedup — prevents duplicates from different MCP sources.
+    // Two-level lookup: by lowercased path, then by lowercased label.
+    // e.g. backlinks give "tech/Tesla.md", suggestions give "Tesla" — same label.
+    const labelIndex = new Map<string, string>(); // lowercase label → nk key
     const nk = (p: string) => p.toLowerCase();
+    const hasNode = (p: string): boolean => {
+      if (nodeMap.has(nk(p))) return true;
+      return labelIndex.has(nameOf(p).toLowerCase());
+    };
+    const addNode = (p: string, node: GraphNode): void => {
+      const key = nk(p);
+      nodeMap.set(key, node);
+      labelIndex.set(node.label.toLowerCase(), key);
+    };
     // Retrieve canonical node ID (original casing) for edge references
-    const canonId = (p: string) => nodeMap.get(nk(p))?.id ?? p;
+    const canonId = (p: string): string => {
+      const direct = nodeMap.get(nk(p));
+      if (direct) return direct.id;
+      const byLabel = labelIndex.get(nameOf(p).toLowerCase());
+      if (byLabel) return nodeMap.get(byLabel)?.id ?? p;
+      return p;
+    };
 
     const isPeriodicPath = (p: string): boolean => {
       if (this.periodicPrefixes.length > 0) {
@@ -1482,7 +1499,7 @@ export class GraphSidebarView extends ItemView {
       return Math.max(6, Math.min(14, 7 + hs * 0.4));
     };
 
-    nodeMap.set(nk(notePath), {
+    addNode(notePath, {
       id: notePath, label: nameOf(notePath),
       x: 0, y: 0, vx: 0, vy: 0,
       radius: 10, color: 'var(--interactive-accent)', isCurrent: true,
@@ -1492,10 +1509,10 @@ export class GraphSidebarView extends ItemView {
 
     for (const b of backlinksResp?.backlinks ?? []) {
       const p = b.source;
-      if (!nodeMap.has(nk(p))) {
+      if (!hasNode(p)) {
         const periodic = isPeriodicPath(p);
         neighborPaths.push(p);
-        nodeMap.set(nk(p), {
+        addNode(p, {
           id: p, label: nameOf(p),
           x: (Math.random() - 0.5) * 200, y: (Math.random() - 0.5) * 200,
           vx: 0, vy: 0, radius: periodic ? Math.max(4, radiusFor(p) * 0.7) : radiusFor(p),
@@ -1515,10 +1532,10 @@ export class GraphSidebarView extends ItemView {
     for (const f of forwardLinksResp?.forward_links ?? []) {
       const p = f.resolved_path ?? f.target;
       if (!p || !f.exists) continue;
-      if (!nodeMap.has(nk(p))) {
+      if (!hasNode(p)) {
         const periodic = isPeriodicPath(p);
         neighborPaths.push(p);
-        nodeMap.set(nk(p), {
+        addNode(p, {
           id: p, label: nameOf(p),
           x: (Math.random() - 0.5) * 200, y: (Math.random() - 0.5) * 200,
           vx: 0, vy: 0, radius: periodic ? Math.max(4, radiusFor(p) * 0.7) : radiusFor(p),
@@ -1570,7 +1587,7 @@ export class GraphSidebarView extends ItemView {
       // Strong connections not already in graph
       if (connectionsResp?.connections) {
         for (const conn of connectionsResp.connections) {
-          if (!nodeMap.has(nk(conn.node)) && nk(conn.node) !== nk(notePath)) {
+          if (!hasNode(conn.node) && nk(conn.node) !== nk(notePath)) {
             candidates.push({ path: conn.node, weight: conn.weight, source: 'connection' });
           }
         }
@@ -1580,7 +1597,7 @@ export class GraphSidebarView extends ItemView {
       if (suggestResp?.scored_suggestions) {
         for (const sug of suggestResp.scored_suggestions) {
           const p = sug.existing_note ?? sug.entity;
-          if (!nodeMap.has(nk(p)) && nk(p) !== nk(notePath) && sug.confidence !== 'low') {
+          if (!hasNode(p) && nk(p) !== nk(notePath) && sug.confidence !== 'low') {
             candidates.push({ path: p, weight: sug.score / 30, source: 'suggestion' });
           }
         }
@@ -1589,7 +1606,7 @@ export class GraphSidebarView extends ItemView {
       // Similar notes
       if (similarResp?.similar) {
         for (const sim of similarResp.similar) {
-          if (!nodeMap.has(nk(sim.path)) && nk(sim.path) !== nk(notePath)) {
+          if (!hasNode(sim.path) && nk(sim.path) !== nk(notePath)) {
             candidates.push({ path: sim.path, weight: sim.score / 100, source: 'similar' });
           }
         }
@@ -1600,9 +1617,9 @@ export class GraphSidebarView extends ItemView {
       const fillNodes = candidates.slice(0, slotsAvailable);
 
       for (const c of fillNodes) {
-        if (nodeMap.has(nk(c.path))) continue; // skip if added by earlier candidate
+        if (hasNode(c.path)) continue; // skip if added by earlier candidate
         const periodic = isPeriodicPath(c.path);
-        nodeMap.set(nk(c.path), {
+        addNode(c.path, {
           id: c.path, label: nameOf(c.path),
           x: (Math.random() - 0.5) * 200, y: (Math.random() - 0.5) * 200,
           vx: 0, vy: 0,
@@ -1644,11 +1661,11 @@ export class GraphSidebarView extends ItemView {
           for (const conn of conns.slice(0, MAX_SECONDARY_EDGES)) {
             const p2 = conn.node;
             // Skip if already in graph or is the current note
-            if (nodeMap.has(nk(p2)) || nk(p2) === nk(notePath)) {
+            if (hasNode(p2) || nk(p2) === nk(notePath)) {
               // Still add the inter-neighbor edge if both nodes exist
               const cid2 = canonId(p2);
               const cidHub = canonId(hubPath);
-              if (nodeMap.has(nk(p2)) && nk(p2) !== nk(notePath)) {
+              if (hasNode(p2) && nk(p2) !== nk(notePath)) {
                 const dir = conn.direction ?? 'outgoing';
                 const eKey = dir === 'outgoing' ? `${cidHub}\u2192${cid2}` : `${cid2}\u2192${cidHub}`;
                 if (!edgeSet.has(eKey)) {
@@ -1662,7 +1679,7 @@ export class GraphSidebarView extends ItemView {
             // Add secondary node — smaller, faded
             const hubNode = nodeMap.get(nk(hubPath))!;
             const periodic2 = isPeriodicPath(p2);
-            nodeMap.set(nk(p2), {
+            addNode(p2, {
               id: p2, label: nameOf(p2),
               x: hubNode.x + (Math.random() - 0.5) * 80,
               y: hubNode.y + (Math.random() - 0.5) * 80,

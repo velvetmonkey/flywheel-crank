@@ -32,6 +32,7 @@ class InlineSuggestionPlugin {
   private pending = false;
   private needsRefetch = false;
   private suggestions: InlineSuggestion[] = [];
+  private scannedRanges: Array<{ from: number; to: number }> = [];
   private debounceTimer: ReturnType<typeof setTimeout> | null = null;
   private clickHandler: (e: MouseEvent) => void;
   private connectionUnsub: (() => void) | null = null;
@@ -53,9 +54,11 @@ class InlineSuggestionPlugin {
 
   update(update: ViewUpdate): void {
     if (update.docChanged) {
+      // Content changed — clear stale suggestions and re-fetch
+      this.suggestions = [];
+      this.scannedRanges = [];
       this.scheduleUpdate();
-    } else if (update.viewportChanged && this.view.state.doc.length > 50_000) {
-      // Only re-fetch on scroll for very large documents (viewport-only mode)
+    } else if (update.viewportChanged) {
       this.scheduleUpdate();
     }
   }
@@ -71,6 +74,13 @@ class InlineSuggestionPlugin {
     this.debounceTimer = setTimeout(() => this.fetchSuggestions(), 500);
   }
 
+  /** Check if the current viewport is already mostly covered by previous scans */
+  private isViewportScanned(): boolean {
+    const { from, to } = this.view.viewport;
+    const mid = (from + to) / 2;
+    return this.scannedRanges.some(r => r.from <= mid && mid <= r.to);
+  }
+
   private async fetchSuggestions(): Promise<void> {
     if (this.pending) {
       this.needsRefetch = true;
@@ -79,48 +89,33 @@ class InlineSuggestionPlugin {
     if (!this.mcpClient.connected) {
       return;
     }
+    // Skip if viewport midpoint is already scanned
+    if (this.isViewportScanned()) return;
+
     this.pending = true;
 
     try {
-      // Scan the full document (up to 50k chars) so entities outside the
-      // viewport are still decorated. For very large documents, fall back
-      // to viewport-only scanning.
       const docLen = this.view.state.doc.length;
-      const MAX_SCAN = 50_000;
-      const from = docLen <= MAX_SCAN ? 0 : this.view.viewport.from;
-      const to = docLen <= MAX_SCAN ? docLen : this.view.viewport.to;
+      const { from: vpFrom, to: vpTo } = this.view.viewport;
+      const from = vpFrom;
+      const to = vpTo;
       const text = this.view.state.doc.sliceString(from, to);
       if (text.length < 20) { this.pending = false; return; }
 
       const notePath = this.getNotePath?.();
-      const resp = await this.mcpClient.suggestWikilinks(text, true, notePath);
-      if (!resp) {
-        console.warn('Flywheel inline suggestions: empty response from suggestWikilinks');
-        return;
-      }
-      const scored = resp.scored_suggestions ?? [];
+      // detail=false skips the expensive 11-layer scoring pipeline —
+      // we only need positioned text matches for inline decorations
+      const resp = await this.mcpClient.suggestWikilinks(text, false, notePath);
+      if (!resp) return;
       const positioned = resp.suggestions ?? [];
-      console.debug(`Flywheel inline: ${positioned.length} positioned, ${scored.length} scored, ${(resp.prospects ?? []).length} prospects`);
-
-      // McpScoredSuggestion has confidence but no position.
-      // McpSuggestWikilinksResponse.suggestions has position but no confidence.
-      // Join by entity name to get both. Positioned entities that aren't in the
-      // scored list are treated as high confidence — they're confirmed text matches
-      // of real entities in the vault.
-      const confidenceMap = new Map(scored.map(s => [s.entity.toLowerCase(), s.confidence]));
 
       const knownSuggestions: InlineSuggestion[] = positioned
-        // Exclude only if explicitly scored as 'low'
-        .filter(s => {
-          const conf = confidenceMap.get(s.entity.toLowerCase());
-          return conf !== 'low'; // keep high, medium, and unscored (not in map)
-        })
         .map(s => ({
           from: from + s.start,
           to: from + s.end,
           entity: s.entity,
           target: s.target ?? s.entity,
-          confidence: confidenceMap.get(s.entity.toLowerCase()) ?? 'high',
+          confidence: 'high' as string,
         }));
 
       // Prospects: dead link targets + implicit entities with positions (high confidence only)
@@ -145,7 +140,7 @@ class InlineSuggestionPlugin {
           isProspect: true,
         }));
 
-      this.suggestions = [...knownSuggestions, ...prospectSuggestions]
+      const newSuggestions = [...knownSuggestions, ...prospectSuggestions]
         // Filter out positions already inside [[ ]]
         .filter(s => {
           const before = this.view.state.doc.sliceString(Math.max(0, s.from - 2), s.from);
@@ -160,6 +155,11 @@ class InlineSuggestionPlugin {
           const secondDash = header.indexOf('\n---', 3);
           return secondDash === -1 || s.from > secondDash + 4;
         });
+
+      // Remove old suggestions in the scanned range, keep ones outside it
+      const existing = this.suggestions.filter(s => s.from < from || s.to > to);
+      this.suggestions = [...existing, ...newSuggestions];
+      this.scannedRanges.push({ from, to });
 
       this.buildDecorations();
     } catch (err) {
