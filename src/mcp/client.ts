@@ -669,7 +669,7 @@ export class McpToolError extends Error {
 // Client
 // ---------------------------------------------------------------------------
 
-export type ConnectionState = 'disconnected' | 'connecting' | 'connected' | 'error';
+export type ConnectionState = 'disconnected' | 'connecting' | 'connected' | 'error' | 'reconnecting';
 
 export class FlywheelMcpClient {
   private client: Client | null = null;
@@ -685,6 +685,14 @@ export class FlywheelMcpClient {
 
   // Last tool error for status display
   private _lastToolError: McpToolError | null = null;
+
+  // Auto-reconnect state
+  private _intentionalDisconnect = false;
+  private _reconnectAttempt = 0;
+  private _reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+  private _lastVaultPath = '';
+  private _lastServerPath = '';
+  private _healthFailCount = 0;
 
   // Entity category + hub score cache
   private entityCategoryCache: Map<string, string> | null = null;
@@ -778,9 +786,18 @@ export class FlywheelMcpClient {
       try {
         this.cache.invalidateTool('health_check');
         const health = await this.healthCheck();
+        this._healthFailCount = 0;
         this.lastHealth = health;
         for (const cb of this.healthCallbacks) { try { cb(health); } catch {} }
-      } catch {}
+      } catch {
+        this._healthFailCount++;
+        if (this._healthFailCount >= 3) {
+          console.error(`Flywheel Crank: ${this._healthFailCount} consecutive health poll failures, triggering reconnect`);
+          this.stopHealthPoll();
+          this._connected = false;
+          this.scheduleReconnect();
+        }
+      }
     };
     poll();
     this.healthTimer = setInterval(poll, 3000);
@@ -815,6 +832,9 @@ export class FlywheelMcpClient {
     this.setConnectionState('connecting');
     this._lastError = null;
     this._stderrLines = [];
+    this._intentionalDisconnect = false;
+    this._lastVaultPath = vaultPath;
+    this._lastServerPath = serverPath;
 
     const isWindows = process.platform === 'win32';
     const isUnixPath = (p: string) => p.startsWith('/');
@@ -846,10 +866,10 @@ export class FlywheelMcpClient {
       // No custom path — use npx
       if (isWindows) {
         command = 'npx.cmd';
-        args = ['-y', '@velvetmonkey/flywheel-memory@2.0.60']; // Pin version — bump when releasing new flywheel-memory
+        args = ['-y', '@velvetmonkey/flywheel-memory@2.0.62']; // Pin version — bump when releasing new flywheel-memory
       } else {
         command = 'npx';
-        args = ['-y', '@velvetmonkey/flywheel-memory@2.0.60']; // Pin version — bump when releasing new flywheel-memory
+        args = ['-y', '@velvetmonkey/flywheel-memory@2.0.62']; // Pin version — bump when releasing new flywheel-memory
       }
     }
 
@@ -893,9 +913,15 @@ export class FlywheelMcpClient {
 
     // Hook transport close/error events before connecting
     this.transport.onclose = () => {
-      if (this._connectionState === 'connected') {
+      if (this._connected) {
         this._connected = false;
-        this.setConnectionState('disconnected');
+        if (!this._intentionalDisconnect) {
+          console.log('Flywheel Crank: transport closed unexpectedly, scheduling reconnect');
+          this.stopHealthPoll();
+          this.scheduleReconnect();
+        } else {
+          this.setConnectionState('disconnected');
+        }
       }
     };
     this.transport.onerror = (err: Error) => {
@@ -907,6 +933,8 @@ export class FlywheelMcpClient {
       // handshake. Over WSL/cross-fs this can exceed the default 60s timeout.
       await this.client.connect(this.transport, { timeout: 120_000 });
       this._connected = true;
+      this._reconnectAttempt = 0;
+      this._healthFailCount = 0;
       this.setConnectionState('connected');
       console.log('Flywheel Crank: MCP client connected');
     } catch (err) {
@@ -932,6 +960,8 @@ export class FlywheelMcpClient {
    * Disconnect from the MCP server and kill the child process.
    */
   async disconnect(): Promise<void> {
+    this._intentionalDisconnect = true;
+    this.cancelAutoReconnect();
     this.stopHealthPoll();
     this.cache.clear();
 
@@ -950,6 +980,50 @@ export class FlywheelMcpClient {
     this._connected = false;
     this.setConnectionState('disconnected');
     console.log('Flywheel Crank: MCP client disconnected');
+  }
+
+  /**
+   * Schedule auto-reconnect with exponential backoff.
+   * Attempts: 2s, 4s, 8s, 16s, 32s — gives up after 5 failures.
+   */
+  private scheduleReconnect(): void {
+    const MAX_ATTEMPTS = 5;
+    if (this._reconnectAttempt >= MAX_ATTEMPTS) {
+      console.error(`Flywheel Crank: auto-reconnect failed after ${MAX_ATTEMPTS} attempts`);
+      this._lastError = 'Auto-reconnect failed — click to retry';
+      this.setConnectionState('error');
+      return;
+    }
+
+    this._reconnectAttempt++;
+    const delay = Math.pow(2, this._reconnectAttempt) * 1000; // 2s, 4s, 8s, 16s, 32s
+    console.log(`Flywheel Crank: auto-reconnect attempt ${this._reconnectAttempt}/${MAX_ATTEMPTS} in ${delay}ms`);
+    this.setConnectionState('reconnecting');
+
+    this._reconnectTimer = setTimeout(async () => {
+      this._reconnectTimer = null;
+      // Clean up old client/transport before reconnecting
+      this.client = null;
+      this.transport = null;
+      this.cache.clear();
+      try {
+        await this.connect(this._lastVaultPath, this._lastServerPath);
+        // Successful — notify retry callbacks so main.ts can re-initialize health poll etc.
+        for (const cb of this.retryCallbacks) { try { cb(); } catch {} }
+      } catch (err) {
+        console.error('Flywheel Crank: auto-reconnect attempt failed', err);
+        this.scheduleReconnect();
+      }
+    }, delay);
+  }
+
+  /** Cancel any in-flight auto-reconnect timer and reset attempt counter. */
+  cancelAutoReconnect(): void {
+    if (this._reconnectTimer) {
+      clearTimeout(this._reconnectTimer);
+      this._reconnectTimer = null;
+    }
+    this._reconnectAttempt = 0;
   }
 
   // -------------------------------------------------------------------------
