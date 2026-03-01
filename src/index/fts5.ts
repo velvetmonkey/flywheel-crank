@@ -57,7 +57,7 @@ export function setFTS5Database(database: any): void {
 }
 
 /** Check if a file should be indexed */
-function shouldIndexFile(filePath: string): boolean {
+export function shouldIndexFile(filePath: string): boolean {
   const parts = filePath.split('/');
   return !parts.some(part => EXCLUDED_DIRS.has(part));
 }

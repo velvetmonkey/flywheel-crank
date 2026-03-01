@@ -24,7 +24,7 @@ import { getProtectedZones, rangeOverlapsProtectedZone } from './protectedZones'
  * Get all search terms for an entity (name + aliases)
  * Returns tuples of [searchTerm, entityName] for proper linking
  */
-function getSearchTerms(entity: Entity): Array<{ term: string; entityName: string }> {
+export function getSearchTerms(entity: Entity): Array<{ term: string; entityName: string }> {
   if (typeof entity === 'string') {
     return [{ term: entity, entityName: entity }];
   }
@@ -63,14 +63,14 @@ function escapeRegex(str: string): string {
 /**
  * Check if an entity should be excluded from wikilikning
  */
-function shouldExcludeEntity(entity: string): boolean {
+export function shouldExcludeEntity(entity: string): boolean {
   return EXCLUDE_WORDS.has(entity.toLowerCase());
 }
 
 /**
  * Find all matches of an entity in content with word boundaries
  */
-function findEntityMatches(
+export function findEntityMatches(
   content: string,
   entity: string,
   caseInsensitive: boolean
