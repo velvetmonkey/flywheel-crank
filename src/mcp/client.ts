@@ -654,14 +654,38 @@ export interface McpMutationResponse {
 // Errors
 // ---------------------------------------------------------------------------
 
+export type ErrorCategory = 'network' | 'index_building' | 'timeout' | 'server_error' | 'invalid_response';
+
+function categorizeError(message: string, stderr?: string[]): ErrorCategory {
+  const combined = [message, ...(stderr ?? [])].join(' ').toLowerCase();
+  if (combined.includes('not connected') || combined.includes('econnrefused') || combined.includes('econnreset')) return 'network';
+  if (combined.includes('timeout') || combined.includes('etimedout') || combined.includes('request timed out')) return 'timeout';
+  if (combined.includes('index') || combined.includes('building') || combined.includes('not ready')) return 'index_building';
+  if (combined.includes('invalid response')) return 'invalid_response';
+  return 'server_error';
+}
+
 export class McpToolError extends Error {
+  public readonly category: ErrorCategory;
   constructor(
     public readonly toolName: string,
     message: string,
     public readonly stderr?: string[],
+    category?: ErrorCategory,
   ) {
     super(`${toolName}: ${message}`);
     this.name = 'McpToolError';
+    this.category = category ?? categorizeError(message, stderr);
+  }
+
+  getActionableMessage(): string {
+    switch (this.category) {
+      case 'network': return 'Connection lost — click status bar to reconnect';
+      case 'timeout': return `${this.toolName} timed out — server may be busy`;
+      case 'index_building': return 'Vault index still building — try again shortly';
+      case 'server_error': return `Server error in ${this.toolName} — check logs`;
+      case 'invalid_response': return `Unexpected response from ${this.toolName}`;
+    }
   }
 }
 
@@ -831,6 +855,7 @@ export class FlywheelMcpClient {
 
     this.setConnectionState('connecting');
     this._lastError = null;
+    this.cache.clear();
     this._stderrLines = [];
     this._intentionalDisconnect = false;
     this._lastVaultPath = vaultPath;
@@ -866,10 +891,10 @@ export class FlywheelMcpClient {
       // No custom path — use npx
       if (isWindows) {
         command = 'npx.cmd';
-        args = ['-y', '@velvetmonkey/flywheel-memory@2.0.62']; // Pin version — bump when releasing new flywheel-memory
+        args = ['-y', '@velvetmonkey/flywheel-memory@2.0.64']; // Pin version — bump when releasing new flywheel-memory
       } else {
         command = 'npx';
-        args = ['-y', '@velvetmonkey/flywheel-memory@2.0.62']; // Pin version — bump when releasing new flywheel-memory
+        args = ['-y', '@velvetmonkey/flywheel-memory@2.0.64']; // Pin version — bump when releasing new flywheel-memory
       }
     }
 
