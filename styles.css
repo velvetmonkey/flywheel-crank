@@ -374,7 +374,7 @@
   cursor: pointer;
   position: relative;
 }
-.flywheel-header-category:hover { filter: brightness(1.15); }
+.flywheel-header-category:hover:not(.dropdown-open) { filter: brightness(1.15); }
 .flywheel-header-category[data-category="people"] { background: hsla(217, 90%, 66%, 0.2); color: #5b9bf5; }
 .flywheel-header-category[data-category="projects"] { background: hsla(150, 60%, 54%, 0.2); color: #43d17a; }
 .flywheel-header-category[data-category="technologies"] { background: hsla(258, 90%, 76%, 0.2); color: #a78bfa; }
@@ -395,6 +395,7 @@
 .flywheel-header-category[data-category="other"] { background: hsla(240, 4%, 66%, 0.2); color: #a1a1aa; }
 
 /* Category dropdown chooser */
+.flywheel-header-category.dropdown-open { filter: none; }
 .flywheel-category-dropdown {
   position: absolute;
   top: calc(100% + 4px);
@@ -410,13 +411,14 @@
   box-shadow: 0 8px 24px rgba(0,0,0,0.5);
   opacity: 1 !important;
   transition: none !important;
+  filter: none !important;
 }
 .flywheel-category-dropdown .flywheel-category-option {
   display: flex;
   align-items: center;
   gap: 6px;
-  padding: 5px 10px;
-  font-size: var(--font-smallest);
+  padding: 6px 12px;
+  font-size: var(--font-small);
   cursor: pointer;
   color: var(--text-normal) !important;
   background: var(--background-secondary) !important;

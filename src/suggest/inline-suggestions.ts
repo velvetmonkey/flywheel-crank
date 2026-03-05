@@ -103,7 +103,7 @@ class InlineSuggestionPlugin {
       if (text.length < 20) { this.pending = false; return; }
 
       const notePath = this.getNotePath?.();
-      // detail=false skips the expensive 11-layer scoring pipeline —
+      // detail=false skips the expensive 13-layer scoring pipeline —
       // we only need positioned text matches for inline decorations
       const resp = await this.mcpClient.suggestWikilinks(text, false, notePath);
       if (!resp) return;

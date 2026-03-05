@@ -618,8 +618,9 @@ export class GraphSidebarView extends ItemView {
       e.stopPropagation();
       // Remove existing dropdown if any
       const existing = catBadge.querySelector('.flywheel-category-dropdown');
-      if (existing) { existing.remove(); return; }
+      if (existing) { existing.remove(); catBadge.removeClass('dropdown-open'); return; }
 
+      catBadge.addClass('dropdown-open');
       const dropdown = catBadge.createDiv('flywheel-category-dropdown');
       for (const c of sortedCategories) {
         const opt = dropdown.createDiv('flywheel-category-option');
@@ -629,6 +630,7 @@ export class GraphSidebarView extends ItemView {
         if (c === cat) opt.addClass('is-active');
         opt.addEventListener('click', async () => {
           dropdown.remove();
+          catBadge.removeClass('dropdown-open');
           // Optimistic update — show chosen category immediately
           catBadge.dataset.category = c;
           catBadge.empty();
@@ -644,6 +646,7 @@ export class GraphSidebarView extends ItemView {
       const close = (ev: MouseEvent) => {
         if (!dropdown.contains(ev.target as Node)) {
           dropdown.remove();
+          catBadge.removeClass('dropdown-open');
           document.removeEventListener('click', close, true);
         }
       };
@@ -1736,7 +1739,9 @@ export class GraphSidebarView extends ItemView {
           const dx = nodes[i].x - nodes[j].x;
           const dy = nodes[i].y - nodes[j].y;
           const dist = Math.max(Math.sqrt(dx * dx + dy * dy), 0.01);
-          const force = (k * k) / dist;
+          const minSep = nodes[i].radius + nodes[j].radius + 18;
+          const effectiveDist = Math.max(dist - minSep, 0.01);
+          const force = (k * k) / effectiveDist;
           const fx = (dx / dist) * force;
           const fy = (dy / dist) * force;
           nodes[i].vx += fx; nodes[i].vy += fy;
@@ -1783,6 +1788,45 @@ export class GraphSidebarView extends ItemView {
       }
 
       temperature -= cooling;
+    }
+
+    // Post-layout collision resolution
+    const COLLISION_PASSES = 10;
+    const COLLISION_PAD = 8;
+    for (let pass = 0; pass < COLLISION_PASSES; pass++) {
+      let hadOverlap = false;
+      for (let i = 0; i < nodes.length; i++) {
+        for (let j = i + 1; j < nodes.length; j++) {
+          const dx = nodes[i].x - nodes[j].x;
+          const dy = nodes[i].y - nodes[j].y;
+          const dist = Math.sqrt(dx * dx + dy * dy);
+          const minDist = nodes[i].radius + nodes[j].radius + COLLISION_PAD;
+          if (dist < minDist) {
+            hadOverlap = true;
+            const overlap = minDist - dist;
+            const angle = dist > 0.01 ? Math.atan2(dy, dx) : Math.random() * Math.PI * 2;
+            const mx = Math.cos(angle) * overlap * 0.5;
+            const my = Math.sin(angle) * overlap * 0.5;
+            if (nodes[i].isCurrent) {
+              nodes[j].x -= mx * 2; nodes[j].y -= my * 2;
+            } else if (nodes[j].isCurrent) {
+              nodes[i].x += mx * 2; nodes[i].y += my * 2;
+            } else {
+              nodes[i].x += mx; nodes[i].y += my;
+              nodes[j].x -= mx; nodes[j].y -= my;
+            }
+          }
+        }
+      }
+      // Re-clamp to canvas boundaries
+      const hw = width / 2 - 40;
+      const hh = height / 2 - 40;
+      for (const n of nodes) {
+        if (n.isCurrent) continue;
+        n.x = Math.max(-hw, Math.min(hw, n.x));
+        n.y = Math.max(-hh, Math.min(hh, n.y));
+      }
+      if (!hadOverlap) break;
     }
   }
 

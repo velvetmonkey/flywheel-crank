@@ -46,11 +46,19 @@ export default class FlywheelCrankPlugin extends Plugin {
     if (statusBar) statusBar.prepend(this.statusBarEl);
     this.statusBarEl.style.cursor = 'pointer';
     this.statusBarEl.addEventListener('click', () => {
-      if (this.mcpClient.connectionState === 'error' || this.mcpClient.connectionState === 'disconnected') {
+      const state = this.mcpClient.connectionState;
+      if (state === 'error' || state === 'disconnected' || state === 'reconnecting') {
         this.initialize();
       }
     });
     this.setStatus('connecting...', true);
+
+    // Update status bar when auto-reconnect kicks in
+    this.mcpClient.onConnectionStateChange(() => {
+      if (this.mcpClient.connectionState === 'reconnecting') {
+        this.setStatus('reconnecting...', true);
+      }
+    });
 
     // Register views
     this.registerView(GRAPH_VIEW_TYPE, (leaf) => new GraphSidebarView(leaf, this.mcpClient));
@@ -291,6 +299,9 @@ export default class FlywheelCrankPlugin extends Plugin {
     const MAX_RETRIES = 3;
     const RETRY_DELAY_MS = 3000;
 
+    // Cancel any in-flight auto-reconnect to prevent racing
+    this.mcpClient.cancelAutoReconnect();
+
     try {
       this.setStatus(attempt > 1 ? `reconnecting (${attempt}/${MAX_RETRIES})...` : 'connecting...', true);
 
@@ -370,7 +381,7 @@ export default class FlywheelCrankPlugin extends Plugin {
         `Task cache: ${tasksLabel}`,
       ];
       if (this.mcpClient.lastToolError) {
-        tooltipLines.push('', `Last error: ${this.mcpClient.lastToolError.message}`);
+        tooltipLines.push('', `⚠ ${this.mcpClient.lastToolError.getActionableMessage()}`);
       }
       const tooltip = tooltipLines.join('\n');
 

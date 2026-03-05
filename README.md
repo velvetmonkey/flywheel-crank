@@ -23,6 +23,8 @@
 - **Wikilink suggest** -- Editor completions powered by entity index and scoring
 - **Context menu feedback** -- Right-click to approve/reject wikilink suggestions
 - **Status bar pulse** -- Live connection status and index freshness indicator
+- **Error resilience** -- Categorized error handling (network, index_building, timeout, server_error, invalid_response) with actionable status bar messages
+- **Reconnect** -- `reconnect` command for manual MCP server reconnection
 
 ## Installation
 
@@ -41,6 +43,8 @@ Then enable "Flywheel Crank" in Obsidian Settings > Community Plugins.
 
 - Obsidian desktop (not mobile)
 - [Flywheel Memory](https://github.com/velvetmonkey/flywheel-memory) MCP server (provides the vault index and entity data)
+
+> **Note:** The MCP server is developed and tested with Claude Code. Other MCP clients may work but are untested.
 
 ## Architecture
 
@@ -95,6 +99,15 @@ npm run dev    # watch mode (rebuilds on change)
 npm run build  # production build
 npm run lint   # type check
 ```
+
+## Testing
+
+```bash
+npm test       # run vitest suite
+npm run test   # same
+```
+
+Tests cover wikilink application, protected zones, FTS5 helpers, and entity extraction.
 
 ---
 
