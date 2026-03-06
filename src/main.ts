@@ -35,7 +35,7 @@ export default class FlywheelCrankPlugin extends Plugin {
   private pipelineActiveTimer: number | null = null;
 
   async onload(): Promise<void> {
-    console.log('Flywheel Crank: loading plugin');
+    console.log(`[flywheel-crank] v${this.manifest.version} loading`);
 
     await this.loadSettings();
 

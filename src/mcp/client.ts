@@ -961,7 +961,8 @@ export class FlywheelMcpClient {
       this._reconnectAttempt = 0;
       this._healthFailCount = 0;
       this.setConnectionState('connected');
-      console.log('Flywheel Crank: MCP client connected');
+      const serverInfo = this.client.getServerVersion();
+      console.log(`[flywheel-crank] connected | flywheel-memory v${serverInfo?.version ?? 'unknown'}`);
     } catch (err) {
       const stderrTail = this._stderrLines.slice(-10).join('\n');
       this._lastError = err instanceof Error
