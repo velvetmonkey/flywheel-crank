@@ -8,23 +8,53 @@
 [![Obsidian](https://img.shields.io/badge/Obsidian-plugin-blueviolet.svg)](https://obsidian.md/)
 [![Platform](https://img.shields.io/badge/platform-desktop%20only-blue.svg)](https://github.com/velvetmonkey/flywheel-crank)
 
+## What is Flywheel Crank?
+
+Flywheel Crank turns your Obsidian vault into a knowledge graph. It connects to [Flywheel Memory](https://github.com/velvetmonkey/flywheel-memory)'s MCP server to surface entity relationships, suggest wikilinks as you type, and give you semantic search across everything you've written. The more you use it, the smarter its suggestions get -- a flywheel that compounds over time.
+
+## Screenshots
+
+![Graph Sidebar](screenshots/graph-sidebar.png)
+![Semantic Search](screenshots/search-modal.png)
+![Entity Browser](screenshots/entity-browser.png)
+![Vault Health](screenshots/vault-health.png)
+
 ## Features
 
-- **Entity inbox** -- Triage new and pending entity suggestions
+### Search & Discovery
+
+- **Semantic search modal** -- Hybrid search (BM25 + embeddings) across your entire vault
+- **Wikilink completions** -- Editor completions powered by the entity index and scoring engine
 - **Inline suggestions** -- Context-aware wikilink suggestions as you type
-- **Entity page** -- Deep-dive view for any entity (backlinks, co-occurrence, feedback history)
+
+### Graph & Connections
+
 - **Graph sidebar** -- Interactive graph visualization of your vault's link structure
-- **Entity browser** -- Browse and explore extracted entities across your vault
-- **Semantic search** -- Hybrid search (BM25 + embeddings) via search modal
 - **Connection explorer** -- Discover paths and relationships between entities
-- **Task dashboard** -- Query and visualize tasks across your vault
-- **Weekly digest** -- Summary of vault activity and emerging patterns
+
+### Entity Intelligence
+
+- **Entity browser** -- Browse and explore extracted entities across 17 categories
+- **Entity page** -- Deep-dive view for any entity: backlinks, co-occurrence, feedback history
+
+### Vault Analytics
+
 - **Vault health** -- Diagnostics for orphans, broken links, and vault stats
-- **Wikilink suggest** -- Editor completions powered by entity index and scoring
-- **Context menu feedback** -- Right-click to approve/reject wikilink suggestions
+- **Weekly digest** -- Summary of vault activity and emerging patterns
+- **Task dashboard** -- Query and visualize tasks across your vault
+
+### Feedback Loop
+
+- **Context menu feedback** -- Right-click to approve or reject wikilink suggestions
 - **Status bar pulse** -- Live connection status and index freshness indicator
-- **Error resilience** -- Categorized error handling (network, index_building, timeout, server_error, invalid_response) with actionable status bar messages
-- **Reconnect** -- `reconnect` command for manual MCP server reconnection
+- **Auto-reconnect** -- Categorized error handling with actionable status bar messages, plus a manual `reconnect` command
+
+## Requirements
+
+- Obsidian desktop (not mobile)
+- [Flywheel Memory](https://github.com/velvetmonkey/flywheel-memory) MCP server (provides the vault index and entity data)
+
+> **Note:** The MCP server is developed and tested with Claude Code. Other MCP clients may work but are untested.
 
 ## Installation
 
@@ -39,57 +69,13 @@ cp main.js manifest.json styles.css /path/to/vault/.obsidian/plugins/flywheel-cr
 
 Then enable "Flywheel Crank" in Obsidian Settings > Community Plugins.
 
-## Requirements
+## Configuration
 
-- Obsidian desktop (not mobile)
-- [Flywheel Memory](https://github.com/velvetmonkey/flywheel-memory) MCP server (provides the vault index and entity data)
+In Obsidian Settings > Flywheel Crank you can configure:
 
-> **Note:** The MCP server is developed and tested with Claude Code. Other MCP clients may work but are untested.
-
-## Architecture
-
-```
-flywheel-crank/
-├── src/
-│   ├── main.ts                      # Plugin entry point
-│   ├── settings.ts                  # Plugin settings tab
-│   ├── mcp/
-│   │   ├── client.ts                # MCP client (connects to flywheel-memory)
-│   │   └── cache.ts                 # MCP response caching
-│   ├── core/
-│   │   ├── types.ts                 # Shared type definitions
-│   │   ├── protectedZones.ts        # Code block / frontmatter protection
-│   │   ├── wikilinks.ts             # Wikilink application logic
-│   │   ├── stemmer.ts               # Porter stemmer
-│   │   ├── levenshtein.ts           # Edit distance for fuzzy matching
-│   │   └── similarity.ts            # Content similarity scoring
-│   ├── db/
-│   │   ├── schema.ts                # SQLite schema definitions
-│   │   ├── persistence.ts           # Database persistence layer
-│   │   ├── sql-js-adapter.ts        # sql.js FTS5 adapter
-│   │   └── sql-js-fts5.d.ts         # Type declarations
-│   ├── index/
-│   │   ├── vault-index.ts           # Vault indexing and entity tracking
-│   │   ├── entities.ts              # Entity extraction and management
-│   │   ├── fts5.ts                  # Full-text search (FTS5)
-│   │   └── embeddings.ts            # Semantic embeddings (local)
-│   ├── suggest/
-│   │   ├── wikilink-suggest.ts      # Wikilink completion provider
-│   │   └── inline-suggestions.ts    # Context-aware inline suggestions
-│   └── views/
-│       ├── entity-inbox.ts          # Entity triage inbox
-│       ├── entity-page.ts           # Single-entity deep-dive
-│       ├── graph-sidebar.ts         # Graph visualization panel
-│       ├── entity-browser.ts        # Entity browser view
-│       ├── search-modal.ts          # Search modal (hybrid search)
-│       ├── connection-explorer.ts   # Entity relationship explorer
-│       ├── task-dashboard.ts        # Task query and visualization
-│       ├── weekly-digest.ts         # Weekly vault activity digest
-│       └── vault-health.ts          # Vault health diagnostics
-├── manifest.json                    # Obsidian plugin manifest
-├── styles.css                       # Plugin styles
-└── esbuild.config.mjs               # Build configuration
-```
+- **MCP server path** -- Path to the flywheel-memory server binary
+- **Feature toggles** -- Enable/disable individual views (graph sidebar, inline suggestions, etc.)
+- **Exclude folders** -- Folders to skip during indexing
 
 ## Development
 
@@ -98,19 +84,11 @@ npm install
 npm run dev    # watch mode (rebuilds on change)
 npm run build  # production build
 npm run lint   # type check
-```
-
-## Testing
-
-```bash
 npm test       # run vitest suite
-npm run test   # same
 ```
-
-Tests cover wikilink application, protected zones, FTS5 helpers, and entity extraction.
 
 ---
 
 Part of the [Flywheel](https://github.com/velvetmonkey/flywheel) ecosystem. Powered by [Flywheel Memory](https://github.com/velvetmonkey/flywheel-memory).
 
-Apache 2.0 — see [LICENSE](./LICENSE) for details.
+Apache 2.0 -- see [LICENSE](./LICENSE) for details.
