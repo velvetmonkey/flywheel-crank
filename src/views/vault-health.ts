@@ -12,6 +12,7 @@ export const VAULT_HEALTH_VIEW_TYPE = 'flywheel-vault-health';
 
 export class VaultHealthView extends ItemView {
   private mcpClient: FlywheelMcpClient;
+  private pluginVersion: string;
   /** Track which sections have been loaded to avoid re-fetching */
   private loadedSections = new Set<string>();
   /** Remember collapsed state per section title across re-renders */
@@ -24,9 +25,10 @@ export class VaultHealthView extends ItemView {
   private healthUnsub: (() => void) | null = null;
   private _connStateUnsub: (() => void) | null = null;
 
-  constructor(leaf: WorkspaceLeaf, mcpClient: FlywheelMcpClient) {
+  constructor(leaf: WorkspaceLeaf, mcpClient: FlywheelMcpClient, pluginVersion: string) {
     super(leaf);
     this.mcpClient = mcpClient;
+    this.pluginVersion = pluginVersion;
   }
 
   getViewType(): string {
@@ -174,6 +176,9 @@ export class VaultHealthView extends ItemView {
     this.renderLazySection(content, 'Technical Details', 'cpu', async (el) => {
       const health = await this.mcpClient.healthCheck();
 
+      this.renderInfoRow(el, 'Crank', `v${this.pluginVersion}`);
+      this.renderInfoRow(el, 'Server', `flywheel-memory v${this.mcpClient.serverVersion ?? 'unknown'}`);
+
       const graphStatus = health.index_state === 'ready'
         ? `ready \u00B7 ${health.note_count} notes`
         : health.index_state === 'building' ? 'building...' : 'error';
@@ -198,7 +203,7 @@ export class VaultHealthView extends ItemView {
       }
       const age = health.index_age_seconds >= 0 ? this.formatAge(health.index_age_seconds) : '\u2014';
       this.renderInfoRow(el, 'Index age', `${age} ago`);
-      this.renderInfoRow(el, 'MCP', 'connected (stdio)');
+      this.renderInfoRow(el, 'Transport', 'stdio');
 
       return 1;
     }, 'Server connection status, index health, and database schema information.');

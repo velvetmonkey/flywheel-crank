@@ -705,6 +705,7 @@ export class FlywheelMcpClient {
   private _connectionState: ConnectionState = 'disconnected';
   private _lastError: string | null = null;
   private _stderrLines: string[] = [];
+  private _serverVersion: string | null = null;
   private connectionStateCallbacks = new Set<() => void>();
 
   // Last tool error for status display
@@ -752,6 +753,10 @@ export class FlywheelMcpClient {
 
   get lastError(): string | null {
     return this._lastError;
+  }
+
+  get serverVersion(): string | null {
+    return this._serverVersion;
   }
 
   get stderrOutput(): string[] {
@@ -962,7 +967,8 @@ export class FlywheelMcpClient {
       this._healthFailCount = 0;
       this.setConnectionState('connected');
       const serverInfo = this.client.getServerVersion();
-      console.log(`[flywheel-crank] connected | flywheel-memory v${serverInfo?.version ?? 'unknown'}`);
+      this._serverVersion = serverInfo?.version ?? null;
+      console.log(`[flywheel-crank] connected | flywheel-memory v${this._serverVersion ?? 'unknown'}`);
     } catch (err) {
       const stderrTail = this._stderrLines.slice(-10).join('\n');
       this._lastError = err instanceof Error
