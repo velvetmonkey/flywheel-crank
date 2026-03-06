@@ -64,7 +64,7 @@ Manual install (copy built artifacts to your Obsidian plugins directory):
 cd flywheel-crank
 npm install
 npm run build
-cp main.js manifest.json styles.css /path/to/vault/.obsidian/plugins/flywheel-crank/
+cp main.js manifest.json styles.css flywheel.png /path/to/vault/.obsidian/plugins/flywheel-crank/
 ```
 
 Then enable "Flywheel Crank" in Obsidian Settings > Community Plugins.
