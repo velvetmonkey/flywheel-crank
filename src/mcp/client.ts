@@ -882,7 +882,7 @@ export class FlywheelMcpClient {
         const systemRoot = process.env.SYSTEMROOT || process.env.SystemRoot || 'C:\\Windows';
         command = `${systemRoot}\\System32\\wsl.exe`;
         args = [
-          'bash', '-lc',
+          '-e', 'bash', '-lc',
           `VAULT_PATH="${wslVault}" FLYWHEEL_TOOLS="full" FLYWHEEL_WATCH="true" FLYWHEEL_WATCH_POLL="true" FLYWHEEL_POLL_INTERVAL="15000" exec node "${serverPath}"`,
         ];
         // Don't set effectiveVaultPath since it's baked into the command
