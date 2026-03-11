@@ -78,7 +78,15 @@ export class TaskDashboardView extends ItemView {
   }
 
   async onOpen(): Promise<void> {
-    this.register(this.mcpClient.onConnectionStateChange(() => this.renderSplash()));
+    this.register(this.mcpClient.onConnectionStateChange(() => {
+      if (this.mcpClient.connectionState === 'connected') {
+        // Connection recovered — re-check task cache readiness
+        this.cacheReady = false;
+        this.waitForReady();
+      } else {
+        this.renderSplash();
+      }
+    }));
     this.renderSplash();
     this.waitForReady();
   }

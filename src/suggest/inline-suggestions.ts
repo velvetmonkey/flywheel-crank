@@ -163,6 +163,15 @@ class InlineSuggestionPlugin {
 
       this.buildDecorations();
     } catch (err) {
+      // If index is still building, silently retry after a delay
+      if (err instanceof Error && /Index building/.test(err.message)) {
+        setTimeout(() => {
+          this.pending = false;
+          this.scannedRanges = []; // reset so next attempt re-scans
+          this.scheduleUpdate();
+        }, 3000);
+        return;
+      }
       console.error('Flywheel inline suggestions: fetch failed', err);
     } finally {
       this.pending = false;
