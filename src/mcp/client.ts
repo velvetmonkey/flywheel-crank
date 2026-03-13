@@ -707,6 +707,7 @@ export class FlywheelMcpClient {
   private _stderrLines: string[] = [];
   private _serverVersion: string | null = null;
   private connectionStateCallbacks = new Set<() => void>();
+  private pipelineCallbacks = new Set<() => void>();
 
   // Last tool error for status display
   private _lastToolError: McpToolError | null = null;
@@ -771,6 +772,17 @@ export class FlywheelMcpClient {
   onConnectionStateChange(cb: () => void): () => void {
     this.connectionStateCallbacks.add(cb);
     return () => { this.connectionStateCallbacks.delete(cb); };
+  }
+
+  /** Subscribe to pipeline completion events (entity/alias changes). Returns unsubscribe function. */
+  onPipelineComplete(cb: () => void): () => void {
+    this.pipelineCallbacks.add(cb);
+    return () => { this.pipelineCallbacks.delete(cb); };
+  }
+
+  /** Notify listeners that a pipeline completed (entities may have changed). */
+  notifyPipelineComplete(): void {
+    for (const cb of this.pipelineCallbacks) { try { cb(); } catch {} }
   }
 
   /** Subscribe to retry requests. Returns unsubscribe function. */

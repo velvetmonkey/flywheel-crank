@@ -36,6 +36,7 @@ class InlineSuggestionPlugin {
   private debounceTimer: ReturnType<typeof setTimeout> | null = null;
   private clickHandler: (e: MouseEvent) => void;
   private connectionUnsub: (() => void) | null = null;
+  private pipelineUnsub: (() => void) | null = null;
 
   constructor(
     private view: EditorView,
@@ -48,6 +49,12 @@ class InlineSuggestionPlugin {
     // Re-fetch when MCP connects (handles editors open before connection)
     this.connectionUnsub = this.mcpClient.onConnectionStateChange(() => {
       if (this.mcpClient.connected) this.scheduleUpdate();
+    });
+    // Re-fetch when a pipeline completes (entity aliases may have changed)
+    this.pipelineUnsub = this.mcpClient.onPipelineComplete(() => {
+      this.suggestions = [];
+      this.scannedRanges = [];
+      this.scheduleUpdate();
     });
     this.scheduleUpdate();
   }
@@ -67,6 +74,7 @@ class InlineSuggestionPlugin {
     this.view.dom.removeEventListener('click', this.clickHandler);
     if (this.debounceTimer) clearTimeout(this.debounceTimer);
     if (this.connectionUnsub) { this.connectionUnsub(); this.connectionUnsub = null; }
+    if (this.pipelineUnsub) { this.pipelineUnsub(); this.pipelineUnsub = null; }
   }
 
   private scheduleUpdate(): void {

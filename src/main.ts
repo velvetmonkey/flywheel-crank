@@ -335,21 +335,26 @@ export default class FlywheelCrankPlugin extends Plugin {
 
   /** Handle health updates from the centralized health poller. */
   private handleHealthUpdate(health: import('./mcp/client').McpHealthCheckResponse): void {
-    // If a new pipeline arrived, cancel the processing spinner
+    // If a new pipeline arrived, cancel the processing spinner and refresh entities
     const pipelineTs = health.last_pipeline?.timestamp ?? 0;
     if (pipelineTs > this.lastPipelineTimestamp) {
+      const isFirstPoll = this.lastPipelineTimestamp === 0;
       this.lastPipelineTimestamp = pipelineTs;
       if (this.pipelineActiveTimer) {
         window.clearTimeout(this.pipelineActiveTimer);
         this.pipelineActiveTimer = null;
       }
+      // Pipeline includes entity_scan — aliases/entities may have changed
+      if (!isFirstPoll) {
+        this.wikilinkEntitiesLoaded = false;
+        this.mcpClient.notifyPipelineComplete();
+      }
     }
 
     if (health.index_state === 'ready') {
-      // Detect index rebuild and refresh entity cache for wikilink suggest
+      // Detect index rebuild and force-refresh views
       const rebuildTs = health.last_rebuild?.timestamp ?? 0;
       if (rebuildTs > this.lastRebuildTimestamp && this.lastRebuildTimestamp > 0) {
-        // Rebuild happened — re-fetch entities and force-refresh views
         this.wikilinkEntitiesLoaded = false;
         this.updateGraphSidebar(true);
       }
