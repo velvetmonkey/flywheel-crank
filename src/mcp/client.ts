@@ -853,7 +853,6 @@ export class FlywheelMcpClient {
    * @param vaultPath - Absolute path to the Obsidian vault (native OS path)
    * @param serverPath - Optional path to the MCP server entry point.
    *   If empty, uses `npx @velvetmonkey/flywheel-memory`.
-   *   If a Unix path on Windows, spawns via WSL automatically.
    */
   async connect(vaultPath: string, serverPath = ''): Promise<void> {
     if (this._connected) return;
@@ -866,55 +865,29 @@ export class FlywheelMcpClient {
     this._lastVaultPath = vaultPath;
     this._lastServerPath = serverPath;
 
-    const isWindows = process.platform === 'win32';
-    const isUnixPath = (p: string) => p.startsWith('/');
-
     let command: string;
     let args: string[];
-    let effectiveVaultPath = vaultPath;
 
     if (serverPath) {
-      // Custom server path provided
-      if (isWindows && isUnixPath(serverPath)) {
-        // Unix path on Windows → spawn via WSL.
-        // WSL doesn't forward custom env vars, so inline them via bash -c.
-        const wslVault = this.toWslPath(vaultPath);
-        const systemRoot = process.env.SYSTEMROOT || process.env.SystemRoot || 'C:\\Windows';
-        command = `${systemRoot}\\System32\\wsl.exe`;
-        args = [
-          '-e', 'bash', '-lc',
-          `VAULT_PATH="${wslVault}" FLYWHEEL_TOOLS="full" FLYWHEEL_WATCH="true" FLYWHEEL_WATCH_POLL="true" FLYWHEEL_POLL_INTERVAL="15000" exec node "${serverPath}"`,
-        ];
-        // Don't set effectiveVaultPath since it's baked into the command
-        effectiveVaultPath = wslVault;
-      } else {
-        // Native path on any platform
-        command = 'node';
-        args = [serverPath];
-      }
+      // Custom server path — always spawn natively via node
+      command = 'node';
+      args = [serverPath];
     } else {
       // No custom path — use npx
-      if (isWindows) {
-        command = 'npx.cmd';
-        args = ['-y', '@velvetmonkey/flywheel-memory@2.0.72']; // Pin version — bump when releasing new flywheel-memory
-      } else {
-        command = 'npx';
-        args = ['-y', '@velvetmonkey/flywheel-memory@2.0.72']; // Pin version — bump when releasing new flywheel-memory
-      }
+      const isWindows = process.platform === 'win32';
+      command = isWindows ? 'npx.cmd' : 'npx';
+      args = ['-y', '@velvetmonkey/flywheel-memory@2.0.72']; // Pin version — bump when releasing new flywheel-memory
     }
 
-    console.log(`Flywheel Crank: serverPath=${JSON.stringify(serverPath)}, isWindows=${isWindows}`);
-    console.log(`Flywheel Crank: vaultPath=${JSON.stringify(vaultPath)}, effectiveVaultPath=${JSON.stringify(effectiveVaultPath)}`);
     console.log(`Flywheel Crank: spawning ${command} ${args.join(' ')}`);
 
     this.transport = new StdioClientTransport({
       command,
       args,
-      // Pipe stderr so it doesn't leak into stdout (WSL mixes streams)
       stderr: 'pipe',
       env: {
         ...process.env,
-        VAULT_PATH: effectiveVaultPath,
+        VAULT_PATH: vaultPath,
         FLYWHEEL_TOOLS: 'full',
         FLYWHEEL_WATCH: 'true',
         FLYWHEEL_WATCH_POLL: 'true',
@@ -960,7 +933,7 @@ export class FlywheelMcpClient {
 
     try {
       // The server initializes StateDb + entity index before accepting the MCP
-      // handshake. Over WSL/cross-fs this can exceed the default 60s timeout.
+      // handshake. This can exceed the default 60s timeout on large vaults.
       await this.client.connect(this.transport, { timeout: 120_000 });
       this._connected = true;
       this._reconnectAttempt = 0;
@@ -977,15 +950,6 @@ export class FlywheelMcpClient {
       this.setConnectionState('error');
       throw err;
     }
-  }
-
-  /**
-   * Convert a Windows path (C:\Users\...) to WSL path (/mnt/c/Users/...).
-   */
-  private toWslPath(winPath: string): string {
-    return winPath
-      .replace(/^([A-Za-z]):/, (_m, drive: string) => `/mnt/${drive.toLowerCase()}`)
-      .replace(/\\/g, '/');
   }
 
   /**
