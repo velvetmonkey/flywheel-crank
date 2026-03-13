@@ -10,7 +10,7 @@
  * - Merge suggestions (find duplicate entities and merge them)
  */
 
-import { ItemView, WorkspaceLeaf, setIcon, Notice } from 'obsidian';
+import { ItemView, WorkspaceLeaf, setIcon, setTooltip, Notice } from 'obsidian';
 import type { EntityCategory, EntityWithAliases } from '../core/types';
 import type { FlywheelMcpClient, McpEntityIndexResponse, McpEntityItem, McpMergeSuggestion } from '../mcp/client';
 
@@ -57,10 +57,10 @@ const CATEGORY_LABELS: Record<EntityCategory, string> = {
 };
 
 const ALL_CATEGORIES: EntityCategory[] = [
-  'people', 'technologies', 'projects', 'organizations',
-  'concepts', 'locations', 'acronyms',
-  'animals', 'media', 'events', 'documents', 'vehicles',
-  'health', 'finance', 'food', 'hobbies',
+  'acronyms', 'animals', 'concepts', 'documents', 'events',
+  'finance', 'food', 'health', 'hobbies', 'locations',
+  'media', 'organizations', 'people', 'projects', 'technologies',
+  'vehicles',
   'other',
 ];
 
@@ -261,7 +261,7 @@ export class EntityBrowserView extends ItemView {
 
     const statsInfo = header.createSpan('flywheel-graph-section-info');
     setIcon(statsInfo, 'info');
-    statsInfo.setAttribute('aria-label',
+    setTooltip(statsInfo,
       'Entities are people, technologies, organizations, and other named concepts extracted from your notes. ' +
       'They\'re grouped by category with hub scores showing how connected each entity is.');
     statsInfo.addEventListener('click', (e) => e.stopPropagation());
@@ -308,6 +308,7 @@ export class EntityBrowserView extends ItemView {
       const isCollapsed = !this.expandedCategories.has(category);
       const isSelecting = this.selectionCategory === category;
       const section = container.createDiv(`flywheel-entity-section${isCollapsed && !isSelecting ? ' is-collapsed' : ''}`);
+      section.dataset.category = category;
 
       // Section header
       const headerEl = section.createDiv('flywheel-entity-section-header');
@@ -322,7 +323,7 @@ export class EntityBrowserView extends ItemView {
         }
       });
 
-      headerEl.setAttribute('aria-label', CATEGORY_HINTS[category]);
+      setTooltip(headerEl, CATEGORY_HINTS[category]);
 
       const iconEl = headerEl.createSpan('flywheel-entity-section-icon');
       setIcon(iconEl, CATEGORY_ICONS[category]);
@@ -334,7 +335,7 @@ export class EntityBrowserView extends ItemView {
       if (!isSelecting) {
         const selectBtn = headerEl.createSpan('flywheel-entity-select-btn');
         setIcon(selectBtn, 'check-square');
-        selectBtn.setAttribute('aria-label', 'Select entities');
+        setTooltip(selectBtn, 'Select entities for bulk re-categorization');
         selectBtn.addEventListener('click', (e) => {
           e.stopPropagation();
           this.enterSelectionMode(category);
@@ -402,7 +403,7 @@ export class EntityBrowserView extends ItemView {
 
       for (const entity of filtered) {
         const item = listEl.createDiv('flywheel-entity-item');
-        item.setAttribute('aria-label', getEntityCategoryReason(entity.name, category));
+        setTooltip(item, getEntityCategoryReason(entity.name, category));
 
         if (isSelecting && entity.path) {
           // Selection mode: click toggles selection
@@ -450,7 +451,7 @@ export class EntityBrowserView extends ItemView {
           if (category !== 'other') {
             const otherBtn = actions.createSpan('flywheel-entity-correct-btn');
             setIcon(otherBtn, 'circle-dot');
-            otherBtn.setAttribute('aria-label', 'Move to Other');
+            setTooltip(otherBtn, 'Move to "Other" — uncategorize this entity');
             otherBtn.addEventListener('click', (e) => {
               e.stopPropagation();
               this.dismissPicker();
@@ -460,7 +461,7 @@ export class EntityBrowserView extends ItemView {
 
           const correctBtn = actions.createSpan('flywheel-entity-correct-btn');
           setIcon(correctBtn, 'arrow-left-right');
-          correctBtn.setAttribute('aria-label', 'Change category');
+          setTooltip(correctBtn, 'Change this entity\'s category');
           correctBtn.addEventListener('click', (e) => {
             e.stopPropagation();
             this.showCategoryPicker(entity, category, correctBtn);
@@ -476,7 +477,8 @@ export class EntityBrowserView extends ItemView {
 
         if (entity.hubScore && entity.hubScore > 0) {
           const hubEl = meta.createSpan('flywheel-entity-hub-badge');
-          hubEl.setAttribute('aria-label', `${entity.hubScore} connections (incoming + outgoing links)`);
+          setTooltip(hubEl, `${entity.hubScore} connections (incoming + outgoing links)`);
+          hubEl.dataset.category = category;
           const hubIcon = hubEl.createSpan();
           setIcon(hubIcon, 'link');
           hubEl.createSpan().setText(`${entity.hubScore}`);
@@ -677,9 +679,14 @@ export class EntityBrowserView extends ItemView {
 
     for (const cat of sortedCategories) {
       const option = picker.createDiv('flywheel-entity-category-option');
+      option.dataset.category = cat;
       const iconEl = option.createSpan('flywheel-entity-category-option-icon');
       setIcon(iconEl, CATEGORY_ICONS[cat]);
       option.createSpan().setText(CATEGORY_LABELS[cat]);
+      const catEntities = (this.entityData as any)?.[cat] as McpEntityItem[] | undefined;
+      if (catEntities?.length) {
+        option.createSpan('flywheel-entity-category-option-count').setText(`${catEntities.length}`);
+      }
 
       option.addEventListener('click', (e) => {
         e.stopPropagation();
@@ -796,9 +803,14 @@ export class EntityBrowserView extends ItemView {
 
     for (const cat of sortedCategories) {
       const option = picker.createDiv('flywheel-entity-category-option');
+      option.dataset.category = cat;
       const iconEl = option.createSpan('flywheel-entity-category-option-icon');
       setIcon(iconEl, CATEGORY_ICONS[cat]);
       option.createSpan().setText(CATEGORY_LABELS[cat]);
+      const catEntities = (this.entityData as any)?.[cat] as McpEntityItem[] | undefined;
+      if (catEntities?.length) {
+        option.createSpan('flywheel-entity-category-option-count').setText(`${catEntities.length}`);
+      }
 
       option.addEventListener('click', (e) => {
         e.stopPropagation();

@@ -1518,6 +1518,13 @@ export class FlywheelMcpClient {
   }
 
   /**
+   * Remove an entity from the suppression list, re-enabling wikilink suggestions for it.
+   */
+  async unsuppressEntity(entity: string): Promise<{ entity: string; removed: boolean }> {
+    return this.callTool<{ entity: string; removed: boolean }>('wikilink_feedback', { mode: 'unsuppress', entity });
+  }
+
+  /**
    * Update frontmatter fields on a note.
    */
   async updateFrontmatter(

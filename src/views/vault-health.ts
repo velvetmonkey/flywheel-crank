@@ -5,7 +5,7 @@
  * stale hubs, immature notes, emerging hubs, and growth trends.
  */
 
-import { ItemView, WorkspaceLeaf, TFile, setIcon } from 'obsidian';
+import { ItemView, WorkspaceLeaf, TFile, setIcon, setTooltip } from 'obsidian';
 import type { FlywheelMcpClient, McpHealthCheckResponse, McpPipelineStep } from '../mcp/client';
 
 export const VAULT_HEALTH_VIEW_TYPE = 'flywheel-vault-health';
@@ -92,9 +92,13 @@ export class VaultHealthView extends ItemView {
     // Stats bar — render placeholders immediately, populate async
     const statsBar = container.createDiv('flywheel-health-stats-bar');
     const notesStat = this.renderStat(statsBar, 'file-text', '...', 'Notes');
+    setTooltip(notesStat, 'Total markdown files in the vault');
     const entitiesStat = this.renderStat(statsBar, 'link', '...', 'Entities');
+    setTooltip(entitiesStat, 'Distinct people, tools, topics, etc. detected across all notes');
     const tagsStat = this.renderStat(statsBar, 'tag', '...', 'Tags');
+    setTooltip(tagsStat, 'Unique #tags used across the vault');
     const linksStat = this.renderStat(statsBar, 'arrow-right-left', '...', 'Links');
+    setTooltip(linksStat, 'Total [[wikilinks]] across all notes');
 
     // Populate stats in background (don't block section rendering)
     this.loadStatsBar(notesStat, entitiesStat, tagsStat, linksStat);
@@ -229,6 +233,7 @@ export class VaultHealthView extends ItemView {
         titleEl.addEventListener('click', () => this.app.workspace.openLinkText(orphan.path, '', false));
 
         const findBtn = row.createEl('button', { cls: 'flywheel-health-action-btn', text: 'Find links' });
+        setTooltip(findBtn, 'Scan this note for mentions of known entities, then show suggestions below. Clicking a suggestion wraps the first bare mention of that name in [[wikilinks]] inside the note file.');
         findBtn.addEventListener('click', async (e) => {
           e.stopPropagation();
           findBtn.disabled = true;
@@ -246,6 +251,7 @@ export class VaultHealthView extends ItemView {
 
             if (suggestions.length === 0) {
               findBtn.setText('No suggestions');
+              setTooltip(findBtn, 'No known entities were found mentioned in this note\'s text.');
               return;
             }
 
@@ -257,6 +263,7 @@ export class VaultHealthView extends ItemView {
                 cls: 'flywheel-health-suggestion-chip',
                 text: `+ [[${s.entity}]]`,
               });
+              setTooltip(chip, `Wrap the first bare mention of '${s.entity}' in this note with [[wikilinks]]. The note file is edited in place.`);
               chip.addEventListener('click', async () => {
                 chip.disabled = true;
                 try {
@@ -304,9 +311,11 @@ export class VaultHealthView extends ItemView {
         const row = item.createDiv('flywheel-health-hub-row');
         row.createDiv('flywheel-health-item-title').setText(note.title || note.path);
         if (note.backlinks != null || note.backlink_count != null) {
+          const bl = note.backlinks ?? note.backlink_count;
           const badges = row.createDiv('flywheel-health-badges');
           const inBadge = badges.createSpan('flywheel-health-badge flywheel-health-badge-in');
-          inBadge.setText(`\u2190 ${note.backlinks ?? note.backlink_count}`);
+          inBadge.setText(`\u2190 ${bl}`);
+          setTooltip(inBadge, `${bl} notes link here, but this note links to nothing — it's a dead end in the graph`);
         }
       }
       const total = (resp as any).total ?? items.length;
@@ -318,6 +327,7 @@ export class VaultHealthView extends ItemView {
 
     // Broken Links section — lazy-loaded, grouped by target with frequency weighting
     this.renderLazySection(content, 'Broken Links', 'unlink', async (el) => {
+      el.addClass('flywheel-health-grid-2col');
       const resp = await this.mcpClient.validateLinks(false, 30, true);
 
       // group_by_target returns targets[]; fall back to broken[] if server returned flat list
@@ -355,11 +365,12 @@ export class VaultHealthView extends ItemView {
             // Frequency badge
             const badge = row.createSpan('flywheel-health-broken-badge');
             badge.setText(`${count}`);
+            setTooltip(badge, `[[${item.target}]] appears ${count} time${count !== 1 ? 's' : ''} across the vault but no note called '${item.target}' exists`);
 
             // Create button
             const createBtn = row.createEl('button', { cls: 'flywheel-health-create-btn' });
             createBtn.setText('+');
-            createBtn.setAttribute('aria-label', `Create note: ${item.target}`);
+            setTooltip(createBtn, `Create a new empty note called '${item.target}'. This resolves all ${count} broken [[${item.target}]] references across the vault.`);
             createBtn.addEventListener('click', async (e) => {
               e.stopPropagation();
               try {
@@ -411,7 +422,7 @@ export class VaultHealthView extends ItemView {
           const fixBtn = fixRow.createSpan('flywheel-health-fix-btn');
           setIcon(fixBtn, 'pencil');
           fixBtn.createSpan({ cls: 'flywheel-health-fix-btn-label', text: 'Fix' });
-          fixBtn.setAttribute('aria-label', `Fix: replace [[${broken.target}]] with [[${suggestionName}]]`);
+          setTooltip(fixBtn, `Fix: replace [[${broken.target}]] with [[${suggestionName}]]`);
           fixBtn.addEventListener('click', async (e) => {
             e.stopPropagation();
             try {
@@ -458,13 +469,17 @@ export class VaultHealthView extends ItemView {
         if (note.days_since_modified != null) {
           const ageBadge = badges.createSpan('flywheel-health-badge flywheel-health-badge-out');
           ageBadge.setText(`${note.days_since_modified}d ago`);
+          setTooltip(ageBadge, `Last edited ${note.days_since_modified} days ago`);
         }
         if (note.backlinks != null || note.backlink_count != null) {
+          const bl = note.backlinks ?? note.backlink_count;
           const inBadge = badges.createSpan('flywheel-health-badge flywheel-health-badge-in');
-          inBadge.setText(`\u2190 ${note.backlinks ?? note.backlink_count}`);
+          inBadge.setText(`\u2190 ${bl}`);
+          setTooltip(inBadge, `${bl} notes contain a [[link]] to this note`);
         }
 
         const reviewBtn = row.createEl('button', { cls: 'flywheel-health-action-btn', text: 'Review' });
+        setTooltip(reviewBtn, `Open this note in the editor. It has ${note.backlinks ?? note.backlink_count ?? '?'} backlinks but hasn't been touched in ${note.days_since_modified ?? '?'}+ days — may need updating.`);
         reviewBtn.addEventListener('click', (e) => {
           e.stopPropagation();
           this.app.workspace.openLinkText(note.path, '', false);
@@ -499,18 +514,23 @@ export class VaultHealthView extends ItemView {
         if (wc != null) {
           const wcBadge = badges.createSpan('flywheel-health-badge flywheel-health-badge-out');
           wcBadge.setText(`${wc}w`);
+          setTooltip(wcBadge, `${wc} words`);
         }
         const outlinks = note.components?.outlinks?.value ?? note.forward_links ?? note.outlinks ?? 0;
         if (outlinks > 0) {
           const linkBadge = badges.createSpan('flywheel-health-badge flywheel-health-badge-out');
           linkBadge.setText(`${outlinks} links`);
+          setTooltip(linkBadge, `${outlinks} outgoing [[wikilinks]]`);
         }
         if (note.maturity_score != null) {
+          const pct = Math.round(note.maturity_score * 100);
           const scoreBadge = badges.createSpan('flywheel-health-badge flywheel-health-badge-in');
-          scoreBadge.setText(`${Math.round(note.maturity_score * 100)}%`);
+          scoreBadge.setText(`${pct}%`);
+          setTooltip(scoreBadge, `Maturity: ${pct}%. Scored on word count, outgoing links, and frontmatter completeness vs other notes in the same folder. 100% = fully developed.`);
         }
 
         const enrichBtn = row.createEl('button', { cls: 'flywheel-health-action-btn', text: 'Enrich' });
+        setTooltip(enrichBtn, 'Check what frontmatter fields other notes in the same folder have (e.g. type, status, tags). If ≥50% of peers have a field this note is missing, add it with the most common value.');
         enrichBtn.addEventListener('click', async (e) => {
           e.stopPropagation();
           enrichBtn.disabled = true;
@@ -529,6 +549,7 @@ export class VaultHealthView extends ItemView {
 
             if (Object.keys(missingFields).length === 0) {
               enrichBtn.setText('No fields');
+              setTooltip(enrichBtn, 'All frontmatter fields that ≥50% of folder peers have are already present in this note.');
               return;
             }
 
@@ -550,6 +571,7 @@ export class VaultHealthView extends ItemView {
 
     // Emerging Hubs section — lazy-loaded
     this.renderLazySection(content, 'Emerging Hubs', 'trending-up', async (el) => {
+      el.addClass('flywheel-health-grid-2col');
       const resp = await this.mcpClient.graphAnalysis('emerging_hubs', { limit: 15 });
       const items = (resp as any).hubs ?? (resp as any).emerging_hubs ?? [];
       if (items.length === 0) {
@@ -568,13 +590,16 @@ export class VaultHealthView extends ItemView {
 
         const badges = row.createDiv('flywheel-health-badges');
         if (hub.growth != null || hub.growth_rate != null) {
-          const growthBadge = badges.createSpan('flywheel-health-badge flywheel-health-badge-growth');
           const val = hub.growth ?? hub.growth_rate;
+          const growthBadge = badges.createSpan('flywheel-health-badge flywheel-health-badge-growth');
           growthBadge.setText(`+${val}`);
+          setTooltip(growthBadge, `Gained ${val} new backlinks in the measurement window`);
         }
         if (hub.backlinks != null || hub.backlink_count != null) {
+          const bl = hub.backlinks ?? hub.backlink_count;
           const inBadge = badges.createSpan('flywheel-health-badge flywheel-health-badge-in');
-          inBadge.setText(`\u2190 ${hub.backlinks ?? hub.backlink_count}`);
+          inBadge.setText(`\u2190 ${bl}`);
+          setTooltip(inBadge, `${bl} notes contain a [[link]] to this note`);
         }
       }
       const total = (resp as any).total ?? items.length;
@@ -614,17 +639,34 @@ export class VaultHealthView extends ItemView {
           const trendsDiv = el.createDiv('flywheel-health-growth-block');
           trendsDiv.createDiv('flywheel-health-growth-label').setText('Trends');
 
+          const trendTooltips: Record<string, string> = {
+            'note_count': 'Total notes in the vault',
+            'link_count': 'Total [[wikilinks]] across all notes',
+            'orphan_count': 'Notes with zero backlinks',
+            'tag_count': 'Unique #tags used',
+            'entity_count': 'People, tools, topics detected',
+            'avg_links_per_note': 'Average outgoing [[wikilinks]] per note',
+            'link_density': 'Links ÷ (notes × entities) — how interconnected the vault is. Higher = denser graph.',
+            'connected_ratio': 'Fraction of notes that have at least one backlink. 1.0 = no orphans.',
+            'wikilink_accuracy': '% of auto-suggested wikilinks that were accepted by the user',
+            'wikilink_feedback_volume': 'Total accept/reject feedback events recorded',
+            'wikilink_suppressed_count': 'Entities blocked from future wikilink suggestions due to low accuracy',
+          };
+
+          const trendsGrid = trendsDiv.createDiv('flywheel-health-trends-grid');
           for (const trend of trends) {
-            const trendRow = trendsDiv.createDiv('flywheel-health-trend-row');
+            const trendRow = trendsGrid.createDiv('flywheel-health-trend-row');
             const label = trendRow.createSpan('flywheel-health-trend-metric');
             label.setText(trend.metric.replace(/_/g, ' '));
+
+            const tooltip = trendTooltips[trend.metric];
+            if (tooltip) setTooltip(trendRow, tooltip);
 
             const value = trendRow.createSpan('flywheel-health-trend-value');
             value.setText(`${trend.current}`);
 
             const delta = trendRow.createSpan('flywheel-health-trend-delta');
-            const sign = trend.delta >= 0 ? '+' : '';
-            delta.setText(`${sign}${trend.delta}`);
+            delta.setText(this.formatDelta(trend.delta));
             if (trend.delta > 0) delta.addClass('flywheel-health-trend-up');
             else if (trend.delta < 0) delta.addClass('flywheel-health-trend-down');
           }
@@ -661,10 +703,14 @@ export class VaultHealthView extends ItemView {
 
       // Per-entity accuracy table (top 15)
       if (stats.length > 0) {
+        const feedbackGrid = el.createDiv('flywheel-health-feedback-grid');
         for (const entity of stats.slice(0, 15)) {
-          const row = el.createDiv('flywheel-health-feedback-entity-row');
+          const row = feedbackGrid.createDiv('flywheel-health-feedback-entity-row');
           const nameEl = row.createSpan('flywheel-health-feedback-entity-name');
           nameEl.setText(entity.entity);
+          const acc_ = Math.round(entity.accuracy * 100);
+          const kept_ = Math.round(entity.accuracy * entity.total);
+          setTooltip(nameEl, `[[${entity.entity}]] — ${acc_}% accuracy (${kept_} kept of ${entity.total})${entity.suppressed ? ' · suppressed from future suggestions' : ''}`);
           if (entity.suppressed) {
             nameEl.addClass('flywheel-health-feedback-suppressed');
           }
@@ -672,7 +718,9 @@ export class VaultHealthView extends ItemView {
           const badges = row.createDiv('flywheel-health-badges');
           const accBadge = badges.createSpan('flywheel-health-badge');
           const acc = Math.round(entity.accuracy * 100);
+          const kept = Math.round(entity.accuracy * entity.total);
           accBadge.setText(`${acc}%`);
+          setTooltip(accBadge, `${acc}% of [[${entity.entity}]] wikilink insertions were kept by the user (${kept} of ${entity.total})`);
           if (acc >= 70) {
             accBadge.addClass('flywheel-health-badge-growth');
           } else if (acc <= 30) {
@@ -683,11 +731,80 @@ export class VaultHealthView extends ItemView {
 
           const countBadge = badges.createSpan('flywheel-health-badge flywheel-health-badge-out');
           countBadge.setText(`n=${entity.total}`);
+          setTooltip(countBadge, `${entity.total} total observations — each time a [[${entity.entity}]] wikilink was inserted and then kept or removed`);
         }
       }
 
       return totalFeedback;
     }, 'Tracks how often wikilink suggestions from the suggest_wikilinks tool were accepted vs rejected. Feedback accumulates as you use the wikilink suggestion feature in your notes.');
+
+    // Suppressed & Boosted section — lazy-loaded from dashboard
+    this.renderLazySection(content, 'Suppressed & Boosted', 'shield', async (el) => {
+      const resp = await this.mcpClient.wikilinkFeedbackDashboard();
+      const d = resp.dashboard;
+      const suppressed = d.suppressed ?? [];
+      const boostTiers = d.boost_tiers ?? [];
+      const allBoosted = boostTiers.flatMap(t => t.entities.map(e => ({ ...e, boost: t.boost, label: t.label })));
+      let count = 0;
+
+      // Suppressed entities
+      if (suppressed.length > 0) {
+        const group = el.createDiv('flywheel-health-info-group');
+        group.createDiv('flywheel-health-info-group-label').setText('Suppressed');
+        const grid = group.createDiv('flywheel-health-sb-grid');
+        for (const s of suppressed) {
+          const row = grid.createDiv('flywheel-health-sb-row flywheel-health-sb-suppressed');
+          const nameEl = row.createSpan('flywheel-health-sb-name');
+          nameEl.setText(s.entity);
+          const fpr = Math.round(s.false_positive_rate * 100);
+          const badge = row.createSpan('flywheel-health-badge flywheel-health-badge-in');
+          badge.setText(`${fpr}% rejected`);
+
+          const unBtn = row.createEl('button', { cls: 'flywheel-health-action-btn', text: 'Unsuppress' });
+          setTooltip(unBtn, `Remove [[${s.entity}]] from the suppression list so it can be suggested as a wikilink again. It may get re-suppressed if users keep removing it.`);
+          unBtn.addEventListener('click', async (e) => {
+            e.stopPropagation();
+            unBtn.disabled = true;
+            unBtn.setText('...');
+            try {
+              await this.mcpClient.unsuppressEntity(s.entity);
+              row.remove();
+            } catch (err) {
+              unBtn.setText('Failed');
+              console.error('Flywheel: failed to unsuppress entity', err);
+            }
+          });
+
+          setTooltip(nameEl, `[[${s.entity}]] is blocked from wikilink suggestions — ${fpr}% of insertions were removed. Click Unsuppress to re-enable.`);
+          count++;
+        }
+      }
+
+      // Boosted entities
+      if (allBoosted.length > 0) {
+        const group = el.createDiv('flywheel-health-info-group');
+        group.createDiv('flywheel-health-info-group-label').setText('Boosted');
+        const grid = group.createDiv('flywheel-health-sb-grid');
+        for (const b of allBoosted) {
+          const row = grid.createDiv('flywheel-health-sb-row');
+          const nameEl = row.createSpan('flywheel-health-sb-name');
+          nameEl.setText(b.entity);
+          const badge = row.createSpan('flywheel-health-badge flywheel-health-badge-growth');
+          badge.setText(`+${b.boost}`);
+          const accBadge = row.createSpan('flywheel-health-badge flywheel-health-badge-out');
+          const acc = Math.round(b.accuracy * 100);
+          accBadge.setText(`${acc}%`);
+          setTooltip(row, `[[${b.entity}]] gets a +${b.boost} score boost (${b.label}) — ${acc}% accuracy over ${b.total} observations.`);
+          count++;
+        }
+      }
+
+      if (count === 0) {
+        el.createDiv('flywheel-health-empty-msg').setText('No suppressed or boosted entities yet — needs more feedback data.');
+      }
+
+      return count;
+    }, 'Suppressed entities are blocked from wikilink suggestions because users kept removing them. Click Unsuppress to give one another chance. Boosted entities get a score bonus because their wikilinks are consistently kept.');
   }
 
   private renderStat(container: HTMLDivElement, icon: string, value: string, label: string): HTMLDivElement {
@@ -744,6 +861,15 @@ export class VaultHealthView extends ItemView {
     return m > 0 ? `${h}h ${m}m` : `${h}h`;
   }
 
+  /** Format a numeric delta for display — avoids floating point artifacts. */
+  private formatDelta(value: number): string {
+    const sign = value >= 0 ? '+' : '';
+    if (Number.isInteger(value)) return `${sign}${value}`;
+    const abs = Math.abs(value);
+    if (abs < 1) return `${sign}${value.toPrecision(3)}`;
+    return `${sign}${value.toFixed(2)}`;
+  }
+
   /**
    * Render a collapsible section that lazy-loads data on first expand.
    * Starts collapsed. On first click, calls loadContent to populate.
@@ -767,7 +893,7 @@ export class VaultHealthView extends ItemView {
     if (info) {
       const infoIcon = header.createSpan('flywheel-health-section-info');
       setIcon(infoIcon, 'info');
-      infoIcon.setAttribute('aria-label', info);
+      setTooltip(infoIcon, info);
       infoIcon.addEventListener('click', (e) => e.stopPropagation());
     }
 
@@ -843,7 +969,7 @@ export class VaultHealthView extends ItemView {
 
     const infoIcon = header.createSpan('flywheel-health-section-info');
     setIcon(infoIcon, 'info');
-    infoIcon.setAttribute('aria-label', 'Recent pipeline runs showing what changed in your vault — entities discovered, wikilinks applied, and feedback learned.');
+    setTooltip(infoIcon, 'Recent pipeline runs showing what changed in your vault — entities discovered, wikilinks applied, and feedback learned.');
     infoIcon.addEventListener('click', (e) => e.stopPropagation());
 
     const countBadge = header.createSpan('flywheel-health-section-count');
@@ -951,7 +1077,10 @@ export class VaultHealthView extends ItemView {
         if (step.skipped) continue;
         const stepRow = stepsEl.createDiv('flywheel-pipeline-step');
         stepRow.createSpan('flywheel-pipeline-step-name').setText(step.name);
-        stepRow.createSpan('flywheel-pipeline-step-duration').setText(`${step.duration_ms}ms`);
+        const durationSec = step.duration_ms >= 1000
+          ? `${(step.duration_ms / 1000).toFixed(1)}s`
+          : `${step.duration_ms}ms`;
+        stepRow.createSpan('flywheel-pipeline-step-duration').setText(durationSec);
 
         // Render meaningful output summaries per step
         const outputSummary = this.summarizeStepOutput(step);
