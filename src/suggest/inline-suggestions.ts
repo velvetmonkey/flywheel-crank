@@ -211,7 +211,7 @@ class InlineSuggestionPlugin {
       const noteName = s.target
         ? s.target.replace(/\.md$/, '').split('/').pop() || s.entity
         : s.entity;
-      const isAlias = noteName.toLowerCase() !== s.entity.toLowerCase();
+      const isAlias = noteName !== s.entity;
       const linkPreview = isAlias ? `[[${noteName}|${s.entity}]]` : `[[${s.entity}]]`;
 
       builder.add(s.from, s.to, Decoration.mark({
@@ -252,7 +252,7 @@ class InlineSuggestionPlugin {
     const noteName = targetNote
       ? targetNote.replace(/\.md$/, '').split('/').pop() || entity
       : entity;
-    const wikilink = noteName.toLowerCase() !== entity.toLowerCase()
+    const wikilink = noteName !== entity
       ? `[[${noteName}|${entity}]]`
       : `[[${entity}]]`;
 
