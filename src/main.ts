@@ -171,6 +171,7 @@ export default class FlywheelCrankPlugin extends Plugin {
       this.app.vault.on('modify', (file) => {
         if (!file.path.endsWith('.md')) return;
         if (!this.mcpClient.connected || this.indexing) return;
+        this.mcpClient.invalidateForPath(file.path);
         this.signalPipelineActive();
       })
     );
@@ -346,6 +347,9 @@ export default class FlywheelCrankPlugin extends Plugin {
       }
       // Pipeline includes entity_scan — aliases/entities may have changed
       if (!isFirstPoll) {
+        this.mcpClient.invalidateTool('list_entities');
+        this.mcpClient.invalidateTool('suggest_wikilinks');
+        this.mcpClient.bustEntityCache();
         this.wikilinkEntitiesLoaded = false;
         this.mcpClient.notifyPipelineComplete();
       }
@@ -355,6 +359,8 @@ export default class FlywheelCrankPlugin extends Plugin {
       // Detect index rebuild and force-refresh views
       const rebuildTs = health.last_rebuild?.timestamp ?? 0;
       if (rebuildTs > this.lastRebuildTimestamp && this.lastRebuildTimestamp > 0) {
+        this.mcpClient.invalidateTool('list_entities');
+        this.mcpClient.bustEntityCache();
         this.wikilinkEntitiesLoaded = false;
         this.updateGraphSidebar(true);
       }
