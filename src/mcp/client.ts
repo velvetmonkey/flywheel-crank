@@ -891,7 +891,7 @@ export class FlywheelMcpClient {
         console.log(`Flywheel Crank: ignoring WSL server path on Windows, falling back to npx`);
       }
       command = isWindows ? 'npx.cmd' : 'npx';
-      args = ['-y', '@velvetmonkey/flywheel-memory@2.0.72']; // Pin version — bump when releasing new flywheel-memory
+      args = ['-y', '@velvetmonkey/flywheel-memory@2.0.73']; // Pin version — bump when releasing new flywheel-memory
     }
 
     console.log(`Flywheel Crank: spawning ${command} ${args.join(' ')}`);
