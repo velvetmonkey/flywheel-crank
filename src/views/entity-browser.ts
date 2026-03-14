@@ -184,9 +184,8 @@ export class EntityBrowserView extends ItemView {
   /** Active category picker element (if any). */
   private activePicker: HTMLElement | null = null;
 
-  // Bulk selection state
-  private selectionCategory: EntityCategory | null = null;
-  private selectedPaths = new Set<string>();
+  // Bulk selection state — cross-category (no explicit mode, checkboxes always visible)
+  private selectedEntities = new Map<string, { entity: McpEntityItem; fromCategory: EntityCategory }>();
   private bulkProgress: { total: number; done: number } | null = null;
 
   // Merge suggestions state
@@ -279,12 +278,18 @@ export class EntityBrowserView extends ItemView {
     });
 
     const content = container.createDiv('flywheel-entity-content');
+
     this.renderCategories(content);
   }
 
   private renderCategories(container: HTMLDivElement): void {
     container.empty();
     if (!this.entityData) return;
+
+    // Global selection action bar (sticky at top when entities selected)
+    if (this.selectedEntities.size > 0 || this.bulkProgress) {
+      this.renderGlobalActionBar(container);
+    }
 
     // Merge suggestions section (at the top)
     this.renderMergeSuggestions(container);
@@ -306,14 +311,15 @@ export class EntityBrowserView extends ItemView {
       if (filtered.length === 0) continue;
 
       const isCollapsed = !this.expandedCategories.has(category);
-      const isSelecting = this.selectionCategory === category;
-      const section = container.createDiv(`flywheel-entity-section${isCollapsed && !isSelecting ? ' is-collapsed' : ''}`);
+      const hasSelection = this.selectedEntities.size > 0;
+      // Count how many from this category are selected
+      const categorySelectedCount = filtered.filter(e => e.path && this.selectedEntities.has(e.path)).length;
+      const section = container.createDiv(`flywheel-entity-section${isCollapsed ? ' is-collapsed' : ''}`);
       section.dataset.category = category;
 
       // Section header
       const headerEl = section.createDiv('flywheel-entity-section-header');
       headerEl.addEventListener('click', () => {
-        if (isSelecting) return; // Don't collapse during selection
         const nowCollapsed = !section.hasClass('is-collapsed');
         section.toggleClass('is-collapsed', nowCollapsed);
         if (nowCollapsed) {
@@ -331,93 +337,43 @@ export class EntityBrowserView extends ItemView {
       headerEl.createSpan('flywheel-entity-section-title').setText(CATEGORY_LABELS[category]);
       headerEl.createSpan('flywheel-entity-section-count').setText(`${filtered.length}`);
 
-      // Select button (between count and chevron) — hidden until hover
-      if (!isSelecting) {
-        const selectBtn = headerEl.createSpan('flywheel-entity-select-btn');
-        setIcon(selectBtn, 'check-square');
-        setTooltip(selectBtn, 'Select entities for bulk re-categorization');
-        selectBtn.addEventListener('click', (e) => {
+      // Select-all toggle for this category (shown when any selection exists)
+      if (hasSelection) {
+        const selectAllBtn = headerEl.createSpan('flywheel-entity-select-btn flywheel-entity-select-btn-active');
+        const allInCatSelected = filtered.every(e => !e.path || this.selectedEntities.has(e.path));
+        setIcon(selectAllBtn, allInCatSelected ? 'check-square' : 'square');
+        setTooltip(selectAllBtn, allInCatSelected ? 'Deselect all in this category' : 'Select all in this category');
+        if (categorySelectedCount > 0) {
+          selectAllBtn.createSpan('flywheel-entity-select-btn-count').setText(`${categorySelectedCount}`);
+        }
+        selectAllBtn.addEventListener('click', (e) => {
           e.stopPropagation();
-          this.enterSelectionMode(category);
+          if (allInCatSelected) {
+            for (const ent of filtered) {
+              if (ent.path) this.selectedEntities.delete(ent.path);
+            }
+          } else {
+            for (const ent of filtered) {
+              if (ent.path) this.selectedEntities.set(ent.path, { entity: ent, fromCategory: category });
+            }
+          }
+          this.render();
         });
       }
 
       const chevron = headerEl.createSpan('flywheel-entity-section-chevron');
       setIcon(chevron, 'chevron-down');
 
-      // Action bar (shown during selection mode)
-      if (isSelecting) {
-        if (this.bulkProgress) {
-          // Progress bar
-          const progressEl = section.createDiv('flywheel-entity-progress');
-          const barOuter = progressEl.createDiv('flywheel-entity-progress-bar');
-          const barFill = barOuter.createDiv('flywheel-entity-progress-fill');
-          const pct = this.bulkProgress.total > 0
-            ? (this.bulkProgress.done / this.bulkProgress.total) * 100
-            : 0;
-          barFill.style.width = `${pct}%`;
-          progressEl.createDiv('flywheel-entity-progress-text')
-            .setText(`Moving ${this.bulkProgress.done}/${this.bulkProgress.total}...`);
-        } else {
-          const actionBar = section.createDiv('flywheel-entity-action-bar');
-
-          const selectAllEl = actionBar.createSpan('flywheel-entity-action-bar-select-all');
-          const allSelected = filtered.every(e => e.path && this.selectedPaths.has(e.path));
-          selectAllEl.setText(allSelected ? 'Deselect All' : 'Select All');
-          selectAllEl.addEventListener('click', () => {
-            if (allSelected) {
-              this.selectedPaths.clear();
-            } else {
-              for (const e of filtered) {
-                if (e.path) this.selectedPaths.add(e.path);
-              }
-            }
-            this.renderCategories(container);
-          });
-
-          actionBar.createSpan('flywheel-entity-action-bar-count')
-            .setText(`${this.selectedPaths.size} selected`);
-
-          const moveBtn = actionBar.createEl('button', { cls: 'flywheel-entity-action-bar-move' });
-          moveBtn.setText('Move to...');
-          moveBtn.disabled = this.selectedPaths.size === 0;
-          moveBtn.addEventListener('click', (e) => {
-            e.stopPropagation();
-            if (this.selectedPaths.size > 0) {
-              this.showBulkCategoryPicker(category, moveBtn);
-            }
-          });
-
-          const cancelBtn = actionBar.createEl('button', { cls: 'flywheel-entity-action-bar-cancel' });
-          cancelBtn.setText('Cancel');
-          cancelBtn.addEventListener('click', (e) => {
-            e.stopPropagation();
-            this.exitSelectionMode();
-          });
-        }
-      }
-
-      // Entity items
+      // Entity items — always show checkboxes, keep column layout
       const listEl = section.createDiv('flywheel-entity-list');
-      if (isSelecting) listEl.addClass('flywheel-entity-selecting');
 
       for (const entity of filtered) {
+        const isSelected = !!(entity.path && this.selectedEntities.has(entity.path));
         const item = listEl.createDiv('flywheel-entity-item');
+        if (isSelected) item.addClass('is-selected');
         setTooltip(item, getEntityCategoryReason(entity.name, category));
 
-        if (isSelecting && entity.path) {
-          // Selection mode: click toggles selection
-          item.addEventListener('click', () => {
-            if (!entity.path) return;
-            if (this.selectedPaths.has(entity.path)) {
-              this.selectedPaths.delete(entity.path);
-            } else {
-              this.selectedPaths.add(entity.path);
-            }
-            this.renderCategories(container);
-          });
-          item.addClass('flywheel-entity-clickable');
-        } else if (entity.path) {
+        if (entity.path) {
           item.addEventListener('click', () => {
             if (this.onOpenEntityPage) {
               this.onOpenEntityPage(entity.name);
@@ -430,21 +386,31 @@ export class EntityBrowserView extends ItemView {
 
         const nameRow = item.createDiv('flywheel-entity-name-row');
 
-        // Checkbox inline with name (only during selection)
-        if (isSelecting && entity.path) {
+        // Checkbox — always visible on every entity with a path
+        if (entity.path) {
           const checkbox = nameRow.createDiv('flywheel-entity-checkbox');
-          if (this.selectedPaths.has(entity.path)) {
+          if (isSelected) {
             checkbox.addClass('is-checked');
             const checkIcon = checkbox.createSpan();
             setIcon(checkIcon, 'check');
           }
+          checkbox.addEventListener('click', (e) => {
+            e.stopPropagation();
+            if (!entity.path) return;
+            if (this.selectedEntities.has(entity.path)) {
+              this.selectedEntities.delete(entity.path);
+            } else {
+              this.selectedEntities.set(entity.path, { entity, fromCategory: category });
+            }
+            this.render();
+          });
         }
 
         const nameEl = nameRow.createDiv('flywheel-entity-name');
         nameEl.setText(entity.name);
 
-        // Category action buttons (only for entities with a backing note, not during selection)
-        if (entity.path && !isSelecting) {
+        // Category action buttons (hidden when entities are selected to reduce clutter)
+        if (entity.path && !hasSelection) {
           const actions = nameRow.createDiv('flywheel-entity-actions');
 
           // Move to "other" (uncategorize) — only shown if not already in "other"
@@ -652,29 +618,95 @@ export class EntityBrowserView extends ItemView {
   // Bulk Selection
   // ---------------------------------------------------------------------------
 
-  private enterSelectionMode(category: EntityCategory): void {
-    this.selectionCategory = category;
-    this.selectedPaths.clear();
-    this.expandedCategories.add(category);
-    this.dismissPicker();
-    this.render();
-  }
-
   private exitSelectionMode(): void {
-    this.selectionCategory = null;
-    this.selectedPaths.clear();
+    this.selectedEntities.clear();
     this.bulkProgress = null;
     this.render();
   }
 
-  private showBulkCategoryPicker(fromCategory: EntityCategory, anchorEl: HTMLElement): void {
+  private renderGlobalActionBar(container: HTMLDivElement): void {
+    if (this.bulkProgress) {
+      // Progress bar
+      const progressEl = container.createDiv('flywheel-entity-progress flywheel-entity-global-bar');
+      const barOuter = progressEl.createDiv('flywheel-entity-progress-bar');
+      const barFill = barOuter.createDiv('flywheel-entity-progress-fill');
+      const pct = this.bulkProgress.total > 0
+        ? (this.bulkProgress.done / this.bulkProgress.total) * 100
+        : 0;
+      barFill.style.width = `${pct}%`;
+      progressEl.createDiv('flywheel-entity-progress-text')
+        .setText(`Moving ${this.bulkProgress.done}/${this.bulkProgress.total}...`);
+      return;
+    }
+
+    const actionBar = container.createDiv('flywheel-entity-action-bar flywheel-entity-global-bar');
+
+    // Summary of selection across categories
+    const summary = this.getSelectionSummary();
+    actionBar.createSpan('flywheel-entity-action-bar-count')
+      .setText(summary);
+
+    const moveBtn = actionBar.createEl('button', { cls: 'flywheel-entity-action-bar-move' });
+    moveBtn.setText('Move to...');
+    moveBtn.disabled = this.selectedEntities.size === 0;
+    moveBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      if (this.selectedEntities.size > 0) {
+        this.showBulkCategoryPicker(moveBtn);
+      }
+    });
+
+    const clearBtn = actionBar.createEl('button', { cls: 'flywheel-entity-action-bar-cancel' });
+    clearBtn.setText('Clear');
+    clearBtn.disabled = this.selectedEntities.size === 0;
+    clearBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      this.selectedEntities.clear();
+      this.render();
+    });
+
+    const cancelBtn = actionBar.createEl('button', { cls: 'flywheel-entity-action-bar-cancel' });
+    cancelBtn.setText('Done');
+    cancelBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      this.exitSelectionMode();
+    });
+  }
+
+  private getSelectionSummary(): string {
+    const count = this.selectedEntities.size;
+    if (count === 0) return 'Select entities from any category';
+
+    // Group by source category
+    const byCat = new Map<EntityCategory, number>();
+    for (const { fromCategory } of this.selectedEntities.values()) {
+      byCat.set(fromCategory, (byCat.get(fromCategory) ?? 0) + 1);
+    }
+
+    if (byCat.size === 1) {
+      const [cat, n] = [...byCat.entries()][0];
+      return `${n} selected from ${CATEGORY_LABELS[cat]}`;
+    }
+
+    const parts = [...byCat.entries()]
+      .map(([cat, n]) => `${n} ${CATEGORY_LABELS[cat]}`)
+      .join(', ');
+    return `${count} selected (${parts})`;
+  }
+
+  private showBulkCategoryPicker(anchorEl: HTMLElement): void {
     this.dismissPicker();
+
+    // Determine which categories are being moved FROM (to exclude from target list)
+    const sourceCategories = new Set<EntityCategory>();
+    for (const { fromCategory } of this.selectedEntities.values()) {
+      sourceCategories.add(fromCategory);
+    }
 
     const picker = createDiv('flywheel-entity-category-picker');
     this.activePicker = picker;
 
     const sortedCategories = ALL_CATEGORIES
-      .filter(cat => cat !== fromCategory)
       .sort((a, b) => CATEGORY_LABELS[a].localeCompare(CATEGORY_LABELS[b]));
 
     for (const cat of sortedCategories) {
@@ -691,16 +723,16 @@ export class EntityBrowserView extends ItemView {
       option.addEventListener('click', (e) => {
         e.stopPropagation();
         this.dismissPicker();
-        this.bulkMoveEntities(fromCategory, cat);
+        this.bulkMoveEntities(cat);
       });
     }
 
-    // Position relative to the action bar
-    const sectionEl = anchorEl.closest('.flywheel-entity-section') as HTMLElement;
-    if (sectionEl) {
-      sectionEl.style.position = 'relative';
-      sectionEl.appendChild(picker);
-    }
+    // Position fixed relative to the button's screen position
+    const rect = anchorEl.getBoundingClientRect();
+    picker.style.position = 'fixed';
+    picker.style.top = `${rect.bottom + 4}px`;
+    picker.style.left = `${rect.left}px`;
+    document.body.appendChild(picker);
 
     setTimeout(() => {
       const dismiss = (e: MouseEvent) => {
@@ -713,60 +745,58 @@ export class EntityBrowserView extends ItemView {
     }, 0);
   }
 
-  private async bulkMoveEntities(fromCategory: EntityCategory, toCategory: EntityCategory): Promise<void> {
-    const paths = Array.from(this.selectedPaths);
-    if (paths.length === 0) return;
+  private async bulkMoveEntities(toCategory: EntityCategory): Promise<void> {
+    const entries = Array.from(this.selectedEntities.entries());
+    // Filter out entities already in the target category
+    const toMove = entries.filter(([, { fromCategory }]) => fromCategory !== toCategory);
+    if (toMove.length === 0) {
+      new Notice(`All selected entities are already in ${CATEGORY_LABELS[toCategory]}`);
+      return;
+    }
 
     const frontmatterType = CATEGORY_TO_FRONTMATTER_TYPE[toCategory];
-    const total = paths.length;
+    const total = toMove.length;
 
-    // Optimistic: splice from source list, push to destination
+    // Optimistic: splice from source lists, push to destination, clear selection, render once
     if (this.entityData) {
-      const srcList = (this.entityData as any)[fromCategory] as McpEntityItem[] | undefined;
       const dstList = ((this.entityData as any)[toCategory] ??= []) as McpEntityItem[];
-      if (srcList) {
-        for (const p of paths) {
-          const idx = srcList.findIndex(e => e.path === p);
+      for (const [path, { fromCategory }] of toMove) {
+        const srcList = (this.entityData as any)[fromCategory] as McpEntityItem[] | undefined;
+        if (srcList) {
+          const idx = srcList.findIndex(e => e.path === path);
           if (idx !== -1) {
             const [entity] = srcList.splice(idx, 1);
             dstList.push(entity);
           }
         }
-        dstList.sort((a, b) => a.name.localeCompare(b.name));
       }
+      dstList.sort((a, b) => a.name.localeCompare(b.name));
     }
 
-    // Show progress
-    this.bulkProgress = { total, done: 0 };
+    // Clear selection and render the moved state immediately
+    this.selectedEntities.clear();
     this.render();
 
-    // Sequential MCP calls
+    // Fire all MCP calls in background — UI already reflects the move
     const errors: string[] = [];
-    for (const p of paths) {
+    for (const [path] of toMove) {
       try {
-        await this.mcpClient.updateFrontmatter(p, { type: frontmatterType }, false);
+        await this.mcpClient.updateFrontmatter(path, { type: frontmatterType }, false);
       } catch (err) {
-        errors.push(p);
-        console.error(`Flywheel Entities: failed to move ${p}`, err);
+        errors.push(path);
+        console.error(`Flywheel Entities: failed to move ${path}`, err);
       }
-      this.bulkProgress.done++;
-      // Re-render to update progress bar
-      const content = this.containerEl.querySelector('.flywheel-entity-content') as HTMLDivElement;
-      if (content) this.renderCategories(content);
     }
 
-    // Complete
     if (errors.length > 0) {
       new Notice(`Moved ${total - errors.length}/${total} entities to ${CATEGORY_LABELS[toCategory]}. ${errors.length} failed.`);
-      // Re-fetch to get authoritative state
+      // Re-fetch to revert failed ones
       await this.fetchEntities();
     } else {
       new Notice(`Moved ${total} entities to ${CATEGORY_LABELS[toCategory]}`);
+      // Sync with server after watcher catches up
+      setTimeout(() => this.fetchEntities(), 3000);
     }
-
-    this.exitSelectionMode();
-    // Re-fetch after delay to sync with server
-    setTimeout(() => this.fetchEntities(), 3000);
   }
 
   // ---------------------------------------------------------------------------

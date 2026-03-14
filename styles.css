@@ -2075,8 +2075,8 @@
   border: 1px solid var(--background-modifier-border);
   border-radius: 6px;
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
-  max-height: 280px;
-  overflow-y: auto;
+  max-height: none;
+  overflow-y: visible;
   min-width: 160px;
   padding: 4px 0;
 }
@@ -2224,13 +2224,15 @@
   height: 10px;
 }
 
-/* Single column + hide action buttons during selection mode */
-.flywheel-entity-selecting {
-  grid-template-columns: 1fr;
+/* Checkbox — always visible but subtle until hovered/checked */
+.flywheel-entity-checkbox {
+  opacity: 0.4;
+  transition: opacity 0.1s, border-color 0.1s, background 0.1s;
 }
 
-.flywheel-entity-selecting .flywheel-entity-actions {
-  display: none;
+.flywheel-entity-item:hover .flywheel-entity-checkbox,
+.flywheel-entity-checkbox.is-checked {
+  opacity: 1;
 }
 
 /* Progress bar for bulk move */
@@ -2258,6 +2260,32 @@
   font-size: var(--font-ui-smaller);
   color: var(--text-muted);
   margin-top: 3px;
+}
+
+/* Global action bar — sticky at top of entity content */
+.flywheel-entity-global-bar {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  border-radius: 0;
+}
+
+/* Selected item highlight */
+.flywheel-entity-item.is-selected {
+  background: var(--background-modifier-hover);
+}
+
+/* Select-all button active state (always visible during selection) */
+.flywheel-entity-select-btn-active {
+  opacity: 1 !important;
+  visibility: visible !important;
+}
+
+.flywheel-entity-select-btn-count {
+  font-size: 10px;
+  margin-left: 2px;
+  color: var(--interactive-accent);
+  font-weight: var(--font-semibold);
 }
 
 /* Entity Browser — Merge Suggestions */
@@ -3613,6 +3641,15 @@
   font-weight: 700;
 }
 
+.flywheel-entity-page-name-clickable {
+  cursor: pointer;
+  color: var(--text-accent);
+}
+
+.flywheel-entity-page-name-clickable:hover {
+  text-decoration: underline;
+}
+
 .flywheel-entity-page-section {
   margin-bottom: 20px;
 }
@@ -3626,11 +3663,59 @@
   margin-bottom: 8px;
 }
 
+.flywheel-entity-page-chart-legend {
+  font-size: 11px;
+  color: var(--text-muted);
+  margin-bottom: 4px;
+}
+
+.flywheel-entity-page-chart-wrapper {
+  position: relative;
+}
+
 .flywheel-entity-page-chart {
   width: 100%;
-  height: 80px;
+  height: 100px;
   border-radius: 4px;
   background: var(--background-secondary);
+}
+
+.flywheel-entity-page-chart-label {
+  font-size: 9px;
+  fill: var(--text-faint);
+}
+
+.flywheel-entity-page-chart-dot {
+  fill: var(--interactive-accent);
+  opacity: 0;
+  transition: opacity 0.1s;
+}
+
+.flywheel-entity-page-chart-dot.is-active {
+  opacity: 1;
+}
+
+.flywheel-entity-page-chart-tooltip {
+  position: absolute;
+  pointer-events: none;
+  font-size: 11px;
+  background: var(--background-primary);
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 4px;
+  padding: 2px 6px;
+  color: var(--text-normal);
+  white-space: nowrap;
+  z-index: 10;
+}
+
+.flywheel-entity-page-actions-label {
+  font-size: 12px;
+  color: var(--text-muted);
+  width: 100%;
+}
+
+.flywheel-entity-page-action-done {
+  opacity: 0.6;
 }
 
 .flywheel-entity-page-ref {
@@ -3691,6 +3776,7 @@
 
 .flywheel-entity-page-actions {
   display: flex;
+  flex-wrap: wrap;
   gap: 8px;
   margin-top: 24px;
   padding-top: 16px;
