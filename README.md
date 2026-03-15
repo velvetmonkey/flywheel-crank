@@ -34,20 +34,22 @@ Flywheel Crank turns your Obsidian vault into a knowledge graph. It connects to 
 
 ### Entity Intelligence
 
-- **Entity browser** -- Browse and explore extracted entities across 17 categories
+- **Entity browser** -- Browse and explore extracted entities across 18 categories
 - **Entity page** -- Deep-dive view for any entity: backlinks, co-occurrence, feedback history
+- **Batch entity moves** -- Individual and bulk entity moves across categories
 
 ### Vault Analytics
 
 - **Vault health** -- Diagnostics for orphans, broken links, and vault stats
 - **Weekly digest** -- Summary of vault activity and emerging patterns
 - **Task dashboard** -- Query and visualize tasks across your vault
+- **Version display** -- Crank and server versions shown in Vault Health
 
 ### Feedback Loop
 
 - **Context menu feedback** -- Right-click to approve or reject wikilink suggestions
 - **Status bar pulse** -- Live connection status and index freshness indicator
-- **Auto-reconnect** -- Categorized error handling with actionable status bar messages, plus a manual `reconnect` command
+- **Auto-reconnect** -- Categorized error handling with actionable status bar messages, graph collision resolution, plus a manual `reconnect` command
 
 ## Requirements
 
