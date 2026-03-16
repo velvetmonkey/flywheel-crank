@@ -15,8 +15,11 @@ import {
   Decoration,
   EditorView,
 } from '@codemirror/view';
-import { RangeSetBuilder } from '@codemirror/state';
+import { RangeSetBuilder, StateEffect } from '@codemirror/state';
 import type { FlywheelMcpClient } from '../mcp/client';
+
+/** Effect used to force CM6 to re-read decorations after async fetch */
+const refreshDecorations = StateEffect.define<null>();
 
 interface InlineSuggestion {
   from: number; // absolute position in document
@@ -60,6 +63,8 @@ class InlineSuggestionPlugin {
   }
 
   update(update: ViewUpdate): void {
+    // Ignore our own decoration-refresh dispatches
+    if (update.transactions.some(t => t.effects.some(e => e.is(refreshDecorations)))) return;
     if (update.docChanged) {
       // Content changed — clear stale suggestions and re-fetch
       this.suggestions = [];
@@ -192,15 +197,16 @@ class InlineSuggestionPlugin {
 
   private buildDecorations(): void {
     const builder = new RangeSetBuilder<Decoration>();
+    const docLen = this.view.state.doc.length;
 
     // Sort by position (required by RangeSetBuilder)
     const sorted = [...this.suggestions].sort((a, b) => a.from - b.from);
 
-    // Remove overlapping ranges (keep higher priority = earlier in sorted list)
+    // Remove overlapping ranges and out-of-bounds positions
     const filtered: InlineSuggestion[] = [];
     let lastEnd = -1;
     for (const s of sorted) {
-      if (s.from >= lastEnd) {
+      if (s.from >= lastEnd && s.from >= 0 && s.to <= docLen && s.from < s.to) {
         filtered.push(s);
         lastEnd = s.to;
       }
@@ -227,8 +233,10 @@ class InlineSuggestionPlugin {
     }
 
     this.decorations = builder.finish();
-    // Force a re-render by requesting a measure
-    this.view.requestMeasure();
+    // Dispatch a no-op effect to force CM6 to re-read decorations.
+    // requestMeasure() only schedules a DOM read — it doesn't trigger
+    // the view update cycle that re-reads ViewPlugin decoration accessors.
+    this.view.dispatch({ effects: refreshDecorations.of(null) });
   }
 
   private handleClick(e: MouseEvent): void {
