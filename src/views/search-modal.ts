@@ -268,7 +268,7 @@ export class SearchModal extends Modal {
         item.addClass('is-selected');
       });
 
-      // Title row: [CategoryIcon] [Title] [badges] [score%]
+      // Title row: [icon] Title [source] [folder · time] [score]
       const titleRow = item.createDiv('flywheel-search-result-title-row');
 
       if (result.category) {
@@ -281,18 +281,26 @@ export class SearchModal extends Modal {
       const titleEl = titleRow.createDiv('flywheel-search-result-title');
       titleEl.setText(result.title);
 
-      // Match source badges
-      if (result.in_fts5 || result.in_semantic || result.in_entity) {
-        const badgeContainer = titleRow.createDiv('flywheel-search-source-badges');
-        if (result.in_fts5) {
-          badgeContainer.createSpan('flywheel-search-source-badge flywheel-search-source-keyword').setText('keyword');
-        }
-        if (result.in_semantic) {
-          badgeContainer.createSpan('flywheel-search-source-badge flywheel-search-source-semantic').setText('semantic');
-        }
-        if (result.in_entity) {
-          badgeContainer.createSpan('flywheel-search-source-badge flywheel-search-source-entity').setText('entity');
-        }
+      // Source label inline after title
+      const sources: string[] = [];
+      if (result.in_fts5) sources.push('fts');
+      if (result.in_semantic) sources.push('semantic');
+      if (result.in_entity) sources.push('entity');
+      if (sources.length === 0) sources.push('metadata');
+      const sourceEl = titleRow.createSpan('flywheel-search-result-source');
+      sourceEl.setText(sources.join('+'));
+
+      // Inline metadata: folder · time · backlinks
+      const metaParts: string[] = [];
+      const folder = result.path.split('/').slice(0, -1).join('/');
+      if (folder) metaParts.push(folder);
+      if (result.modified) metaParts.push(formatRelativeTime(result.modified));
+      if (result.backlink_count && result.backlink_count > 0) {
+        metaParts.push(`${result.backlink_count}\u2190`);
+      }
+      if (metaParts.length > 0) {
+        const metaEl = titleRow.createSpan('flywheel-search-result-meta');
+        metaEl.setText(metaParts.join(' \u00b7 '));
       }
 
       // Score badge — normalize relative to top result
@@ -303,59 +311,10 @@ export class SearchModal extends Modal {
         badge.style.opacity = String(0.4 + (result.rrf_score / topRrf) * 0.6);
       }
 
-      // Metadata row: folder · relative time · backlinks
-      const metaParts: string[] = [];
-      const folder = result.path.split('/').slice(0, -1).join('/');
-      if (folder) metaParts.push(folder);
-      if (result.modified) metaParts.push(formatRelativeTime(result.modified));
-      if (result.backlink_count && result.backlink_count > 0) {
-        metaParts.push(`${result.backlink_count} backlink${result.backlink_count !== 1 ? 's' : ''}`);
-      }
-      if (metaParts.length > 0) {
-        const metaEl = item.createDiv('flywheel-search-result-meta');
-        metaEl.setText(metaParts.join(' \u00b7 '));
-      }
-
-      // Snippet or content preview
+      // Snippet (1-line clamp, keyword matches only)
       if (result.snippet) {
         const snippetEl = item.createDiv('flywheel-search-result-snippet');
         snippetEl.innerHTML = result.snippet;
-      } else if (result.content_preview) {
-        const previewEl = item.createDiv('flywheel-search-result-preview');
-        previewEl.setText(result.content_preview);
-      }
-
-      // Tags (first 3 + overflow)
-      if (result.tags && result.tags.length > 0) {
-        const tagsEl = item.createDiv('flywheel-search-result-tags');
-        const shown = result.tags.slice(0, 3);
-        for (const tag of shown) {
-          tagsEl.createSpan('flywheel-search-result-tag').setText(`#${tag.replace(/^#/, '')}`);
-        }
-        if (result.tags.length > 3) {
-          tagsEl.createSpan('flywheel-search-result-tag flywheel-search-result-tag-more').setText(`+${result.tags.length - 3}`);
-        }
-      }
-
-      // Per-result match explanation
-      const reasons: string[] = [];
-      if (result.in_fts5) reasons.push('Content contains matching keywords');
-      if (result.in_semantic) reasons.push('Meaning is similar to your query');
-      if (result.in_entity && result.category) {
-        reasons.push(`Known ${result.category.replace(/s$/, '')} entity`);
-      } else if (result.in_entity) {
-        reasons.push('Matched entity name or alias');
-      }
-      if (result.hub_score && result.hub_score >= 0.5) {
-        reasons.push(`Hub (${Math.round(result.hub_score * 100)}% connectivity)`);
-      }
-      if (!result.in_fts5 && !result.in_semantic && !result.in_entity) {
-        // Metadata-only match
-        reasons.push('Matched by title or metadata');
-      }
-      if (reasons.length > 0) {
-        const explanationEl = item.createDiv('flywheel-search-result-explanation');
-        explanationEl.setText(reasons.join(' · '));
       }
     });
   }
