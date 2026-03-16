@@ -267,7 +267,7 @@
 
 .flywheel-search-result-title {
   font-weight: var(--font-semibold);
-  font-size: var(--font-ui-small);
+  font-size: var(--font-ui-medium);
   color: var(--text-normal);
   white-space: nowrap;
   overflow: hidden;
@@ -277,15 +277,19 @@
 }
 
 .flywheel-search-result-source {
-  font-size: 10px;
-  color: var(--text-faint);
+  font-size: 11px;
+  font-weight: var(--font-semibold);
+  padding: 1px 6px;
+  border-radius: 4px;
   white-space: nowrap;
   flex-shrink: 0;
+  background: var(--background-secondary-alt);
+  color: var(--text-muted);
 }
 
 .flywheel-search-result-meta {
-  font-size: var(--font-smallest);
-  color: var(--text-faint);
+  font-size: var(--font-ui-smaller);
+  color: var(--text-muted);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -294,13 +298,14 @@
 }
 
 .flywheel-search-score-badge {
-  font-size: 10px;
-  padding: 0 5px;
-  border-radius: 3px;
+  font-size: 11px;
+  font-family: var(--font-monospace);
+  padding: 1px 6px;
+  border-radius: 4px;
   font-weight: var(--font-semibold);
   line-height: 1.5;
-  background-color: var(--interactive-accent);
-  color: var(--text-on-accent);
+  background-color: hsla(var(--interactive-accent-hsl), 0.15);
+  color: var(--interactive-accent);
   flex-shrink: 0;
   margin-left: auto;
 }
@@ -308,9 +313,9 @@
 .flywheel-search-result-snippet {
   margin-top: 2px;
   padding-left: 19px;
-  font-size: var(--font-smallest);
+  font-size: var(--font-ui-smaller);
   color: var(--text-muted);
-  line-height: 1.3;
+  line-height: 1.4;
   overflow: hidden;
   white-space: nowrap;
   text-overflow: ellipsis;
