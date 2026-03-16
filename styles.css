@@ -1056,17 +1056,9 @@
 .flywheel-cloud-item[data-category="acronyms"] .flywheel-cloud-name { color: hsl(198, 95%, 85%); }
 .flywheel-cloud-item[data-category="periodical"] { background: hsla(220, 13%, 46%, 0.12); }
 .flywheel-cloud-item[data-category="periodical"] .flywheel-cloud-name { color: hsl(220, 15%, 80%); }
-/* "other" category — fall back to vivid source-based coloring */
-.flywheel-cloud-item[data-category="other"][data-source="backlink"] { background: hsla(215, 85%, 50%, 0.15); }
-.flywheel-cloud-item[data-category="other"][data-source="backlink"] .flywheel-cloud-name { color: hsl(215, 100%, 85%); }
-.flywheel-cloud-item[data-category="other"][data-source="forward"] { background: hsla(150, 60%, 48%, 0.15); }
-.flywheel-cloud-item[data-category="other"][data-source="forward"] .flywheel-cloud-name { color: hsl(150, 70%, 82%); }
-.flywheel-cloud-item[data-category="other"][data-source="suggested"] { background: hsla(25, 90%, 48%, 0.15); }
-.flywheel-cloud-item[data-category="other"][data-source="suggested"] .flywheel-cloud-name { color: hsl(28, 100%, 88%); }
-.flywheel-cloud-item[data-category="other"][data-source="similar"] { background: hsla(258, 80%, 62%, 0.15); }
-.flywheel-cloud-item[data-category="other"][data-source="similar"] .flywheel-cloud-name { color: hsl(258, 90%, 87%); }
-.flywheel-cloud-item[data-category="other"][data-source="semantic"] { background: hsla(188, 90%, 45%, 0.15); }
-.flywheel-cloud-item[data-category="other"][data-source="semantic"] .flywheel-cloud-name { color: hsl(188, 95%, 82%); }
+/* "other" category — consistent grey to match legend dot */
+.flywheel-cloud-item[data-category="other"] { background: hsla(240, 4%, 66%, 0.12); }
+.flywheel-cloud-item[data-category="other"] .flywheel-cloud-name { color: hsl(240, 5%, 80%); }
 /* Source indicator — border shows how entity relates to current note */
 .flywheel-cloud-item[data-source="backlink"] { border-color: #5b9bf5; }
 .flywheel-cloud-item[data-source="forward"] { border-color: #43d17a; }
@@ -1076,9 +1068,7 @@
 /* Multi-source — accent border + emphasize */
 .flywheel-cloud-item[data-multi="true"] { border: 2px solid var(--text-accent); }
 .flywheel-cloud-item[data-multi="true"] .flywheel-cloud-name { font-weight: var(--font-semibold); }
-/* Multi + other — gold tint like the original */
-.flywheel-cloud-item[data-category="other"][data-multi="true"] { background: hsla(45, 80%, 48%, 0.15); }
-.flywheel-cloud-item[data-category="other"][data-multi="true"] .flywheel-cloud-name { color: hsl(45, 100%, 80%); }
+/* Multi + other — keep grey bg, multi border already distinguishes */
 .flywheel-cloud-dead { cursor: default; opacity: 0.5; }
 .flywheel-cloud-dead .flywheel-cloud-name { color: var(--text-faint); text-decoration: line-through; }
 .flywheel-cloud-dead:hover { filter: none; }
