@@ -336,6 +336,16 @@ export class SearchModal extends Modal {
           tagsEl.createSpan('flywheel-search-result-tag flywheel-search-result-tag-more').setText(`+${result.tags.length - 3}`);
         }
       }
+
+      // Match explanation
+      if (result.in_fts5 || result.in_semantic || result.in_entity) {
+        const reasons: string[] = [];
+        if (result.in_fts5) reasons.push('Matched keywords in content');
+        if (result.in_semantic) reasons.push('Semantically similar');
+        if (result.in_entity) reasons.push('Entity match (name/category)');
+        const explanationEl = item.createDiv('flywheel-search-result-explanation');
+        explanationEl.setText(reasons.join(' \u00b7 '));
+      }
     });
   }
 

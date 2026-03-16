@@ -347,6 +347,13 @@
   font-style: italic;
 }
 
+.flywheel-search-result-explanation {
+  font-size: var(--font-smallest);
+  color: var(--text-faint);
+  margin-top: 2px;
+  font-style: italic;
+}
+
 /* Match-source badges (keyword / semantic / entity) */
 .flywheel-search-source-badges {
   display: flex;
