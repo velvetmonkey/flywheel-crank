@@ -79,6 +79,11 @@
    Search Modal
    =================================================================== */
 
+.flywheel-search-modal-container {
+  max-width: 700px;
+  width: 90vw;
+}
+
 .flywheel-search-modal {
   padding: 0;
 }
@@ -176,7 +181,7 @@
 }
 
 .flywheel-search-results {
-  max-height: 500px;
+  max-height: 60vh;
   overflow-y: auto;
   padding-bottom: 8px;
 }
@@ -226,9 +231,37 @@
 
 .flywheel-search-result-title-row {
   display: flex;
-  align-items: baseline;
-  gap: 8px;
+  align-items: center;
+  gap: 6px;
 }
+
+.flywheel-search-result-category-icon {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+}
+.flywheel-search-result-category-icon .svg-icon {
+  width: 14px;
+  height: 14px;
+}
+.flywheel-search-result-category-icon[data-category="people"] { color: #5b9bf5; }
+.flywheel-search-result-category-icon[data-category="projects"] { color: #43d17a; }
+.flywheel-search-result-category-icon[data-category="technologies"] { color: #a78bfa; }
+.flywheel-search-result-category-icon[data-category="locations"] { color: #f59e42; }
+.flywheel-search-result-category-icon[data-category="organizations"] { color: #06b6d4; }
+.flywheel-search-result-category-icon[data-category="concepts"] { color: #ec4899; }
+.flywheel-search-result-category-icon[data-category="animals"] { color: #84cc16; }
+.flywheel-search-result-category-icon[data-category="media"] { color: #d946ef; }
+.flywheel-search-result-category-icon[data-category="events"] { color: #eab308; }
+.flywheel-search-result-category-icon[data-category="documents"] { color: #78716c; }
+.flywheel-search-result-category-icon[data-category="vehicles"] { color: #e67635; }
+.flywheel-search-result-category-icon[data-category="health"] { color: #ef4444; }
+.flywheel-search-result-category-icon[data-category="finance"] { color: #10b981; }
+.flywheel-search-result-category-icon[data-category="food"] { color: #f5a623; }
+.flywheel-search-result-category-icon[data-category="hobbies"] { color: #8b5cf6; }
+.flywheel-search-result-category-icon[data-category="acronyms"] { color: #38bdf8; }
+.flywheel-search-result-category-icon[data-category="periodical"] { color: #6b7280; }
+.flywheel-search-result-category-icon[data-category="other"] { color: #a1a1aa; }
 
 .flywheel-search-result-title {
   font-weight: var(--font-semibold);
@@ -237,15 +270,6 @@
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-}
-
-.flywheel-search-result-folder {
-  font-size: var(--font-smallest);
-  color: var(--text-faint);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  flex-shrink: 1;
   min-width: 0;
 }
 
@@ -259,6 +283,15 @@
   color: var(--text-on-accent);
   flex-shrink: 0;
   margin-left: auto;
+}
+
+.flywheel-search-result-meta {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 2px;
+  font-size: var(--font-smallest);
+  color: var(--text-faint);
 }
 
 .flywheel-search-result-snippet {
@@ -279,10 +312,38 @@
   border-radius: 2px;
 }
 
-.flywheel-search-result-explanation {
-  font-size: var(--font-smallest);
+.flywheel-search-result-preview {
+  margin-top: 4px;
+  font-size: var(--font-small);
   color: var(--text-faint);
-  margin-top: 2px;
+  font-style: italic;
+  line-height: 1.4;
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+}
+
+.flywheel-search-result-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 4px;
+}
+
+.flywheel-search-result-tag {
+  font-size: 10px;
+  padding: 1px 6px;
+  border-radius: 8px;
+  background: var(--background-secondary);
+  color: var(--text-faint);
+}
+
+.flywheel-search-result-tag:hover {
+  background: var(--background-modifier-hover);
+}
+
+.flywheel-search-result-tag-more {
   font-style: italic;
 }
 

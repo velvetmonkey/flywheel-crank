@@ -25,10 +25,17 @@ export interface McpSearchResult {
   path: string;
   title: string;
   snippet?: string;
+  content_preview?: string;
   rrf_score?: number;
   in_fts5?: boolean;
   in_semantic?: boolean;
   in_entity?: boolean;
+  tags?: string[];
+  category?: string;
+  hub_score?: number;
+  backlink_count?: number;
+  outlink_count?: number;
+  modified?: string;
 }
 
 export interface McpSearchResponse {

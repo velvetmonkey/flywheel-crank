@@ -3,11 +3,46 @@
  *
  * Sends search queries to the MCP server which handles FTS5 keyword
  * search, hybrid semantic ranking, and entity matching. Results show
- * match-source badges (keyword / semantic) and RRF scores.
+ * match-source badges (keyword / semantic / entity) and RRF scores.
  */
 
 import { App, Modal, setIcon } from 'obsidian';
 import type { FlywheelMcpClient, McpSearchResult, McpSearchResponse, McpHealthCheckResponse } from '../mcp/client';
+
+const CATEGORY_ICONS: Record<string, string> = {
+  technologies: 'cpu',
+  acronyms: 'hash',
+  people: 'user',
+  projects: 'folder-kanban',
+  organizations: 'building',
+  locations: 'map-pin',
+  concepts: 'lightbulb',
+  animals: 'bug',
+  media: 'film',
+  events: 'calendar',
+  documents: 'file-text',
+  vehicles: 'car',
+  health: 'heart-pulse',
+  finance: 'banknote',
+  food: 'utensils',
+  hobbies: 'palette',
+  periodical: 'newspaper',
+  other: 'circle-dot',
+};
+
+function formatRelativeTime(iso: string): string {
+  const diff = Date.now() - new Date(iso).getTime();
+  const mins = Math.floor(diff / 60000);
+  if (mins < 1) return 'just now';
+  if (mins < 60) return `${mins}m ago`;
+  const hrs = Math.floor(mins / 60);
+  if (hrs < 24) return `${hrs}h ago`;
+  const days = Math.floor(hrs / 24);
+  if (days < 30) return `${days}d ago`;
+  const months = Math.floor(days / 30);
+  if (months < 12) return `${months}mo ago`;
+  return `${Math.floor(months / 12)}y ago`;
+}
 
 export class SearchModal extends Modal {
   private mcpClient: FlywheelMcpClient;
@@ -30,6 +65,7 @@ export class SearchModal extends Modal {
     const { contentEl } = this;
     contentEl.empty();
     contentEl.addClass('flywheel-search-modal');
+    this.modalEl.addClass('flywheel-search-modal-container');
 
     // Search input
     const inputContainer = contentEl.createDiv('flywheel-search-input-container');
@@ -116,7 +152,7 @@ export class SearchModal extends Modal {
     }
 
     // Separator
-    this.indexBarEl.createSpan({ cls: 'flywheel-search-index-sep', text: '·' });
+    this.indexBarEl.createSpan({ cls: 'flywheel-search-index-sep', text: '\u00b7' });
 
     // Semantic status
     if (health.embeddings_building) {
@@ -182,7 +218,7 @@ export class SearchModal extends Modal {
       const methodLabel = response.method === 'hybrid'
         ? 'keyword + semantic'
         : 'keyword only';
-      this.statusEl.setText(`${count} result${count !== 1 ? 's' : ''} via ${methodLabel} · ${elapsed}ms`);
+      this.statusEl.setText(`${count} result${count !== 1 ? 's' : ''} via ${methodLabel} \u00b7 ${elapsed}ms`);
       this.statusEl.removeClass('flywheel-search-status-warning');
 
       console.log(`[Flywheel Search] query="${query}" method=${response.method} results=${count} ${elapsed}ms`);
@@ -232,8 +268,15 @@ export class SearchModal extends Modal {
         item.addClass('is-selected');
       });
 
-      // Title row
+      // Title row: [CategoryIcon] [Title] [badges] [score%]
       const titleRow = item.createDiv('flywheel-search-result-title-row');
+
+      if (result.category) {
+        const iconName = CATEGORY_ICONS[result.category] || 'circle-dot';
+        const iconEl = titleRow.createDiv('flywheel-search-result-category-icon');
+        iconEl.dataset.category = result.category;
+        setIcon(iconEl, iconName);
+      }
 
       const titleEl = titleRow.createDiv('flywheel-search-result-title');
       titleEl.setText(result.title);
@@ -242,16 +285,13 @@ export class SearchModal extends Modal {
       if (result.in_fts5 || result.in_semantic || result.in_entity) {
         const badgeContainer = titleRow.createDiv('flywheel-search-source-badges');
         if (result.in_fts5) {
-          const badge = badgeContainer.createSpan('flywheel-search-source-badge flywheel-search-source-keyword');
-          badge.setText('keyword');
+          badgeContainer.createSpan('flywheel-search-source-badge flywheel-search-source-keyword').setText('keyword');
         }
         if (result.in_semantic) {
-          const badge = badgeContainer.createSpan('flywheel-search-source-badge flywheel-search-source-semantic');
-          badge.setText('semantic');
+          badgeContainer.createSpan('flywheel-search-source-badge flywheel-search-source-semantic').setText('semantic');
         }
         if (result.in_entity) {
-          const badge = badgeContainer.createSpan('flywheel-search-source-badge flywheel-search-source-entity');
-          badge.setText('entity');
+          badgeContainer.createSpan('flywheel-search-source-badge flywheel-search-source-entity').setText('entity');
         }
       }
 
@@ -263,27 +303,38 @@ export class SearchModal extends Modal {
         badge.style.opacity = String(0.4 + (result.rrf_score / topRrf) * 0.6);
       }
 
-      // Folder path
+      // Metadata row: folder · relative time · backlinks
+      const metaParts: string[] = [];
       const folder = result.path.split('/').slice(0, -1).join('/');
-      if (folder) {
-        const folderEl = titleRow.createDiv('flywheel-search-result-folder');
-        folderEl.setText(folder);
+      if (folder) metaParts.push(folder);
+      if (result.modified) metaParts.push(formatRelativeTime(result.modified));
+      if (result.backlink_count && result.backlink_count > 0) {
+        metaParts.push(`${result.backlink_count} backlink${result.backlink_count !== 1 ? 's' : ''}`);
+      }
+      if (metaParts.length > 0) {
+        const metaEl = item.createDiv('flywheel-search-result-meta');
+        metaEl.setText(metaParts.join(' \u00b7 '));
       }
 
-      // Snippet
+      // Snippet or content preview
       if (result.snippet) {
         const snippetEl = item.createDiv('flywheel-search-result-snippet');
         snippetEl.innerHTML = result.snippet;
+      } else if (result.content_preview) {
+        const previewEl = item.createDiv('flywheel-search-result-preview');
+        previewEl.setText(result.content_preview);
       }
 
-      // Match explanation
-      if (result.in_fts5 || result.in_semantic || result.in_entity) {
-        const reasons: string[] = [];
-        if (result.in_fts5) reasons.push('Matched keywords in content');
-        if (result.in_semantic) reasons.push('Semantically similar');
-        if (result.in_entity) reasons.push('Entity match (name/category)');
-        const explanationEl = item.createDiv('flywheel-search-result-explanation');
-        explanationEl.setText(reasons.join(' · '));
+      // Tags (first 3 + overflow)
+      if (result.tags && result.tags.length > 0) {
+        const tagsEl = item.createDiv('flywheel-search-result-tags');
+        const shown = result.tags.slice(0, 3);
+        for (const tag of shown) {
+          tagsEl.createSpan('flywheel-search-result-tag').setText(`#${tag.replace(/^#/, '')}`);
+        }
+        if (result.tags.length > 3) {
+          tagsEl.createSpan('flywheel-search-result-tag flywheel-search-result-tag-more').setText(`+${result.tags.length - 3}`);
+        }
       }
     });
   }
