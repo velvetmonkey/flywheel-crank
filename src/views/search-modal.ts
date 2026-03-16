@@ -222,7 +222,6 @@ export class SearchModal extends Modal {
       this.statusEl.removeClass('flywheel-search-status-warning');
 
       console.log(`[Flywheel Search] query="${query}" method=${response.method} results=${count} ${elapsed}ms`);
-      if (count > 0) console.log('[Flywheel Search] first result keys:', JSON.stringify(Object.keys(this.results[0])), 'in_fts5:', this.results[0].in_fts5, 'in_semantic:', this.results[0].in_semantic);
 
       this.renderResults();
     } catch (err) {

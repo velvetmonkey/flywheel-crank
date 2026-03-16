@@ -888,17 +888,12 @@ export class FlywheelMcpClient {
     let args: string[];
     const isWindows = process.platform === 'win32';
 
-    if (serverPath && !(isWindows && serverPath.startsWith('/'))) {
-      // Custom server path — spawn natively via node
-      // Skip Unix paths on Windows (they're WSL paths that Windows node can't resolve)
+    if (serverPath) {
       command = 'node';
       args = [serverPath];
     } else {
-      if (serverPath && isWindows) {
-        console.log(`Flywheel Crank: ignoring WSL server path on Windows, falling back to npx`);
-      }
       command = isWindows ? 'npx.cmd' : 'npx';
-      args = ['-y', '@velvetmonkey/flywheel-memory@2.0.79']; // Pin version — bump when releasing new flywheel-memory
+      args = ['-y', '@velvetmonkey/flywheel-memory@2.0.80']; // Pin version — bump when releasing new flywheel-memory
     }
 
     console.log(`Flywheel Crank: spawning ${command} ${args.join(' ')}`);
