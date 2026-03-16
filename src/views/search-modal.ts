@@ -337,14 +337,25 @@ export class SearchModal extends Modal {
         }
       }
 
-      // Match explanation
-      if (result.in_fts5 || result.in_semantic || result.in_entity) {
-        const reasons: string[] = [];
-        if (result.in_fts5) reasons.push('Matched keywords in content');
-        if (result.in_semantic) reasons.push('Semantically similar');
-        if (result.in_entity) reasons.push('Entity match (name/category)');
+      // Per-result match explanation
+      const reasons: string[] = [];
+      if (result.in_fts5) reasons.push('Content contains matching keywords');
+      if (result.in_semantic) reasons.push('Meaning is similar to your query');
+      if (result.in_entity && result.category) {
+        reasons.push(`Known ${result.category.replace(/s$/, '')} entity`);
+      } else if (result.in_entity) {
+        reasons.push('Matched entity name or alias');
+      }
+      if (result.hub_score && result.hub_score >= 0.5) {
+        reasons.push(`Hub (${Math.round(result.hub_score * 100)}% connectivity)`);
+      }
+      if (!result.in_fts5 && !result.in_semantic && !result.in_entity) {
+        // Metadata-only match
+        reasons.push('Matched by title or metadata');
+      }
+      if (reasons.length > 0) {
         const explanationEl = item.createDiv('flywheel-search-result-explanation');
-        explanationEl.setText(reasons.join(' \u00b7 '));
+        explanationEl.setText(reasons.join(' · '));
       }
     });
   }
