@@ -734,7 +734,10 @@ export class GraphSidebarView extends ItemView {
           const renderGraph = () => {
             graphZone.empty();
             const W = Math.max(200, this.noteContainer.clientWidth);
-            const H = Math.round(W * 0.75);
+            // Use available viewport height minus space for other sections,
+            // clamped to a sensible range based on pane height
+            const paneH = this.containerEl.clientHeight || window.innerHeight;
+            const H = Math.max(200, Math.min(Math.round(paneH * 0.45), W));
             this.layoutGraph(nodes, edges, W, H);
             const canvas = this.renderLocalGraphCanvas(graphZone, nodes, edges, W, H);
             const cx = W / 2;
@@ -768,16 +771,19 @@ export class GraphSidebarView extends ItemView {
 
           renderGraph();
 
-          // Re-render graph on pane resize
+          // Re-render graph on pane resize (width or height)
           let lastWidth = this.noteContainer.clientWidth;
+          let lastHeight = this.containerEl.clientHeight;
           const resizeObs = new ResizeObserver(() => {
             const newWidth = this.noteContainer.clientWidth;
-            if (Math.abs(newWidth - lastWidth) > 10) {
+            const newHeight = this.containerEl.clientHeight;
+            if (Math.abs(newWidth - lastWidth) > 10 || Math.abs(newHeight - lastHeight) > 30) {
               lastWidth = newWidth;
+              lastHeight = newHeight;
               renderGraph();
             }
           });
-          resizeObs.observe(this.noteContainer);
+          resizeObs.observe(this.containerEl);
           this.register(() => resizeObs.disconnect());
         }
       }
