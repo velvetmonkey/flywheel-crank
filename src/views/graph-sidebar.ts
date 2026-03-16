@@ -1194,16 +1194,8 @@ export class GraphSidebarView extends ItemView {
     }
 
     if (periodicEntries.length > 0) {
-      const periodicToggle = cloudZone.createDiv('flywheel-cloud-label flywheel-periodic-toggle');
-      periodicToggle.setText(`periodic (${periodicEntries.length})`);
-      const periodicWrap = cloudZone.createDiv('flywheel-periodic-wrap');
-      periodicWrap.style.display = 'none';
-      this.renderCloudItems(periodicWrap, periodicEntries, categories, connectionWeights, hubScores);
-      periodicToggle.addEventListener('click', () => {
-        const hidden = periodicWrap.style.display === 'none';
-        periodicWrap.style.display = hidden ? '' : 'none';
-        periodicToggle.toggleClass('is-expanded', hidden);
-      });
+      cloudZone.createDiv('flywheel-cloud-label').setText(`periodic (${periodicEntries.length})`);
+      this.renderCloudItems(cloudZone, periodicEntries, categories, connectionWeights, hubScores);
     }
 
     this.renderCloudLegend(cloudZone, [...mainEntries, ...periodicEntries], categories);

@@ -891,7 +891,7 @@ export class FlywheelMcpClient {
         console.log(`Flywheel Crank: ignoring WSL server path on Windows, falling back to npx`);
       }
       command = isWindows ? 'npx.cmd' : 'npx';
-      args = ['-y', '@velvetmonkey/flywheel-memory@2.0.75']; // Pin version — bump when releasing new flywheel-memory
+      args = ['-y', '@velvetmonkey/flywheel-memory@2.0.76']; // Pin version — bump when releasing new flywheel-memory
     }
 
     console.log(`Flywheel Crank: spawning ${command} ${args.join(' ')}`);
@@ -1538,6 +1538,7 @@ export class FlywheelMcpClient {
       only_if_missing: onlyIfMissing,
     });
     this.cache.invalidateTool('vault_schema');
+    this.cache.invalidateTool('list_entities');
     this.cache.invalidatePath(path);
     return result;
   }

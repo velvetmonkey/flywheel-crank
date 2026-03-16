@@ -212,6 +212,7 @@ export class EntityBrowserView extends ItemView {
 
   async onOpen(): Promise<void> {
     this.register(this.mcpClient.onConnectionStateChange(() => this.render()));
+    this.register(this.mcpClient.onPipelineComplete(() => this.fetchEntities()));
     this.render();
     await this.fetchEntities();
   }
@@ -602,8 +603,7 @@ export class EntityBrowserView extends ItemView {
 
       if (result.success) {
         new Notice(`Merged "${suggestion.source.name}" into "${suggestion.target.name}"`);
-        // Re-fetch entities after a short delay to let the file watcher catch up
-        setTimeout(() => this.fetchEntities(), 3000);
+        // Pipeline completion listener will re-fetch when the server is done reprocessing
       } else {
         new Notice(`Merge failed: ${result.message}`);
         await this.fetchEntities();
@@ -794,8 +794,7 @@ export class EntityBrowserView extends ItemView {
       await this.fetchEntities();
     } else {
       new Notice(`Moved ${total} entities to ${CATEGORY_LABELS[toCategory]}`);
-      // Sync with server after watcher catches up
-      setTimeout(() => this.fetchEntities(), 3000);
+      // Pipeline completion listener will re-fetch when the server is done reprocessing
     }
   }
 
@@ -894,9 +893,7 @@ export class EntityBrowserView extends ItemView {
     try {
       await this.mcpClient.updateFrontmatter(entity.path, { type: frontmatterType }, false);
       new Notice(`Moved "${entity.name}" to ${CATEGORY_LABELS[newCategory]}`);
-      // File watcher will pick up the change — re-fetch after a short delay
-      // to get the server-authoritative data without triggering a full re-index
-      setTimeout(() => this.fetchEntities(), 3000);
+      // Pipeline completion listener will re-fetch when the server is done reprocessing
     } catch (err) {
       new Notice(`Failed to move "${entity.name}": ${err instanceof Error ? err.message : String(err)}`);
       console.error('Flywheel Entities: failed to correct category', err);
