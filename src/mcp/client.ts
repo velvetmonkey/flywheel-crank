@@ -310,8 +310,7 @@ export interface McpEntityIndexResponse {
 // Graph analysis types
 export type GraphAnalysisMode =
   | 'orphans' | 'dead_ends' | 'sources' | 'hubs' | 'stale'
-  | 'immature' | 'evolution' | 'emerging_hubs'
-  | 'semantic_clusters' | 'semantic_bridges';
+  | 'immature' | 'emerging_hubs';
 
 export interface McpGraphAnalysisOptions {
   folder?: string;
@@ -1172,7 +1171,7 @@ export class FlywheelMcpClient {
    * Get inferred folder conventions for a given folder path.
    */
   async folderConventions(folder: string): Promise<McpFolderConventionsResponse> {
-    return this.callTool<McpFolderConventionsResponse>('vault_schema', {
+    return this.callTool<McpFolderConventionsResponse>('schema_conventions', {
       analysis: 'conventions',
       folder,
       min_confidence: 0.2,
@@ -1541,6 +1540,8 @@ export class FlywheelMcpClient {
       only_if_missing: onlyIfMissing,
     });
     this.cache.invalidateTool('vault_schema');
+    this.cache.invalidateTool('schema_conventions');
+    this.cache.invalidateTool('schema_validate');
     this.cache.invalidateTool('list_entities');
     this.cache.invalidatePath(path);
     return result;
