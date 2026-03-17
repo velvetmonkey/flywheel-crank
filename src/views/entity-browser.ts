@@ -372,6 +372,7 @@ export class EntityBrowserView extends ItemView {
         const isSelected = !!(entity.path && this.selectedEntities.has(entity.path));
         const item = listEl.createDiv('flywheel-entity-item');
         if (isSelected) item.addClass('is-selected');
+        if (entity.isSuppressed) item.addClass('flywheel-entity-suppressed');
         setTooltip(item, getEntityCategoryReason(entity.name, category));
 
         if (entity.path) {
@@ -409,6 +410,12 @@ export class EntityBrowserView extends ItemView {
 
         const nameEl = nameRow.createDiv('flywheel-entity-name');
         nameEl.setText(entity.name);
+
+        if (entity.isSuppressed) {
+          const badge = nameRow.createSpan('flywheel-entity-suppressed-badge');
+          badge.setText('suppressed');
+          setTooltip(badge, 'This entity is suppressed — wikilink suggestions are disabled');
+        }
 
         // Category action buttons (hidden when entities are selected to reduce clutter)
         if (entity.path && !hasSelection) {

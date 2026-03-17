@@ -50,6 +50,15 @@ export class EntityPageView extends ItemView {
     container.empty();
     container.addClass('flywheel-entity-page');
 
+    // Check suppression status via dashboard's suppressed list
+    let isSuppressed = false;
+    try {
+      const dash = await this.mcpClient.wikilinkFeedbackDashboard();
+      isSuppressed = dash.dashboard?.suppressed?.some(
+        s => s.entity?.toLowerCase() === this.entityName!.toLowerCase()
+      ) ?? false;
+    } catch { /* ignore — dashboard not available */ }
+
     // Header
     const header = container.createDiv('flywheel-entity-page-header');
     const nameEl = header.createDiv('flywheel-entity-page-name');
@@ -58,6 +67,30 @@ export class EntityPageView extends ItemView {
     nameEl.addEventListener('click', () => {
       this.app.workspace.openLinkText(this.entityName + '.md', '', false);
     });
+
+    // Suppressed badge
+    if (isSuppressed) {
+      const badge = header.createDiv('flywheel-entity-page-badge-suppressed');
+      badge.setText('Suppressed');
+
+      const unsuppressBtn = header.createEl('button', {
+        cls: 'flywheel-entity-page-unsuppress-btn',
+        text: 'Unsuppress',
+      });
+      setTooltip(unsuppressBtn, 'Remove suppression — re-enable wikilink suggestions for this entity');
+      unsuppressBtn.addEventListener('click', async () => {
+        unsuppressBtn.disabled = true;
+        unsuppressBtn.setText('Unsuppressing...');
+        try {
+          await this.mcpClient.unsuppressEntity(this.entityName!);
+          new Notice(`"${this.entityName}" unsuppressed`);
+          await this.render();
+        } catch (err) {
+          unsuppressBtn.setText('Failed');
+          unsuppressBtn.disabled = false;
+        }
+      });
+    }
 
     // Score timeline chart
     try {
@@ -170,9 +203,11 @@ export class EntityPageView extends ItemView {
       badBtn.disabled = true;
       goodBtn.disabled = true;
       await this.mcpClient.reportWikilinkFeedback(entityNameForFeedback, '', false);
-      badBtn.setText('Feedback sent \u2713');
+      badBtn.setText('Entity suppressed \u2713');
       badBtn.addClass('flywheel-entity-page-action-done');
-      new Notice(`Negative feedback recorded for "${entityNameForFeedback}"`);
+      new Notice(`Entity suppressed: "${entityNameForFeedback}"`);
+      // Re-render to show the suppressed badge and unsuppress button
+      await this.render();
     });
   }
 

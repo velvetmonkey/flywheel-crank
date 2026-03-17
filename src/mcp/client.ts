@@ -278,6 +278,7 @@ export interface McpEntityItem {
   path: string;
   aliases: string[];
   hubScore?: number;
+  isSuppressed?: boolean;
 }
 
 export interface McpEntityIndexResponse {
