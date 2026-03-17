@@ -99,8 +99,8 @@ export class TaskDashboardView extends ItemView {
   }
 
   /**
-   * Subscribe to health updates. Wait for both index ready AND task cache ready
-   * before fetching tasks, to avoid querying an empty cache mid-rebuild.
+   * Subscribe to health updates. Wait for task cache readiness before fetching.
+   * Task queries hit SQLite directly — no dependency on in-memory index.
    */
   private waitForReady(): void {
     // If already ready from a previous open, just fetch
@@ -112,12 +112,12 @@ export class TaskDashboardView extends ItemView {
     this.healthUnsub = this.mcpClient.onHealthUpdate(async (health) => {
       if (this.cacheReady) return;
 
-      if (health.index_state === 'ready' && health.tasks_ready) {
+      if (health.tasks_ready) {
         this.cacheReady = true;
         if (this.healthUnsub) { this.healthUnsub(); this.healthUnsub = null; }
         await this.fetchTasks();
       } else if (health.index_state === 'ready' && !health.tasks_ready) {
-        // Index is ready but task cache still building — update splash text
+        // Index is ready but task cache still building (cold start)
         this.renderSplash('Building task index\u2026');
       }
     });

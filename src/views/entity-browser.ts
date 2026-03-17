@@ -266,15 +266,29 @@ export class EntityBrowserView extends ItemView {
       'They\'re grouped by category with hub scores showing how connected each entity is.');
     statsInfo.addEventListener('click', (e) => e.stopPropagation());
 
-    const filterInput = header.createEl('input', {
+    const filterWrap = header.createDiv('flywheel-entity-filter-wrap');
+    const filterInput = filterWrap.createEl('input', {
       type: 'text',
       placeholder: 'Filter entities...',
       cls: 'flywheel-entity-filter',
       value: this.filterText,
     });
 
+    const clearBtn = filterWrap.createEl('button', {
+      cls: 'flywheel-entity-filter-clear',
+    });
+    setIcon(clearBtn, 'x');
+    clearBtn.style.display = this.filterText ? '' : 'none';
+    clearBtn.addEventListener('click', () => {
+      this.filterText = '';
+      filterInput.value = '';
+      clearBtn.style.display = 'none';
+      this.renderCategories(content);
+    });
+
     filterInput.addEventListener('input', () => {
       this.filterText = filterInput.value;
+      clearBtn.style.display = this.filterText ? '' : 'none';
       this.renderCategories(content);
     });
 

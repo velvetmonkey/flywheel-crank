@@ -32,7 +32,6 @@ export default class FlywheelCrankPlugin extends Plugin {
   private graphRefreshTimer: number | null = null;
   private lastRebuildTimestamp = 0;
   private lastPipelineTimestamp = 0;
-  private pipelineActiveTimer: number | null = null;
 
   async onload(): Promise<void> {
     console.log(`[flywheel-crank] v${this.manifest.version} loading`);
@@ -165,14 +164,16 @@ export default class FlywheelCrankPlugin extends Plugin {
     });
 
     // Show spinner when a note is saved — the server-side watcher will kick off
-    // a pipeline, but we won't know it's done until the next health poll. Spinning
-    // immediately gives feedback that something is happening.
+    // Show spinner immediately on file save — the watcher pipeline typically
+    // finishes within 200-500ms (faster than the 3s health poll). The next
+    // health poll will overwrite with the real state, so worst case is a
+    // 3s spinner for a sub-second pipeline.
     this.registerEvent(
       this.app.vault.on('modify', (file) => {
         if (!file.path.endsWith('.md')) return;
         if (!this.mcpClient.connected || this.indexing) return;
         this.mcpClient.invalidateForPath(file.path);
-        this.signalPipelineActive();
+        this.setStatus('processing...', true);
       })
     );
 
@@ -314,7 +315,7 @@ export default class FlywheelCrankPlugin extends Plugin {
       this.updateGraphSidebar(true);
 
       // Subscribe to centralized health polling
-      this.setStatus('syncing...', true);
+      this.setStatus('connecting...', true);
       this.healthUnsub = this.mcpClient.onHealthUpdate(health => this.handleHealthUpdate(health));
       this.mcpClient.startHealthPoll();
     } catch (err) {
@@ -336,15 +337,11 @@ export default class FlywheelCrankPlugin extends Plugin {
 
   /** Handle health updates from the centralized health poller. */
   private handleHealthUpdate(health: import('./mcp/client').McpHealthCheckResponse): void {
-    // If a new pipeline arrived, cancel the processing spinner and refresh entities
+    // --- Pipeline-change detection (refresh caches when a new pipeline completes) ---
     const pipelineTs = health.last_pipeline?.timestamp ?? 0;
     if (pipelineTs > this.lastPipelineTimestamp) {
       const isFirstPoll = this.lastPipelineTimestamp === 0;
       this.lastPipelineTimestamp = pipelineTs;
-      if (this.pipelineActiveTimer) {
-        window.clearTimeout(this.pipelineActiveTimer);
-        this.pipelineActiveTimer = null;
-      }
       // Pipeline includes entity_scan — aliases/entities may have changed
       if (!isFirstPoll) {
         this.mcpClient.invalidateTool('list_entities');
@@ -355,77 +352,150 @@ export default class FlywheelCrankPlugin extends Plugin {
       }
     }
 
-    if (health.index_state === 'ready') {
-      // Detect index rebuild and force-refresh views
-      const rebuildTs = health.last_rebuild?.timestamp ?? 0;
-      if (rebuildTs > this.lastRebuildTimestamp && this.lastRebuildTimestamp > 0) {
-        this.mcpClient.invalidateTool('list_entities');
-        this.mcpClient.bustEntityCache();
-        this.wikilinkEntitiesLoaded = false;
-        this.updateGraphSidebar(true);
-      }
-      this.lastRebuildTimestamp = rebuildTs;
-
-      // Load entities for wikilink suggest (once, or after rebuild resets the flag)
-      if (this.wikilinkSuggest && !this.wikilinkEntitiesLoaded) {
-        this.wikilinkEntitiesLoaded = true;
-        this.loadWikilinkEntities();
-      }
-
-      const ago = health.last_rebuild?.ago_seconds ?? 0;
-      const agoText = ago < 60 ? `${ago}s ago` : ago < 3600 ? `${Math.floor(ago / 60)}m ago` : `${Math.floor(ago / 3600)}h ago`;
-
-      const fts5Label = health.fts5_building ? 'building...'
-        : health.fts5_ready ? 'ready' : 'not built';
-      const semanticLabel = health.embeddings_building
-        ? `building... (${health.embeddings_count ?? 0} embedded)`
-        : health.embeddings_ready ? `ready (${health.embeddings_count} embeddings)` : 'not built';
-      const tasksLabel = health.tasks_building ? 'building...'
-        : health.tasks_ready ? 'ready' : 'waiting';
-      const tooltipLines = [
-        `MCP: connected · ${health.note_count} notes · ${agoText}`,
-        `Entities: ${health.entity_count} · Tags: ${health.tag_count}`,
-        '',
-        `Graph index: ready (${agoText})`,
-        `Keyword search: ${fts5Label}`,
-        `Semantic search: ${semanticLabel}`,
-        `Task cache: ${tasksLabel}`,
-      ];
-      if (this.mcpClient.lastToolError) {
-        tooltipLines.push('', `⚠ ${this.mcpClient.lastToolError.getActionableMessage()}`);
-      }
-      const tooltip = tooltipLines.join('\n');
-
-      // Still building secondary indexes
-      if (health.fts5_building) {
-        this.setStatus('indexing search...', true, tooltip);
-        return;
-      }
-      if (health.embeddings_building) {
-        this.setStatus(`embedding ${health.embeddings_count ?? 0} notes...`, true, tooltip);
-        return;
-      }
-
-      this.setStatus(`ready · ${agoText}`, false, tooltip);
+    // --- Error state ---
+    if (health.index_state === 'error') {
+      const tooltip = this.buildTooltip(health);
+      this.setStatus('index error', false, tooltip);
       return;
     }
 
-    // Still building graph — show progress if available
-    const progress = (health as any).index_progress;
-    const graphStatus = progress?.total > 0
-      ? `building (${progress.parsed}/${progress.total})`
-      : 'building...';
-    const fts5Status = health.fts5_building ? 'building...' : health.fts5_ready ? 'ready' : 'waiting';
-    const tooltip = [
-      `Graph index: ${graphStatus}`,
-      `Keyword search: ${fts5Status}`,
-      'Semantic search: waiting',
-    ].join('\n');
-    if (progress?.total > 0) {
-      this.setStatus(`syncing ${progress.parsed}/${progress.total}...`, true, tooltip);
-    } else {
-      this.setStatus('syncing...', true, tooltip);
+    // --- Initial index build ---
+    if (health.index_state === 'building') {
+      const progress = (health as any).index_progress;
+      const tooltip = this.buildTooltip(health);
+      if (progress?.total > 0) {
+        this.setStatus(`indexing ${progress.parsed}/${progress.total}...`, true, tooltip);
+      } else {
+        this.setStatus('indexing...', true, tooltip);
+      }
+      return;
     }
+
+    // --- Index ready: detect rebuilds, load entities ---
+    const rebuildTs = health.last_rebuild?.timestamp ?? 0;
+    if (rebuildTs > this.lastRebuildTimestamp && this.lastRebuildTimestamp > 0) {
+      this.mcpClient.invalidateTool('list_entities');
+      this.mcpClient.bustEntityCache();
+      this.wikilinkEntitiesLoaded = false;
+      this.updateGraphSidebar(true);
+    }
+    this.lastRebuildTimestamp = rebuildTs;
+
+    if (this.wikilinkSuggest && !this.wikilinkEntitiesLoaded) {
+      this.wikilinkEntitiesLoaded = true;
+      this.loadWikilinkEntities();
+    }
+
+    const tooltip = this.buildTooltip(health);
+
+    // --- Watcher processing ---
+    const watcherProcessing = health.watcher_state === 'rebuilding'
+      || (health.watcher_pending != null && health.watcher_pending > 0);
+    if (watcherProcessing) {
+      const pending = health.watcher_pending ?? 0;
+      const label = pending > 0 ? `processing ${pending} files...` : 'processing...';
+      this.setStatus(label, true, tooltip);
+      return;
+    }
+
+    // --- Secondary indexes building ---
+    if (health.fts5_building) {
+      this.setStatus('indexing search...', true, tooltip);
+      return;
+    }
+    if (health.embeddings_building) {
+      this.setStatus(`embedding ${health.embeddings_count ?? 0} notes...`, true, tooltip);
+      return;
+    }
+
+    // --- Idle ---
+    const ago = health.last_rebuild?.ago_seconds ?? 0;
+    const agoText = formatAgo(ago);
+    this.setStatus(`ready · ${agoText}`, false, tooltip);
+  }
+
+  /** Build a rich tooltip showing all subsystem states. */
+  private buildTooltip(health: import('./mcp/client').McpHealthCheckResponse): string {
+    const ago = health.last_rebuild?.ago_seconds ?? 0;
+    const agoText = formatAgo(ago);
+
+    const lines: string[] = [];
+
+    // Header
+    lines.push(`MCP: connected · ${health.note_count} notes · ${agoText}`);
+    lines.push(`Entities: ${health.entity_count} · Tags: ${health.tag_count}`);
+    lines.push('');
+
+    // Watcher state
+    const ws = health.watcher_state;
+    if (ws === undefined) {
+      // Older server — no watcher_state reported
+      lines.push('Watcher: unknown');
+    } else if (ws === 'rebuilding') {
+      const pending = health.watcher_pending ?? 0;
+      const detail = pending > 0 ? ` (${pending} pending)` : '';
+      lines.push(`Watcher: processing${detail}`);
+      // Include last pipeline detail if available
+      if (health.last_pipeline) {
+        const p = health.last_pipeline;
+        const stepNames = p.steps
+          .filter(s => !s.skipped)
+          .map(s => s.name)
+          .join(' → ');
+        const filesLabel = p.files_changed != null ? `${p.files_changed} files` : 'files';
+        lines.push(`  Last: ${filesLabel} · ${p.duration_ms}ms · ${stepNames}`);
+      }
+    } else if (ws === 'error') {
+      lines.push('Watcher: error (index still functional)');
+    } else if (ws === 'starting') {
+      lines.push('Watcher: starting...');
+    } else if (ws === 'dirty') {
+      lines.push('Watcher: ready (index may be stale)');
+    } else {
+      // 'ready'
+      const pending = health.watcher_pending ?? 0;
+      if (pending > 0) {
+        lines.push(`Watcher: ready (${pending} pending)`);
+      } else {
+        lines.push('Watcher: ready');
+      }
+    }
+
+    // Graph index
+    if (health.index_state === 'building') {
+      const progress = (health as any).index_progress;
+      const graphStatus = progress?.total > 0
+        ? `building (${progress.parsed}/${progress.total})`
+        : 'building...';
+      lines.push(`Graph index: ${graphStatus}`);
+    } else if (health.index_state === 'error') {
+      lines.push('Graph index: error');
+    } else {
+      lines.push(`Graph index: ready (${agoText})`);
+    }
+
+    // Keyword search
+    const fts5Label = health.fts5_building ? 'building...'
+      : health.fts5_ready ? 'ready' : 'not built';
+    lines.push(`Keyword search: ${fts5Label}`);
+
+    // Semantic search
+    const semanticLabel = health.embeddings_building
+      ? `building... (${health.embeddings_count ?? 0} embedded)`
+      : health.embeddings_ready ? `ready (${health.embeddings_count} embeddings)` : 'not built';
+    lines.push(`Semantic search: ${semanticLabel}`);
+
+    // Task cache
+    const tasksLabel = health.tasks_building ? 'building...'
+      : health.tasks_ready ? 'ready' : 'waiting';
+    lines.push(`Task cache: ${tasksLabel}`);
+
+    // Errors
+    if (this.mcpClient.lastToolError) {
+      lines.push('', `⚠ ${this.mcpClient.lastToolError.getActionableMessage()}`);
+    }
+
+    return lines.join('\n');
   }
 
   private async loadWikilinkEntities(): Promise<void> {
@@ -572,19 +642,6 @@ export default class FlywheelCrankPlugin extends Plugin {
     }
   }
 
-  /** Spin the status bar to signal a pipeline is likely running. Clears itself after 10s max. */
-  private signalPipelineActive(): void {
-    if (this.pipelineActiveTimer) window.clearTimeout(this.pipelineActiveTimer);
-    this.setStatus('processing...', true);
-    // Safety: stop spinning after 10s even if health poll never confirms a new pipeline
-    this.pipelineActiveTimer = window.setTimeout(() => {
-      this.pipelineActiveTimer = null;
-      // Only reset if we're still showing "processing..." (not mid-rebuild etc.)
-      const health = this.mcpClient.lastHealth;
-      if (health) this.handleHealthUpdate(health);
-    }, 10_000);
-  }
-
   /**
    * Extract entity name if cursor position is inside [[entity]] or [[entity|alias]].
    * Returns null if cursor is not inside a wikilink.
@@ -685,6 +742,12 @@ export default class FlywheelCrankPlugin extends Plugin {
   async saveSettings(): Promise<void> {
     await this.saveData(this.settings);
   }
+}
+
+function formatAgo(seconds: number): string {
+  if (seconds < 60) return `${seconds}s ago`;
+  if (seconds < 3600) return `${Math.floor(seconds / 60)}m ago`;
+  return `${Math.floor(seconds / 3600)}h ago`;
 }
 
 /**

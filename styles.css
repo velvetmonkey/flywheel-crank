@@ -1967,10 +1967,15 @@
   white-space: nowrap;
 }
 
-.flywheel-entity-filter {
+.flywheel-entity-filter-wrap {
+  position: relative;
   flex: 1;
   max-width: 200px;
-  padding: 4px 8px;
+}
+
+.flywheel-entity-filter {
+  width: 100%;
+  padding: 4px 26px 4px 8px;
   font-size: var(--font-small);
   border: 1px solid var(--background-modifier-border);
   border-radius: 4px;
@@ -1986,6 +1991,32 @@
 
 .flywheel-entity-filter::placeholder {
   color: var(--text-faint);
+}
+
+.flywheel-entity-filter-clear {
+  position: absolute;
+  right: 2px;
+  top: 50%;
+  transform: translateY(-50%);
+  background: none;
+  border: none;
+  padding: 2px;
+  cursor: pointer;
+  color: var(--text-muted);
+  display: flex;
+  align-items: center;
+  border-radius: 3px;
+  box-shadow: none;
+}
+
+.flywheel-entity-filter-clear:hover {
+  color: var(--text-normal);
+  background: var(--background-modifier-hover);
+}
+
+.flywheel-entity-filter-clear .svg-icon {
+  width: 14px;
+  height: 14px;
 }
 
 .flywheel-entity-content {
