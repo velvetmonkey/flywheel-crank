@@ -1961,16 +1961,9 @@
   background: var(--background-primary);
 }
 
-.flywheel-entity-stats {
-  font-size: var(--font-smallest);
-  color: var(--text-muted);
-  white-space: nowrap;
-}
-
 .flywheel-entity-filter-wrap {
   position: relative;
   flex: 1;
-  max-width: 200px;
 }
 
 .flywheel-entity-filter {

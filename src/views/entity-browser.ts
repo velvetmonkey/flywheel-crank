@@ -254,18 +254,8 @@ export class EntityBrowserView extends ItemView {
       return;
     }
 
-    // Header with stats and filter
+    // Header with filter
     const header = container.createDiv('flywheel-entity-header');
-    const statsEl = header.createDiv('flywheel-entity-stats');
-    statsEl.setText(`${this.totalEntities} entities`);
-
-    const statsInfo = header.createSpan('flywheel-graph-section-info');
-    setIcon(statsInfo, 'info');
-    setTooltip(statsInfo,
-      'Entities are people, technologies, organizations, and other named concepts extracted from your notes. ' +
-      'They\'re grouped by category with hub scores showing how connected each entity is.');
-    statsInfo.addEventListener('click', (e) => e.stopPropagation());
-
     const filterWrap = header.createDiv('flywheel-entity-filter-wrap');
     const filterInput = filterWrap.createEl('input', {
       type: 'text',
