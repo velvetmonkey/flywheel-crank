@@ -14,10 +14,16 @@ Flywheel Crank turns your Obsidian vault into a knowledge graph. It connects to 
 
 ## Screenshots
 
-![Graph Sidebar](screenshots/graph-sidebar.png)
-![Semantic Search](screenshots/search-modal.png)
-![Entity Browser](screenshots/entity-browser.png)
-![Vault Health](screenshots/vault-health.png)
+<table>
+  <tr>
+    <td align="center"><a href="screenshots/graph-sidebar.png"><img src="screenshots/graph-sidebar.png" width="400" alt="Graph Sidebar"/></a><br/><sub>Graph Sidebar</sub></td>
+    <td align="center"><a href="screenshots/search-modal.png"><img src="screenshots/search-modal.png" width="400" alt="Semantic Search"/></a><br/><sub>Semantic Search</sub></td>
+  </tr>
+  <tr>
+    <td align="center"><a href="screenshots/entity-browser.png"><img src="screenshots/entity-browser.png" width="400" alt="Entity Browser"/></a><br/><sub>Entity Browser</sub></td>
+    <td align="center"><a href="screenshots/vault-health.png"><img src="screenshots/vault-health.png" width="400" alt="Vault Health"/></a><br/><sub>Vault Health</sub></td>
+  </tr>
+</table>
 
 ## Features
 
