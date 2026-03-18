@@ -686,9 +686,9 @@ export class GraphSidebarView extends ItemView {
       if (this.periodicPrefixes.length === 0 && health?.config) {
         const paths = (health.config as Record<string, any>).paths as Record<string, string> | undefined;
         if (paths) {
-          this.periodicPrefixes = Object.values(paths)
-            .filter((p): p is string => !!p)
-            .map(p => p.endsWith('/') ? p : `${p}/`);
+          this.periodicPrefixes = Object.entries(paths)
+            .filter(([key, p]): p is [string, string] => key !== 'templates' && !!p)
+            .map(([, p]) => p.endsWith('/') ? p : `${p}/`);
         }
       }
 
