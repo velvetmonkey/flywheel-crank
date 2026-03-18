@@ -1168,7 +1168,8 @@ export class GraphSidebarView extends ItemView {
     };
 
     const MIN_CLOUD_SCORE = 0.30;
-    const MAX_CLOUD_ITEMS = 25;
+    const MAX_CLOUD_ITEMS = 20;
+    const MAX_PERIODIC_ITEMS = 5;
 
     const allEntries = [...cloud.values()].filter(e => e.score > 0);
     const mainEntries = allEntries
@@ -1179,7 +1180,7 @@ export class GraphSidebarView extends ItemView {
     const periodicEntries = allEntries
       .filter(e => isPeriodic(e) && e.score >= MIN_CLOUD_SCORE)
       .sort((a, b) => b.score - a.score)
-      .slice(0, MAX_CLOUD_ITEMS)
+      .slice(0, MAX_PERIODIC_ITEMS)
       .sort((a, b) => b.name.localeCompare(a.name, undefined, { sensitivity: 'base' }));
 
     // Fetch entity categories for pill coloring
