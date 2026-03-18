@@ -1167,8 +1167,8 @@ export class GraphSidebarView extends ItemView {
       return false;
     };
 
-    const MIN_CLOUD_SCORE = 0.15;
-    const MAX_CLOUD_ITEMS = 50;
+    const MIN_CLOUD_SCORE = 0.30;
+    const MAX_CLOUD_ITEMS = 25;
 
     const allEntries = [...cloud.values()].filter(e => e.score > 0);
     const mainEntries = allEntries
