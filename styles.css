@@ -4158,3 +4158,64 @@
   margin-left: 6px;
   vertical-align: middle;
 }
+
+/* ========================================================================
+   Light theme overrides
+   Cloud pill text: drop lightness from 80-88% → 30-42% for readability.
+   Cloud pill backgrounds: bump opacity from 0.12-0.15 → 0.18-0.22.
+   ======================================================================== */
+.theme-light .flywheel-cloud-item[data-category="people"] { background: hsla(217, 90%, 66%, 0.20); }
+.theme-light .flywheel-cloud-item[data-category="people"] .flywheel-cloud-name { color: hsl(217, 80%, 38%); }
+.theme-light .flywheel-cloud-item[data-category="projects"] { background: hsla(150, 60%, 54%, 0.20); }
+.theme-light .flywheel-cloud-item[data-category="projects"] .flywheel-cloud-name { color: hsl(150, 55%, 32%); }
+.theme-light .flywheel-cloud-item[data-category="technologies"] { background: hsla(258, 90%, 76%, 0.20); }
+.theme-light .flywheel-cloud-item[data-category="technologies"] .flywheel-cloud-name { color: hsl(258, 70%, 42%); }
+.theme-light .flywheel-cloud-item[data-category="locations"] { background: hsla(32, 90%, 60%, 0.20); }
+.theme-light .flywheel-cloud-item[data-category="locations"] .flywheel-cloud-name { color: hsl(32, 80%, 35%); }
+.theme-light .flywheel-cloud-item[data-category="organizations"] { background: hsla(188, 95%, 42%, 0.18); }
+.theme-light .flywheel-cloud-item[data-category="organizations"] .flywheel-cloud-name { color: hsl(188, 80%, 30%); }
+.theme-light .flywheel-cloud-item[data-category="concepts"] { background: hsla(330, 80%, 58%, 0.18); }
+.theme-light .flywheel-cloud-item[data-category="concepts"] .flywheel-cloud-name { color: hsl(330, 70%, 38%); }
+.theme-light .flywheel-cloud-item[data-category="animals"] { background: hsla(82, 78%, 44%, 0.20); }
+.theme-light .flywheel-cloud-item[data-category="animals"] .flywheel-cloud-name { color: hsl(82, 65%, 30%); }
+.theme-light .flywheel-cloud-item[data-category="media"] { background: hsla(292, 84%, 58%, 0.18); }
+.theme-light .flywheel-cloud-item[data-category="media"] .flywheel-cloud-name { color: hsl(292, 70%, 38%); }
+.theme-light .flywheel-cloud-item[data-category="events"] { background: hsla(48, 96%, 47%, 0.22); }
+.theme-light .flywheel-cloud-item[data-category="events"] .flywheel-cloud-name { color: hsl(48, 80%, 30%); }
+.theme-light .flywheel-cloud-item[data-category="documents"] { background: hsla(30, 10%, 46%, 0.18); }
+.theme-light .flywheel-cloud-item[data-category="documents"] .flywheel-cloud-name { color: hsl(30, 10%, 35%); }
+.theme-light .flywheel-cloud-item[data-category="vehicles"] { background: hsla(22, 78%, 56%, 0.20); }
+.theme-light .flywheel-cloud-item[data-category="vehicles"] .flywheel-cloud-name { color: hsl(22, 75%, 35%); }
+.theme-light .flywheel-cloud-item[data-category="health"] { background: hsla(0, 84%, 60%, 0.18); }
+.theme-light .flywheel-cloud-item[data-category="health"] .flywheel-cloud-name { color: hsl(0, 70%, 40%); }
+.theme-light .flywheel-cloud-item[data-category="finance"] { background: hsla(160, 84%, 39%, 0.20); }
+.theme-light .flywheel-cloud-item[data-category="finance"] .flywheel-cloud-name { color: hsl(160, 70%, 28%); }
+.theme-light .flywheel-cloud-item[data-category="food"] { background: hsla(36, 90%, 55%, 0.22); }
+.theme-light .flywheel-cloud-item[data-category="food"] .flywheel-cloud-name { color: hsl(36, 80%, 33%); }
+.theme-light .flywheel-cloud-item[data-category="hobbies"] { background: hsla(258, 90%, 66%, 0.20); }
+.theme-light .flywheel-cloud-item[data-category="hobbies"] .flywheel-cloud-name { color: hsl(258, 70%, 42%); }
+.theme-light .flywheel-cloud-item[data-category="acronyms"] { background: hsla(198, 93%, 60%, 0.20); }
+.theme-light .flywheel-cloud-item[data-category="acronyms"] .flywheel-cloud-name { color: hsl(198, 80%, 32%); }
+.theme-light .flywheel-cloud-item[data-category="periodical"] { background: hsla(220, 13%, 46%, 0.18); }
+.theme-light .flywheel-cloud-item[data-category="periodical"] .flywheel-cloud-name { color: hsl(220, 12%, 35%); }
+.theme-light .flywheel-cloud-item[data-category="other"] { background: hsla(240, 4%, 66%, 0.18); }
+.theme-light .flywheel-cloud-item[data-category="other"] .flywheel-cloud-name { color: hsl(240, 4%, 38%); }
+
+/* Hub badge text — same pattern: darken for light theme */
+.theme-light .flywheel-entity-hub-badge[data-category="acronyms"] { color: hsl(198, 80%, 32%); }
+.theme-light .flywheel-entity-hub-badge[data-category="animals"] { color: hsl(82, 65%, 30%); }
+.theme-light .flywheel-entity-hub-badge[data-category="concepts"] { color: hsl(330, 70%, 38%); }
+.theme-light .flywheel-entity-hub-badge[data-category="documents"] { color: hsl(30, 10%, 35%); }
+.theme-light .flywheel-entity-hub-badge[data-category="events"] { color: hsl(48, 80%, 30%); }
+.theme-light .flywheel-entity-hub-badge[data-category="finance"] { color: hsl(160, 70%, 28%); }
+.theme-light .flywheel-entity-hub-badge[data-category="food"] { color: hsl(36, 80%, 33%); }
+.theme-light .flywheel-entity-hub-badge[data-category="health"] { color: hsl(0, 70%, 40%); }
+.theme-light .flywheel-entity-hub-badge[data-category="hobbies"] { color: hsl(258, 70%, 42%); }
+.theme-light .flywheel-entity-hub-badge[data-category="locations"] { color: hsl(32, 80%, 35%); }
+.theme-light .flywheel-entity-hub-badge[data-category="media"] { color: hsl(292, 70%, 38%); }
+.theme-light .flywheel-entity-hub-badge[data-category="organizations"] { color: hsl(188, 80%, 30%); }
+.theme-light .flywheel-entity-hub-badge[data-category="people"] { color: hsl(217, 80%, 38%); }
+.theme-light .flywheel-entity-hub-badge[data-category="projects"] { color: hsl(150, 55%, 32%); }
+.theme-light .flywheel-entity-hub-badge[data-category="technologies"] { color: hsl(258, 70%, 42%); }
+.theme-light .flywheel-entity-hub-badge[data-category="vehicles"] { color: hsl(22, 75%, 35%); }
+.theme-light .flywheel-entity-hub-badge[data-category="other"] { color: hsl(240, 4%, 38%); }
