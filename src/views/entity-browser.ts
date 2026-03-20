@@ -33,6 +33,7 @@ const CATEGORY_ICONS: Record<EntityCategory, string> = {
   finance: 'banknote',
   food: 'utensils',
   hobbies: 'palette',
+  periodical: 'newspaper',
   other: 'circle-dot',
 };
 
@@ -53,6 +54,7 @@ const CATEGORY_LABELS: Record<EntityCategory, string> = {
   finance: 'Finance',
   food: 'Food',
   hobbies: 'Hobbies',
+  periodical: 'Periodicals',
   other: 'Other',
 };
 
@@ -60,7 +62,7 @@ const ALL_CATEGORIES: EntityCategory[] = [
   'acronyms', 'animals', 'concepts', 'documents', 'events',
   'finance', 'food', 'health', 'hobbies', 'locations',
   'media', 'organizations', 'people', 'projects', 'technologies',
-  'vehicles',
+  'vehicles', 'periodical',
   'other',
 ];
 
@@ -81,6 +83,7 @@ const CATEGORY_HINTS: Record<EntityCategory, string> = {
   finance: 'Frontmatter type: finance/account/investment/budget/bank',
   food: 'Frontmatter type: food/recipe/restaurant/meal/ingredient/drink',
   hobbies: 'Frontmatter type: hobby/sport/craft/activity/collection',
+  periodical: 'Frontmatter type: periodical/newsletter/magazine/journal/newspaper',
   other: 'Single word, no pattern matched — default fallback',
 };
 
@@ -170,6 +173,7 @@ const CATEGORY_TO_FRONTMATTER_TYPE: Record<EntityCategory, string> = {
   finance: 'finance',
   food: 'food',
   hobbies: 'hobby',
+  periodical: 'periodical',
   other: 'other',
 };
 

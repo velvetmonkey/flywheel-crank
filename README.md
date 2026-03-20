@@ -40,7 +40,7 @@ Flywheel Crank turns your Obsidian vault into a knowledge graph. It connects to 
 
 ### Entity Intelligence
 
-- **Entity browser** -- Browse and explore extracted entities across 18 categories
+- **Entity browser** -- Browse and explore extracted entities across all categories
 - **Entity page** -- Deep-dive view for any entity: backlinks, co-occurrence, feedback history
 - **Batch entity moves** -- Individual and bulk entity moves across categories
 

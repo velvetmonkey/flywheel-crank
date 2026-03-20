@@ -26,7 +26,7 @@ export class EntityPageView extends ItemView {
   /** Navigate to a specific entity, open its note, and re-render. */
   async showEntity(name: string): Promise<void> {
     this.entityName = name;
-    this.leaf.updateHeader();
+    (this.leaf as any).updateHeader();
     // Open the entity's note in the main editor
     this.app.workspace.openLinkText(name + '.md', '', false);
     await this.render();

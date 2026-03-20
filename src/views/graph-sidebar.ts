@@ -687,7 +687,7 @@ export class GraphSidebarView extends ItemView {
         const paths = (health.config as Record<string, any>).paths as Record<string, string> | undefined;
         if (paths) {
           this.periodicPrefixes = Object.entries(paths)
-            .filter(([key, p]): p is [string, string] => key !== 'templates' && !!p)
+            .filter(([key, p]) => key !== 'templates' && !!p)
             .map(([, p]) => p.endsWith('/') ? p : `${p}/`);
         }
       }
@@ -704,8 +704,8 @@ export class GraphSidebarView extends ItemView {
       // Folder chips — compact frontmatter suggestions below header
       await this.renderFolderChips(file, generation);
 
-      const safeBacklinks: McpBacklinksResponse = backlinksResp ?? { backlinks: [] };
-      const safeForwardLinks: McpForwardLinksResponse = forwardLinksResp ?? { forward_links: [] };
+      const safeBacklinks = backlinksResp ?? { note: '', backlink_count: 0, returned_count: 0, backlinks: [] as McpBacklinksResponse['backlinks'] };
+      const safeForwardLinks = forwardLinksResp ?? { note: '', forward_link_count: 0, forward_links: [] as McpForwardLinksResponse['forward_links'] };
 
       // Build edge weight map (used by both cloud tooltips and local graph)
       const edgeWeightMap = new Map<string, number>();
@@ -1598,9 +1598,9 @@ export class GraphSidebarView extends ItemView {
       // Suggested wikilinks (entity name → need to resolve path; use name as ID)
       if (suggestResp?.scored_suggestions) {
         for (const sug of suggestResp.scored_suggestions) {
-          const p = sug.existing_note ?? sug.entity;
+          const p = sug.path ?? sug.entity;
           if (!hasNode(p) && nk(p) !== nk(notePath) && sug.confidence !== 'low') {
-            candidates.push({ path: p, weight: sug.score / 30, source: 'suggestion' });
+            candidates.push({ path: p, weight: sug.totalScore / 30, source: 'suggestion' });
           }
         }
       }

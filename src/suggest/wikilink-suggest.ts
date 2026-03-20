@@ -38,6 +38,7 @@ const CATEGORY_EMOJI: Record<EntityCategory, string> = {
   finance: 'banknote',
   food: 'utensils',
   hobbies: 'palette',
+  periodical: 'newspaper',
   other: 'dot',
 };
 

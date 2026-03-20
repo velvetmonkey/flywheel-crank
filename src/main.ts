@@ -215,7 +215,7 @@ export default class FlywheelCrankPlugin extends Plugin {
 
     // Context menu actions on [[wikilinks]]
     this.registerEvent(
-      this.app.workspace.on('editor-menu', (menu: Menu, editor: Editor, view: MarkdownView) => {
+      (this.app.workspace as any).on('editor-menu', (menu: Menu, editor: Editor, view: MarkdownView) => {
         if (!this.mcpClient.connected) return;
 
         const cursor = editor.getCursor();

@@ -127,7 +127,7 @@ export class TaskDashboardView extends ItemView {
     try {
       // Open and Upcoming both need all open tasks; split client-side
       const isOpenish = this.filter === 'open' || this.filter === 'upcoming';
-      const statusParam = isOpenish ? 'open' : this.filter === 'all' ? 'all' : this.filter;
+      const statusParam: 'open' | 'completed' | 'cancelled' | 'all' = isOpenish ? 'open' : this.filter === 'all' ? 'all' : 'completed';
       const limit = this.filter === 'completed' ? 100 : 200;
       const response = await this.mcpClient.queryTasks({
         status: statusParam,
