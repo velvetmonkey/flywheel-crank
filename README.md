@@ -60,13 +60,11 @@ Flywheel Crank turns your Obsidian vault into a knowledge graph. It connects to 
 ## Requirements
 
 - Obsidian desktop (not mobile)
-- [Flywheel Memory](https://github.com/velvetmonkey/flywheel-memory) MCP server (provides the vault index and entity data)
-
-> **Note:** The MCP server is developed and tested with Claude Code. Other MCP clients may work but are untested.
+- [Node.js](https://nodejs.org/) installed (the plugin spawns the MCP server via `npx`)
 
 ## Installation
 
-Manual install (copy built artifacts to your Obsidian plugins directory):
+1. Copy the plugin to your vault:
 
 ```bash
 cd flywheel-crank
@@ -75,13 +73,17 @@ npm run build
 cp main.js manifest.json styles.css flywheel.png /path/to/vault/.obsidian/plugins/flywheel-crank/
 ```
 
-Then enable "Flywheel Crank" in Obsidian Settings > Community Plugins.
+2. Enable "Flywheel Crank" in Obsidian Settings > Community Plugins.
+
+That's it. The plugin automatically downloads and runs [Flywheel Memory](https://github.com/velvetmonkey/flywheel-memory) via `npx` when it starts -- no separate server setup needed. The MCP server runs as a local child process with full access to native modules (better-sqlite3 for StateDb, embeddings, etc.).
+
+Semantic embeddings build automatically on first startup (~23 MB model download). Once built, search and wikilink suggestions use both keywords and meaning. You can also trigger a rebuild manually via the command palette: **Flywheel Crank: Build semantic embeddings**.
 
 ## Configuration
 
-In Obsidian Settings > Flywheel Crank you can configure:
+In Obsidian Settings > Flywheel Crank:
 
-- **MCP server path** -- Path to the flywheel-memory server binary
+- **Server path** -- Leave empty (recommended). The plugin uses `npx @velvetmonkey/flywheel-memory` to run the server. Only set this for local development (e.g., a path to a locally built `dist/index.js`).
 - **Feature toggles** -- Enable/disable individual views (graph sidebar, inline suggestions, etc.)
 - **Exclude folders** -- Folders to skip during indexing
 
@@ -99,4 +101,4 @@ npm test       # run vitest suite
 
 Part of the [Flywheel](https://github.com/velvetmonkey/flywheel) ecosystem. Powered by [Flywheel Memory](https://github.com/velvetmonkey/flywheel-memory).
 
-AGPL-3.0 — see [LICENSE](./LICENSE) for details.
+AGPL-3.0 -- see [LICENSE](./LICENSE) for details.
