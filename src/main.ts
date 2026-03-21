@@ -255,7 +255,7 @@ export default class FlywheelCrankPlugin extends Plugin {
                   editor.setLine(cur.line, stripped);
                 }
                 await this.mcpClient.reportWikilinkFeedback(entity, notePath, false, true);
-                new Notice(`Feedback: "${entity}" is wrong — brackets removed`);
+                new Notice(`"${entity}" suppressed — won't be suggested in this note again`);
               } catch (e) {
                 const detail = e instanceof McpToolError ? ` (${e.toolName})` : '';
                 new Notice(`Failed to record feedback${detail}`);

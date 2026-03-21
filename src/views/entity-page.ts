@@ -182,7 +182,7 @@ export class EntityPageView extends ItemView {
     });
     const goodIcon = goodBtn.createSpan();
     setIcon(goodIcon, 'thumbs-up');
-    setTooltip(goodBtn, 'Boost this entity\u2019s suggestion score \u2014 it will appear more often as a wikilink suggestion');
+    setTooltip(goodBtn, 'Record positive feedback \u2014 boosts this entity\u2019s suggestion score over time');
     goodBtn.addEventListener('click', async () => {
       goodBtn.disabled = true;
       badBtn.disabled = true;
@@ -198,7 +198,7 @@ export class EntityPageView extends ItemView {
     });
     const badIcon = badBtn.createSpan();
     setIcon(badIcon, 'thumbs-down');
-    setTooltip(badBtn, 'Suppress this entity \u2014 it will be suggested less often or not at all');
+    setTooltip(badBtn, 'Immediately suppress this entity everywhere \u2014 it won\u2019t be auto-linked or suggested until you unsuppress it');
     badBtn.addEventListener('click', async () => {
       badBtn.disabled = true;
       goodBtn.disabled = true;

@@ -1487,6 +1487,8 @@ export class FlywheelMcpClient {
 
   /**
    * Record explicit user feedback for a wikilink suggestion.
+   * When negative and notePath is provided, also records a wrong_link correction
+   * for immediate per-pair blocking (no need to wait for statistical suppression).
    */
   async reportWikilinkFeedback(entity: string, notePath: string, correct: boolean, skipStatusUpdate?: boolean): Promise<void> {
     await this.callTool<Record<string, unknown>>('wikilink_feedback', {
@@ -1497,6 +1499,18 @@ export class FlywheelMcpClient {
       context: 'explicit:user_rated',
       ...(skipStatusUpdate ? { skip_status_update: true } : {}),
     });
+    // On negative feedback with a specific note, also record a correction
+    // so this entity+note pair is immediately blocked (not just statistically demoted)
+    if (!correct && notePath) {
+      try {
+        await this.callTool<Record<string, unknown>>('vault_record_correction', {
+          correction_type: 'wrong_link',
+          description: `User rejected wikilink [[${entity}]] in ${notePath}`,
+          entity,
+          note_path: notePath,
+        });
+      } catch { /* corrections category may not be available — non-critical */ }
+    }
     // Notify subscribers (dashboard) that feedback was submitted
     for (const cb of this.feedbackCallbacks) { try { cb(); } catch {} }
   }
