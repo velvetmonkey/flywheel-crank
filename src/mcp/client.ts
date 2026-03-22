@@ -252,8 +252,15 @@ export interface McpScoredSuggestion {
     suppressionPenalty?: number;
     semanticBoost?: number;
     edgeWeightBoost?: number;
+    retrievalCooccurrenceBoost?: number;
   };
   confidence: 'high' | 'medium' | 'low';
+  suppressionContext?: {
+    posteriorMean: number;
+    totalObservations: number;
+    isSuppressed: boolean;
+    falsePositiveRate: number;
+  };
 }
 
 export interface McpSuggestWikilinksResponse {
@@ -636,6 +643,89 @@ export interface McpAliasSuggestion {
 export interface McpAliasSuggestionsResponse {
   suggestion_count: number;
   suggestions: McpAliasSuggestion[];
+}
+
+// Flywheel doctor
+export interface McpDoctorCheck {
+  name: string;
+  status: 'ok' | 'warning' | 'error';
+  detail: string;
+  fix?: string;
+}
+
+export interface McpDoctorResponse {
+  checks: McpDoctorCheck[];
+}
+
+// Co-occurrence gaps
+export interface McpCooccurrenceGap {
+  entity_a: string;
+  entity_b: string;
+  cooccurrence_count: number;
+  a_has_note: boolean;
+  b_has_note: boolean;
+}
+
+export interface McpCooccurrenceGapsResponse {
+  total_gaps: number;
+  returned_count: number;
+  gaps: McpCooccurrenceGap[];
+}
+
+// Stale notes (predict_stale_notes)
+export interface McpStaleNote {
+  path: string;
+  title: string;
+  days_stale: number;
+  importance: number;
+  staleness_risk: number;
+  recommendation: 'archive' | 'update' | 'review' | 'low_priority';
+  signals: {
+    backlink_count: number;
+    hub_score: number;
+    outlink_count: number;
+    has_open_tasks: boolean;
+    status_active: boolean;
+    active_entity_ratio: number;
+  };
+}
+
+export interface McpPredictStaleResponse {
+  criteria: { days: number; min_importance: number; folder: string | null };
+  total_count: number;
+  returned_count: number;
+  notes: McpStaleNote[];
+}
+
+// Concept evolution
+export interface McpConceptEvolutionEvent {
+  date: string;
+  type: string;
+  detail: string;
+  edits_survived?: number;
+}
+
+export interface McpConceptEvolutionResponse {
+  entity: string;
+  current_state: {
+    path: string | null;
+    category: string | null;
+    hub_score: number;
+    backlink_count: number;
+    outlink_count: number;
+    tags: string[];
+    aliases: string[];
+    last_mentioned: string | null;
+    mention_count: number;
+  };
+  timeline: McpConceptEvolutionEvent[];
+  link_stats: {
+    total_links_tracked: number;
+    links_added_in_window: number;
+    avg_edits_survived: number;
+    most_durable_link: { from: string; edits_survived: number } | null;
+  };
+  cooccurrence_neighbors?: Array<{ entity: string; count: number }>;
 }
 
 // Strong connections (edge weights)
@@ -1156,6 +1246,46 @@ export class FlywheelMcpClient {
    */
   async healthCheck(): Promise<McpHealthCheckResponse> {
     return this.callTool<McpHealthCheckResponse>('health_check', {});
+  }
+
+  /**
+   * Run comprehensive vault diagnostics (flywheel_doctor).
+   */
+  async runDoctor(): Promise<McpDoctorResponse> {
+    return this.callTool<McpDoctorResponse>('flywheel_doctor', {});
+  }
+
+  /**
+   * Discover entity pairs that co-occur but lack a backing note.
+   */
+  async discoverCooccurrenceGaps(minCooccurrence = 5, limit = 20): Promise<McpCooccurrenceGapsResponse> {
+    return this.callTool<McpCooccurrenceGapsResponse>('discover_cooccurrence_gaps', {
+      min_cooccurrence: minCooccurrence,
+      limit,
+    });
+  }
+
+  /**
+   * Predict stale notes with multi-signal analysis and recommendations.
+   */
+  async predictStaleNotes(days = 30, minImportance = 10, limit = 20): Promise<McpPredictStaleResponse> {
+    return this.callTool<McpPredictStaleResponse>('predict_stale_notes', {
+      days,
+      min_importance: minImportance,
+      include_recommendations: true,
+      limit,
+    });
+  }
+
+  /**
+   * Track an entity's evolution timeline with link durability and co-occurrence neighbors.
+   */
+  async trackConceptEvolution(entity: string, daysBack = 90): Promise<McpConceptEvolutionResponse> {
+    return this.callTool<McpConceptEvolutionResponse>('track_concept_evolution', {
+      entity,
+      days_back: daysBack,
+      include_cooccurrence: true,
+    });
   }
 
   /**

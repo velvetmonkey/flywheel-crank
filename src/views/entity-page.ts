@@ -52,11 +52,16 @@ export class EntityPageView extends ItemView {
 
     // Check suppression status via dashboard's suppressed list
     let isSuppressed = false;
+    let suppressionFpRate: number | null = null;
     try {
       const dash = await this.mcpClient.wikilinkFeedbackDashboard();
-      isSuppressed = dash.dashboard?.suppressed?.some(
+      const entry = dash.dashboard?.suppressed?.find(
         s => s.entity?.toLowerCase() === this.entityName!.toLowerCase()
-      ) ?? false;
+      );
+      if (entry) {
+        isSuppressed = true;
+        suppressionFpRate = entry.false_positive_rate ?? null;
+      }
     } catch { /* ignore — dashboard not available */ }
 
     // Header
@@ -68,10 +73,29 @@ export class EntityPageView extends ItemView {
       this.app.workspace.openLinkText(this.entityName + '.md', '', false);
     });
 
-    // Suppressed badge
+    // Suppressed badge + details
     if (isSuppressed) {
       const badge = header.createDiv('flywheel-entity-page-badge-suppressed');
       badge.setText('Suppressed');
+
+      if (suppressionFpRate !== null) {
+        const accuracy = Math.round((1 - suppressionFpRate) * 100);
+        const details = header.createDiv('flywheel-entity-page-suppression-details');
+
+        // Accuracy bar
+        const barWrap = details.createDiv('flywheel-entity-page-accuracy-bar');
+        const barFill = barWrap.createDiv('flywheel-entity-page-accuracy-fill');
+        barFill.style.width = `${accuracy}%`;
+        barFill.addClass(
+          accuracy >= 65 ? 'flywheel-accuracy-good'
+            : accuracy >= 35 ? 'flywheel-accuracy-mid'
+              : 'flywheel-accuracy-low'
+        );
+
+        details.createDiv('flywheel-entity-page-suppression-text').setText(
+          `Accuracy: ${accuracy}% \u2014 suppressed because accuracy is below 35% threshold`
+        );
+      }
 
       const unsuppressBtn = header.createEl('button', {
         cls: 'flywheel-entity-page-unsuppress-btn',
@@ -92,6 +116,48 @@ export class EntityPageView extends ItemView {
       });
     }
 
+    // Concept evolution — current state + timeline + co-occurrence neighbors
+    let evolution: Awaited<ReturnType<FlywheelMcpClient['trackConceptEvolution']>> | null = null;
+    try {
+      evolution = await this.mcpClient.trackConceptEvolution(this.entityName, 90);
+    } catch { /* temporal tools may not be available */ }
+
+    // Current state block
+    if (evolution?.current_state) {
+      const cs = evolution.current_state;
+      const stateSection = container.createDiv('flywheel-entity-page-section');
+      stateSection.createDiv('flywheel-entity-page-section-title').setText('Current State');
+      const stateGrid = stateSection.createDiv('flywheel-entity-page-state-grid');
+
+      if (cs.category) {
+        const chip = stateGrid.createSpan('flywheel-entity-page-state-chip');
+        chip.setText(cs.category);
+        setTooltip(chip, 'Entity category');
+      }
+      if (cs.hub_score > 0) {
+        const chip = stateGrid.createSpan('flywheel-entity-page-state-chip');
+        chip.setText(`hub: ${cs.hub_score}`);
+        setTooltip(chip, 'Hub score — higher means more connected');
+      }
+      if (cs.mention_count > 0) {
+        const chip = stateGrid.createSpan('flywheel-entity-page-state-chip');
+        chip.setText(`${cs.mention_count} mentions`);
+        setTooltip(chip, 'Total mentions across vault');
+      }
+      if (cs.last_mentioned) {
+        const chip = stateGrid.createSpan('flywheel-entity-page-state-chip');
+        chip.setText(`last: ${cs.last_mentioned}`);
+        setTooltip(chip, 'Last mentioned date');
+      }
+      if (cs.aliases?.length > 0) {
+        for (const alias of cs.aliases.slice(0, 5)) {
+          const chip = stateGrid.createSpan('flywheel-entity-page-state-chip flywheel-entity-page-alias-chip');
+          chip.setText(alias);
+          setTooltip(chip, 'Alias');
+        }
+      }
+    }
+
     // Score timeline chart
     try {
       const timeline = await this.mcpClient.entityScoreTimeline(this.entityName, 30, 50);
@@ -101,6 +167,72 @@ export class EntityPageView extends ItemView {
         this.renderScoreChart(chartSection, timeline.timeline);
       }
     } catch { /* no timeline data */ }
+
+    // Evolution timeline
+    if (evolution?.timeline?.length) {
+      const timelineSection = container.createDiv('flywheel-entity-page-section');
+      timelineSection.createDiv('flywheel-entity-page-section-title').setText('Activity Timeline');
+
+      const typeIcons: Record<string, string> = {
+        link_added: 'link',
+        feedback_positive: 'thumbs-up',
+        feedback_negative: 'thumbs-down',
+        wikilink_applied: 'wand',
+        note_moved: 'move',
+      };
+
+      const events = evolution.timeline.slice(-30);
+      // Group by date
+      const grouped = new Map<string, typeof events>();
+      for (const evt of events) {
+        const list = grouped.get(evt.date) || [];
+        list.push(evt);
+        grouped.set(evt.date, list);
+      }
+
+      const tl = timelineSection.createDiv('flywheel-entity-page-timeline');
+      for (const [date, evts] of grouped) {
+        const dateGroup = tl.createDiv('flywheel-entity-page-tl-date-group');
+        dateGroup.createDiv('flywheel-entity-page-tl-date').setText(date);
+
+        for (const evt of evts) {
+          const row = dateGroup.createDiv('flywheel-entity-page-tl-event');
+          const iconEl = row.createSpan('flywheel-entity-page-tl-icon');
+          setIcon(iconEl, typeIcons[evt.type] || 'tag');
+          row.createSpan('flywheel-entity-page-tl-detail').setText(evt.detail);
+          if (evt.edits_survived != null && evt.edits_survived > 0) {
+            const survBadge = row.createSpan('flywheel-entity-page-tl-survived');
+            survBadge.setText(`${evt.edits_survived} edits`);
+            setTooltip(survBadge, `Link survived ${evt.edits_survived} subsequent edits`);
+          }
+        }
+      }
+
+      // Link durability stats
+      if (evolution.link_stats?.total_links_tracked > 0) {
+        const ls = evolution.link_stats;
+        const statsRow = timelineSection.createDiv('flywheel-entity-page-link-stats');
+        statsRow.setText(
+          `${ls.total_links_tracked} links tracked \u2022 ${ls.links_added_in_window} added \u2022 avg ${ls.avg_edits_survived.toFixed(1)} edits survived`
+        );
+      }
+    }
+
+    // Co-occurrence neighbors
+    if (evolution?.cooccurrence_neighbors?.length) {
+      const coocSection = container.createDiv('flywheel-entity-page-section');
+      coocSection.createDiv('flywheel-entity-page-section-title').setText('Co-occurs With');
+      const chipContainer = coocSection.createDiv('flywheel-entity-page-cooc-chips');
+      for (const neighbor of evolution.cooccurrence_neighbors.slice(0, 15)) {
+        const chip = chipContainer.createSpan('flywheel-entity-page-cooc-chip flywheel-health-clickable');
+        chip.setText(neighbor.entity);
+        setTooltip(chip, `Co-occurs ${neighbor.count} times`);
+        chip.addEventListener('click', () => {
+          // Navigate to this entity's page
+          (this as any).showEntity(neighbor.entity);
+        });
+      }
+    }
 
     // Backlinks — notes that link to this entity
     try {

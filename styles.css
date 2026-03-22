@@ -1725,6 +1725,96 @@
   margin-bottom: 2px;
 }
 
+/* Doctor check rows */
+.flywheel-health-check-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 6px;
+  padding: 3px 16px 3px 28px;
+  font-size: var(--font-ui-smaller);
+  line-height: 1.5;
+}
+
+.flywheel-health-check-dot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  position: relative;
+  top: -1px;
+}
+
+.flywheel-health-check-ok { background: var(--text-success); }
+.flywheel-health-check-warn { background: var(--text-warning); }
+.flywheel-health-check-error { background: var(--text-error); }
+
+.flywheel-health-check-label {
+  color: var(--text-muted);
+  text-transform: capitalize;
+  min-width: 100px;
+}
+
+.flywheel-health-check-detail {
+  color: var(--text-normal);
+  flex: 1;
+}
+
+.flywheel-health-check-fix {
+  width: 100%;
+  padding-left: 42px;
+  font-size: var(--font-ui-smaller);
+  color: var(--text-faint);
+  font-style: italic;
+}
+
+/* Knowledge gap rows */
+.flywheel-health-gap-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 12px 3px 16px;
+  font-size: var(--font-ui-smaller);
+}
+
+.flywheel-health-gap-entity {
+  font-weight: var(--font-semibold);
+  color: var(--text-normal);
+}
+
+.flywheel-health-gap-missing {
+  font-weight: normal;
+  color: var(--text-faint);
+  font-style: italic;
+}
+
+.flywheel-health-gap-arrow {
+  color: var(--text-faint);
+  flex-shrink: 0;
+}
+
+/* Stale note recommendation badges */
+.flywheel-health-badge-stale-archive {
+  background: hsla(0, 60%, 50%, 0.15);
+  color: var(--text-error);
+}
+
+.flywheel-health-badge-stale-update {
+  background: hsla(30, 70%, 50%, 0.15);
+  color: var(--text-warning);
+}
+
+.flywheel-health-badge-stale-review {
+  background: hsla(50, 70%, 50%, 0.15);
+  color: var(--text-warning);
+}
+
+.flywheel-health-badge-stale-low {
+  background: var(--background-modifier-border);
+  color: var(--text-faint);
+}
+
 /* Health section info icon (same style as graph section info) */
 .flywheel-health-section-info {
   display: inline-flex;
@@ -3691,6 +3781,36 @@
   vertical-align: middle;
 }
 
+.flywheel-entity-page-suppression-details {
+  width: 100%;
+  margin-top: 6px;
+  padding-left: 4px;
+}
+
+.flywheel-entity-page-accuracy-bar {
+  height: 6px;
+  background: var(--background-modifier-border);
+  border-radius: 3px;
+  overflow: hidden;
+  max-width: 200px;
+  margin-bottom: 4px;
+}
+
+.flywheel-entity-page-accuracy-fill {
+  height: 100%;
+  border-radius: 3px;
+  transition: width 0.3s;
+}
+
+.flywheel-accuracy-good { background: var(--text-success); }
+.flywheel-accuracy-mid { background: var(--text-warning); }
+.flywheel-accuracy-low { background: var(--text-error); }
+
+.flywheel-entity-page-suppression-text {
+  font-size: 11px;
+  color: var(--text-faint);
+}
+
 .flywheel-entity-page-unsuppress-btn {
   margin-left: 8px;
   font-size: 12px;
@@ -3822,6 +3942,111 @@
   border-color: var(--text-success);
   color: var(--text-success);
   cursor: default;
+}
+
+/* Entity current state chips */
+.flywheel-entity-page-state-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.flywheel-entity-page-state-chip {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 10px;
+  font-size: 11px;
+  background: var(--background-modifier-border);
+  color: var(--text-muted);
+}
+
+.flywheel-entity-page-alias-chip {
+  font-style: italic;
+  background: var(--background-secondary);
+}
+
+/* Entity timeline */
+.flywheel-entity-page-timeline {
+  padding-left: 4px;
+}
+
+.flywheel-entity-page-tl-date-group {
+  margin-bottom: 8px;
+}
+
+.flywheel-entity-page-tl-date {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-faint);
+  margin-bottom: 4px;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.flywheel-entity-page-tl-event {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 0 2px 8px;
+  border-left: 2px solid var(--background-modifier-border);
+  font-size: 12px;
+}
+
+.flywheel-entity-page-tl-icon {
+  display: inline-flex;
+  color: var(--text-faint);
+  flex-shrink: 0;
+}
+
+.flywheel-entity-page-tl-icon .svg-icon {
+  width: 12px;
+  height: 12px;
+}
+
+.flywheel-entity-page-tl-detail {
+  color: var(--text-muted);
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.flywheel-entity-page-tl-survived {
+  font-size: 10px;
+  padding: 1px 5px;
+  border-radius: 8px;
+  background: var(--background-secondary);
+  color: var(--text-faint);
+  flex-shrink: 0;
+}
+
+.flywheel-entity-page-link-stats {
+  font-size: 11px;
+  color: var(--text-faint);
+  margin-top: 6px;
+  padding-left: 8px;
+}
+
+/* Co-occurrence neighbor chips */
+.flywheel-entity-page-cooc-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.flywheel-entity-page-cooc-chip {
+  display: inline-block;
+  padding: 3px 10px;
+  border-radius: 12px;
+  font-size: 12px;
+  background: var(--background-secondary);
+  color: var(--text-accent);
+  cursor: pointer;
+}
+
+.flywheel-entity-page-cooc-chip:hover {
+  background: var(--interactive-accent);
+  color: var(--text-on-accent);
 }
 
 .flywheel-entity-page-actions {

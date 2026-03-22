@@ -32,6 +32,10 @@ const TTL_5S_TOOLS = new Set([
   'tasks',
   'server_log',
   'validate_links',
+  'flywheel_doctor',
+  'discover_cooccurrence_gaps',
+  'predict_stale_notes',
+  'track_concept_evolution',
 ]);
 
 const TTL_30S_TOOLS = new Set([

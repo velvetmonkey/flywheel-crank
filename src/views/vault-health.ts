@@ -176,41 +176,34 @@ export class VaultHealthView extends ItemView {
       return count;
     }, 'Aggregate statistics about your vault\'s link structure, most connected notes, and popular tags.');
 
-    // Technical Details section — lazy-loaded
-    this.renderLazySection(content, 'Technical Details', 'cpu', async (el) => {
-      const health = await this.mcpClient.healthCheck();
-
+    // System Diagnostics section — flywheel_doctor
+    this.renderLazySection(content, 'System Diagnostics', 'stethoscope', async (el) => {
       this.renderInfoRow(el, 'Crank', `v${this.pluginVersion}`);
       this.renderInfoRow(el, 'Server', `flywheel-memory v${this.mcpClient.serverVersion ?? 'unknown'}`);
 
-      const graphStatus = health.index_state === 'ready'
-        ? `ready \u00B7 ${health.note_count} notes`
-        : health.index_state === 'building' ? 'building...' : 'error';
-      this.renderInfoRow(el, 'Graph index', graphStatus);
+      const doctor = await this.mcpClient.runDoctor();
+      const checks = doctor.checks ?? [];
+      let issueCount = 0;
 
-      const fts5Status = health.fts5_building
-        ? 'building...'
-        : health.fts5_ready ? 'ready \u00B7 full-text with stemming' : 'not built';
-      this.renderInfoRow(el, 'Keyword search', fts5Status);
-
-      const semanticStatus = health.embeddings_building
-        ? 'building...'
-        : health.embeddings_ready
-          ? `ready \u00B7 ${health.embeddings_count} embeddings`
-          : 'not built';
-      this.renderInfoRow(el, 'Semantic search', semanticStatus);
-
-      this.renderInfoRow(el, 'Vault path', health.vault_path);
-      this.renderInfoRow(el, 'StateDb', `${health.vault_path}/.flywheel/state.db`);
-      if (health.schema_version) {
-        this.renderInfoRow(el, 'Schema', `v${health.schema_version}`);
+      for (const check of checks) {
+        if (check.status !== 'ok') issueCount++;
+        const row = el.createDiv('flywheel-health-check-row');
+        const dot = row.createSpan('flywheel-health-check-dot');
+        dot.addClass(
+          check.status === 'ok' ? 'flywheel-health-check-ok'
+            : check.status === 'warning' ? 'flywheel-health-check-warn'
+              : 'flywheel-health-check-error'
+        );
+        const label = check.name.replace(/_/g, ' ');
+        row.createSpan('flywheel-health-check-label').setText(label);
+        row.createSpan('flywheel-health-check-detail').setText(check.detail);
+        if (check.fix) {
+          row.createDiv('flywheel-health-check-fix').setText(check.fix);
+        }
       }
-      const age = health.index_age_seconds >= 0 ? this.formatAge(health.index_age_seconds) : '\u2014';
-      this.renderInfoRow(el, 'Index age', `${age} ago`);
-      this.renderInfoRow(el, 'Transport', 'stdio');
 
-      return 1;
-    }, 'Server connection status, index health, and database schema information.');
+      return issueCount;
+    }, 'Comprehensive vault diagnostics — schema, index, embeddings, watcher, suppression, and disk health.');
 
     // Activity Log section — lazy-loaded with auto-refresh
     this.renderActivityLogSection(content);
@@ -450,15 +443,21 @@ export class VaultHealthView extends ItemView {
       return total;
     }, '[[Wikilinks]] pointing to notes that don\'t exist in the vault. Sorted by frequency — bolder = more references. Click + to create the missing note.');
 
-    // Stale Hubs section — lazy-loaded
-    this.renderLazySection(content, 'Stale Hubs', 'clock', async (el) => {
-      const resp = await this.mcpClient.graphAnalysis('stale', { days: 90, limit: 20 });
-      const items = (resp as any).notes ?? (resp as any).stale_notes ?? [];
-      if (items.length === 0) {
-        el.createDiv('flywheel-health-empty-msg').setText('No stale hubs \u2014 all highly-linked notes have been updated within 90 days.');
-        return items.length;
+    // Stale Notes section — predict_stale_notes
+    this.renderLazySection(content, 'Stale Notes', 'clock', async (el) => {
+      const resp = await this.mcpClient.predictStaleNotes(30, 10, 20);
+      const notes = resp.notes ?? [];
+      if (notes.length === 0) {
+        el.createDiv('flywheel-health-empty-msg').setText('No stale notes found \u2014 important notes are up to date.');
+        return 0;
       }
-      for (const note of items.slice(0, 20)) {
+      const recColors: Record<string, string> = {
+        archive: 'flywheel-health-badge-stale-archive',
+        update: 'flywheel-health-badge-stale-update',
+        review: 'flywheel-health-badge-stale-review',
+        low_priority: 'flywheel-health-badge-stale-low',
+      };
+      for (const note of notes) {
         const item = el.createDiv('flywheel-health-item flywheel-health-clickable');
         item.addEventListener('click', () => this.app.workspace.openLinkText(note.path, '', false));
 
@@ -466,31 +465,36 @@ export class VaultHealthView extends ItemView {
         row.createDiv('flywheel-health-item-title').setText(note.title || note.path);
 
         const badges = row.createDiv('flywheel-health-badges');
-        if (note.days_since_modified != null) {
-          const ageBadge = badges.createSpan('flywheel-health-badge flywheel-health-badge-out');
-          ageBadge.setText(`${note.days_since_modified}d ago`);
-          setTooltip(ageBadge, `Last edited ${note.days_since_modified} days ago`);
-        }
-        if (note.backlinks != null || note.backlink_count != null) {
-          const bl = note.backlinks ?? note.backlink_count;
-          const inBadge = badges.createSpan('flywheel-health-badge flywheel-health-badge-in');
-          inBadge.setText(`\u2190 ${bl}`);
-          setTooltip(inBadge, `${bl} notes contain a [[link]] to this note`);
-        }
+
+        // Recommendation badge
+        const recBadge = badges.createSpan(`flywheel-health-badge ${recColors[note.recommendation] ?? ''}`);
+        recBadge.setText(note.recommendation.replace('_', ' '));
+
+        // Days stale
+        const ageBadge = badges.createSpan('flywheel-health-badge flywheel-health-badge-out');
+        ageBadge.setText(`${note.days_stale}d`);
+
+        // Tooltip with signal breakdown
+        const sig = note.signals;
+        setTooltip(item, [
+          `Importance: ${note.importance} \u2022 Staleness risk: ${note.staleness_risk}`,
+          `Backlinks: ${sig.backlink_count} \u2022 Hub score: ${sig.hub_score}`,
+          `Outlinks: ${sig.outlink_count} \u2022 Active entity ratio: ${Math.round(sig.active_entity_ratio * 100)}%`,
+          sig.has_open_tasks ? 'Has open tasks' : '',
+          sig.status_active ? 'Status: active' : '',
+        ].filter(Boolean).join('\n'));
 
         const reviewBtn = row.createEl('button', { cls: 'flywheel-health-action-btn', text: 'Review' });
-        setTooltip(reviewBtn, `Open this note in the editor. It has ${note.backlinks ?? note.backlink_count ?? '?'} backlinks but hasn't been touched in ${note.days_since_modified ?? '?'}+ days — may need updating.`);
         reviewBtn.addEventListener('click', (e) => {
           e.stopPropagation();
           this.app.workspace.openLinkText(note.path, '', false);
         });
       }
-      const total = (resp as any).total ?? items.length;
-      if (total > 20) {
-        el.createDiv('flywheel-health-more').setText(`+${total - 20} more`);
+      if (resp.total_count > notes.length) {
+        el.createDiv('flywheel-health-more').setText(`+${resp.total_count - notes.length} more`);
       }
-      return total;
-    }, 'Notes with many backlinks that haven\'t been updated in 90+ days. These are important notes (many others reference them) that may contain outdated information.');
+      return resp.total_count;
+    }, 'Notes predicted to be stale based on multiple signals: age, backlink importance, hub score, open tasks, and entity activity. Recommendations: update (high-value, needs refresh), review (has open tasks or active status), archive (low-value, very old).');
 
     // Immature Notes section — lazy-loaded
     this.renderLazySection(content, 'Immature Notes', 'sprout', async (el) => {
@@ -608,6 +612,65 @@ export class VaultHealthView extends ItemView {
       }
       return total;
     }, 'Notes gaining backlinks recently \u2014 these are becoming central topics in your vault.');
+
+    // Knowledge Gaps — co-occurrence gaps
+    this.renderLazySection(content, 'Knowledge Gaps', 'puzzle', async (el) => {
+      const resp = await this.mcpClient.discoverCooccurrenceGaps(5, 20);
+      const gaps = resp.gaps ?? [];
+      if (gaps.length === 0) {
+        el.createDiv('flywheel-health-empty-msg').setText('No knowledge gaps found \u2014 all frequently co-occurring entity pairs have backing notes.');
+        return 0;
+      }
+      for (const gap of gaps) {
+        const row = el.createDiv('flywheel-health-item');
+        const inner = row.createDiv('flywheel-health-gap-row');
+
+        const aEl = inner.createSpan(gap.a_has_note ? 'flywheel-health-gap-entity' : 'flywheel-health-gap-entity flywheel-health-gap-missing');
+        aEl.setText(gap.entity_a);
+        if (gap.a_has_note) {
+          aEl.addClass('flywheel-health-clickable');
+          aEl.addEventListener('click', () => this.app.workspace.openLinkText(gap.entity_a + '.md', '', false));
+        }
+
+        inner.createSpan('flywheel-health-gap-arrow').setText('\u2194');
+
+        const bEl = inner.createSpan(gap.b_has_note ? 'flywheel-health-gap-entity' : 'flywheel-health-gap-entity flywheel-health-gap-missing');
+        bEl.setText(gap.entity_b);
+        if (gap.b_has_note) {
+          bEl.addClass('flywheel-health-clickable');
+          bEl.addEventListener('click', () => this.app.workspace.openLinkText(gap.entity_b + '.md', '', false));
+        }
+
+        const countBadge = inner.createSpan('flywheel-health-badge');
+        countBadge.setText(`${gap.cooccurrence_count}x`);
+        setTooltip(countBadge, `Co-occur in ${gap.cooccurrence_count} notes`);
+
+        // Create button for the entity missing a note
+        const missingEntity = !gap.a_has_note ? gap.entity_a : !gap.b_has_note ? gap.entity_b : null;
+        if (missingEntity) {
+          const createBtn = inner.createEl('button', { cls: 'flywheel-health-action-btn', text: 'Create' });
+          setTooltip(createBtn, `Create a note for "${missingEntity}"`);
+          createBtn.addEventListener('click', async (e) => {
+            e.stopPropagation();
+            createBtn.disabled = true;
+            createBtn.setText('...');
+            try {
+              await this.mcpClient.createNote(missingEntity, '');
+              this.app.workspace.openLinkText(missingEntity + '.md', '', false);
+              createBtn.setText('\u2713');
+              createBtn.addClass('flywheel-health-fix-btn-done');
+            } catch (err) {
+              createBtn.setText('Failed');
+              createBtn.disabled = false;
+            }
+          });
+        }
+      }
+      if (resp.total_gaps > gaps.length) {
+        el.createDiv('flywheel-health-more').setText(`+${resp.total_gaps - gaps.length} more`);
+      }
+      return resp.total_gaps;
+    }, 'Entity pairs that frequently appear together in your notes but where one or both lack a dedicated note. Creating the missing note strengthens the knowledge graph.');
 
     // Growth section — lazy-loaded
     this.renderLazySection(content, 'Growth', 'bar-chart-3', async (el) => {
