@@ -35,7 +35,11 @@ export interface McpSearchResult {
   hub_score?: number;
   backlink_count?: number;
   outlink_count?: number;
+  outlink_names?: string[];
   modified?: string;
+  // Multi-hop provenance
+  via?: string;
+  hop?: number;
 }
 
 export interface McpSearchResponse {
@@ -983,7 +987,7 @@ export class FlywheelMcpClient {
       args = [serverPath];
     } else {
       command = isWindows ? 'npx.cmd' : 'npx';
-      args = ['-y', '@velvetmonkey/flywheel-memory@2.0.122']; // Pin version — bump when releasing new flywheel-memory
+      args = ['-y', '@velvetmonkey/flywheel-memory@2.0.124']; // Pin version — bump when releasing new flywheel-memory
     }
 
     console.log(`Flywheel Crank: spawning ${command} ${args.join(' ')}`);
