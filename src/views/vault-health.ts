@@ -105,40 +105,26 @@ export class VaultHealthView extends ItemView {
 
     const content = container.createDiv('flywheel-health-content');
 
-    // Vault Config section — lazy-loaded
+    // Vault Config section — lazy-loaded (subscribes to health updates if config not yet inferred)
     this.renderLazySection(content, 'Vault Config', 'settings', async (el) => {
-      const health = await this.mcpClient.healthCheck();
+      const health = this.mcpClient.lastHealth ?? await this.mcpClient.healthCheck();
       const cfg = health.config as Record<string, any> | undefined;
       if (!cfg || Object.keys(cfg).length === 0) {
-        el.createDiv('flywheel-health-empty-msg').setText('No config detected yet');
+        const waitMsg = el.createDiv('flywheel-health-empty-msg');
+        waitMsg.setText('Waiting for config inference...');
+        // Re-render when config arrives via health poll
+        const unsub = this.mcpClient.onHealthUpdate((h) => {
+          const c = h.config as Record<string, any> | undefined;
+          if (c && Object.keys(c).length > 0) {
+            unsub();
+            el.empty();
+            this.renderVaultConfig(el, c);
+          }
+        });
+        this.register(() => unsub());
         return 0;
       }
-      let count = 0;
-      const paths = cfg.paths as Record<string, string> | undefined;
-      const templates = cfg.templates as Record<string, string> | undefined;
-
-      if (paths && Object.keys(paths).length > 0) {
-        const labels: Record<string, string> = {
-          daily_notes: 'Daily', weekly_notes: 'Weekly', monthly_notes: 'Monthly',
-          quarterly_notes: 'Quarterly', yearly_notes: 'Yearly', templates: 'Templates',
-        };
-        for (const [key, path] of Object.entries(paths)) {
-          if (path) { this.renderInfoRow(el, labels[key] ?? key, path); count++; }
-        }
-      }
-      if (templates && Object.keys(templates).length > 0) {
-        const tplLabels: Record<string, string> = {
-          daily: 'Daily tpl', weekly: 'Weekly tpl', monthly: 'Monthly tpl',
-          quarterly: 'Quarterly tpl', yearly: 'Yearly tpl',
-        };
-        for (const [key, path] of Object.entries(templates)) {
-          if (path) { this.renderInfoRow(el, tplLabels[key] ?? key, path); count++; }
-        }
-      }
-      if (count === 0) {
-        el.createDiv('flywheel-health-empty-msg').setText('No periodic locations configured');
-      }
-      return count;
+      return this.renderVaultConfig(el, cfg);
     }, 'Auto-detected folder paths and templates for periodic notes (daily, weekly, monthly, etc.).');
 
     // Vault Stats section — lazy-loaded
@@ -906,6 +892,36 @@ export class VaultHealthView extends ItemView {
     setIcon(iconEl, icon);
     stat.createDiv('flywheel-health-growth-stat-value').setText(value);
     stat.createDiv('flywheel-health-growth-stat-label').setText(label);
+  }
+
+  /** Render vault config (paths + templates) into a container. Returns item count. */
+  private renderVaultConfig(el: HTMLDivElement, cfg: Record<string, any>): number {
+    let count = 0;
+    const paths = cfg.paths as Record<string, string> | undefined;
+    const templates = cfg.templates as Record<string, string> | undefined;
+
+    if (paths && Object.keys(paths).length > 0) {
+      const labels: Record<string, string> = {
+        daily_notes: 'Daily', weekly_notes: 'Weekly', monthly_notes: 'Monthly',
+        quarterly_notes: 'Quarterly', yearly_notes: 'Yearly', templates: 'Templates',
+      };
+      for (const [key, path] of Object.entries(paths)) {
+        if (path) { this.renderInfoRow(el, labels[key] ?? key, path); count++; }
+      }
+    }
+    if (templates && Object.keys(templates).length > 0) {
+      const tplLabels: Record<string, string> = {
+        daily: 'Daily tpl', weekly: 'Weekly tpl', monthly: 'Monthly tpl',
+        quarterly: 'Quarterly tpl', yearly: 'Yearly tpl',
+      };
+      for (const [key, path] of Object.entries(templates)) {
+        if (path) { this.renderInfoRow(el, tplLabels[key] ?? key, path); count++; }
+      }
+    }
+    if (count === 0) {
+      el.createDiv('flywheel-health-empty-msg').setText('No periodic locations configured');
+    }
+    return count;
   }
 
   private renderInfoRow(container: HTMLDivElement, label: string, value: string): void {
