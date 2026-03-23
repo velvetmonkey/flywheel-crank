@@ -280,9 +280,12 @@ export class TaskDashboardView extends ItemView {
       this.renderFolder(list, folder, tasks);
     }
 
-    // Summary bar
+    // Summary bar — use filtered count when undated tasks are hidden
     const summary = container.createDiv('flywheel-task-summary');
-    const parts = [`${this.counts.open} open`];
+    const displayedOpen = (this.filter === 'open' && !this.showUndated)
+      ? this.tasks.filter(t => t.due_date != null).length
+      : this.counts.open;
+    const parts = [`${displayedOpen} open`];
     if (this.counts.upcoming > 0) parts.push(`${this.counts.upcoming} upcoming`);
     parts.push(`${this.counts.completed} done`);
     parts.push(`${this.counts.total} total`);
