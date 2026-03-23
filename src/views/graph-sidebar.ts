@@ -41,26 +41,26 @@ interface GraphEdge {
   weight: number;
 }
 
-/** Solid category colors for canvas rendering — maximally distinct hues. */
+/** Colorblind-safe category colors — Paul Tol qualitative palette (no same-hue pairs). */
 const CATEGORY_CANVAS_COLORS: Record<string, string> = {
-  people:        '#5b9bf5', // blue
-  projects:      '#43d17a', // green
-  technologies:  '#a78bfa', // violet
-  locations:     '#f59e42', // orange
-  organizations: '#06b6d4', // cyan
-  concepts:      '#ec4899', // hot pink
-  animals:       '#84cc16', // lime
-  media:         '#d946ef', // magenta
-  events:        '#eab308', // yellow
-  documents:     '#78716c', // warm gray
-  vehicles:      '#e67635', // burnt orange
-  health:        '#ef4444', // red
-  finance:       '#10b981', // emerald
-  food:          '#f5a623', // amber
-  hobbies:       '#8b5cf6', // purple
-  acronyms:      '#38bdf8', // sky blue
-  periodical:    '#6b7280', // slate
-  other:         '#a1a1aa', // zinc
+  people:        '#4477AA', // tol blue
+  projects:      '#EE6677', // tol rose
+  technologies:  '#228833', // tol green
+  locations:     '#CCBB44', // tol yellow
+  organizations: '#66CCEE', // tol cyan
+  concepts:      '#AA3377', // tol magenta
+  animals:       '#BBCC33', // tol pear
+  media:         '#EE8866', // tol orange
+  events:        '#44BB99', // tol teal
+  documents:     '#99DDFF', // tol light cyan
+  vehicles:      '#DDCC77', // tol sand
+  health:        '#CC6677', // tol wine
+  finance:       '#882255', // tol plum
+  food:          '#DDAA33', // tol gold
+  hobbies:       '#332288', // tol indigo
+  acronyms:      '#88CCEE', // tol sky
+  periodical:    '#999999', // neutral gray
+  other:         '#BBBBBB', // light gray
 };
 
 export class GraphSidebarView extends ItemView {

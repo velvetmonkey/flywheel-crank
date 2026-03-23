@@ -160,7 +160,7 @@ export class EntityPageView extends ItemView {
 
     // Score timeline chart
     try {
-      const timeline = await this.mcpClient.entityScoreTimeline(this.entityName, 30, 50);
+      const timeline = await this.mcpClient.entityScoreTimeline(this.entityName, 90, 90);
       if (timeline.timeline?.length > 1) {
         const chartSection = container.createDiv('flywheel-entity-page-section');
         chartSection.createDiv('flywheel-entity-page-section-title').setText('Score History');

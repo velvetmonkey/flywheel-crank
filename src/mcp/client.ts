@@ -1731,7 +1731,7 @@ export class FlywheelMcpClient {
   /**
    * Get an entity's score timeline over time.
    */
-  async entityScoreTimeline(entity: string, daysBack = 30, limit = 100): Promise<McpEntityTimelineResponse> {
+  async entityScoreTimeline(entity: string, daysBack = 90, limit = 90): Promise<McpEntityTimelineResponse> {
     return this.callTool<McpEntityTimelineResponse>('wikilink_feedback', {
       mode: 'entity_timeline',
       entity,
