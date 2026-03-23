@@ -14,6 +14,13 @@ Flywheel Crank turns your Obsidian vault into a knowledge graph. It connects to 
 
 ## Screenshots
 
+<details open>
+<summary><strong>Wikilink Suggestions in Action</strong></summary>
+
+https://github.com/user-attachments/assets/67abebec-fa2f-4c0a-be9d-e6d4958ffe86
+
+</details>
+
 <table>
   <tr>
     <td align="center"><a href="screenshots/graph-sidebar.png"><img src="screenshots/graph-sidebar.png" width="400" alt="Graph Sidebar"/></a><br/><sub>Graph Sidebar</sub></td>
