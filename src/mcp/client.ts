@@ -987,7 +987,7 @@ export class FlywheelMcpClient {
       args = [serverPath];
     } else {
       command = isWindows ? 'npx.cmd' : 'npx';
-      args = ['-y', '@velvetmonkey/flywheel-memory@2.0.135']; // Pin version — bump when releasing new flywheel-memory
+      args = ['-y', '@velvetmonkey/flywheel-memory@2.0.136']; // Pin version — bump when releasing new flywheel-memory
     }
 
     console.log(`Flywheel Crank: spawning ${command} ${args.join(' ')}`);
