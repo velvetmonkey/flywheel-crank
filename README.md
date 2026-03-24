@@ -1,7 +1,7 @@
 <div align="center">
   <img src="flywheel.png" alt="Flywheel" width="256"/>
   <h1>Flywheel Crank</h1>
-  <p><strong>A window intp your local vault's MCP server.</strong><br/>Obsidian plugin — no data leaves your machine, no accounts, no sync.</p>
+  <p><strong>A window into your local vault's MCP server.</strong><br/>Obsidian plugin — no data leaves your machine, no accounts, no sync.</p>
 </div>
 
 [![License: AGPL-3.0](https://img.shields.io/badge/License-AGPL--3.0-blue.svg)](https://www.gnu.org/licenses/agpl-3.0)
