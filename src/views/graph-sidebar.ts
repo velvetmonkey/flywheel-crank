@@ -1540,9 +1540,18 @@ export class GraphSidebarView extends ItemView {
       }
     }
 
+    const forwardLinkPaths = new Set<string>();
+    const MAX_DEAD_LINKS = 5;
+    let deadLinkCount = 0;
     for (const f of forwardLinksResp?.forward_links ?? []) {
       const p = f.resolved_path ?? f.target;
       if (!p) continue;
+      // Cap dead links to avoid flooding the graph on heavily-linked notes
+      if (!f.exists) {
+        if (deadLinkCount >= MAX_DEAD_LINKS) continue;
+        deadLinkCount++;
+      }
+      forwardLinkPaths.add(nk(p));
       if (!hasNode(p)) {
         const periodic = isPeriodicPath(p);
         neighborPaths.push(p);
@@ -1564,15 +1573,30 @@ export class GraphSidebarView extends ItemView {
       }
     }
 
-    // Cap neighbors to avoid overcrowded graphs — keep highest-weight edges
-    const MAX_NEIGHBORS = 8;
+    // Cap neighbors — prioritize entity nodes over periodic (daily) notes
+    const MAX_NEIGHBORS = 12;
+    const MAX_PERIODIC = 3;
     if (neighborPaths.length > MAX_NEIGHBORS) {
       const ranked = edges
         .map(e => ({ path: e.source === notePath ? e.target : e.source, weight: e.weight }))
         .sort((a, b) => b.weight - a.weight);
-      const keep = new Set(ranked.slice(0, MAX_NEIGHBORS).map(r => r.path));
+
+      // Split into entity vs periodic, keep best of each within budget
+      const keep = new Set<string>();
+      let periodicKept = 0;
+      for (const r of ranked) {
+        const key = nk(r.path);
+        const node = nodeMap.get(key);
+        if (node?.isPeriodic) {
+          if (periodicKept < MAX_PERIODIC) { keep.add(key); periodicKept++; }
+        } else {
+          keep.add(key);
+        }
+        if (keep.size >= MAX_NEIGHBORS) break;
+      }
+
       for (const p of neighborPaths) {
-        if (!keep.has(p)) {
+        if (!keep.has(nk(p))) {
           nodeMap.delete(nk(p));
         }
       }

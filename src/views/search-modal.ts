@@ -210,7 +210,16 @@ export class SearchModal extends Modal {
         return;
       }
 
-      this.results = response.results;
+      // Filter: skip stale paths (moved/deleted files) + deduplicate
+      const seen = new Set<string>();
+      this.results = response.results.filter((r: McpSearchResult) => {
+        const key = r.path?.toLowerCase();
+        if (!key || seen.has(key)) return false;
+        // Skip results whose file no longer exists in the vault
+        if (!this.app.vault.getAbstractFileByPath(r.path)) return false;
+        seen.add(key);
+        return true;
+      });
       this.searchMethod = response.method;
       this.selectedIndex = 0;
 

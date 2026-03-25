@@ -234,6 +234,7 @@
   align-items: baseline;
   gap: 6px;
   min-width: 0;
+  overflow: hidden;
 }
 
 .flywheel-search-result-category-icon {
