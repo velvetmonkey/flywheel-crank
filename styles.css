@@ -352,6 +352,12 @@
   gap: 6px;
 }
 
+.flywheel-graph-loading {
+  padding: 16px;
+  color: var(--text-faint);
+  font-size: var(--font-ui-small);
+}
+
 .flywheel-graph-note-title {
   font-weight: var(--font-semibold);
   font-size: var(--font-ui-medium);
@@ -2935,9 +2941,9 @@
 }
 
 .flywheel-task-text {
-  font-size: var(--font-ui-medium);
+  font-size: 12px;
   color: var(--text-normal);
-  line-height: 1.5;
+  line-height: 1.35;
 }
 
 .flywheel-task-text.is-completed {

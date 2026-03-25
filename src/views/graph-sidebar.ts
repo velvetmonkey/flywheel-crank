@@ -33,6 +33,8 @@ interface GraphNode {
   isSecondary?: boolean;
   /** Periodic note (daily, weekly, etc.) — dimmed and pushed outward */
   isPeriodic?: boolean;
+  /** Forward link target that doesn't have its own note */
+  isDeadLink?: boolean;
 }
 
 interface GraphEdge {
@@ -660,6 +662,21 @@ export class GraphSidebarView extends ItemView {
     try {
       if (generation !== this.renderGeneration) return;
 
+      // Swap immediately so header + loading indicator appear instantly
+      if (freshContainer) {
+        this.noteContainer.empty();
+        while (freshContainer.firstChild) {
+          this.noteContainer.appendChild(freshContainer.firstChild);
+        }
+      }
+
+      // Loading indicator while MCP data arrives
+      const loadingEl = this.noteContainer.createDiv('flywheel-graph-loading');
+      loadingEl.createSpan({ text: 'Loading...' });
+
+      // Fire folder chips independently (has its own MCP call)
+      this.renderFolderChips(file, generation);
+
       const noteContent = await this.app.vault.cachedRead(file);
       const [backlinksResp, forwardLinksResp, suggestResp, similarResp, health, semanticResp, connectionsResp, entityHubScores] = await Promise.all([
         this.mcpClient.getBacklinks(notePath).catch(() => null),
@@ -674,13 +691,8 @@ export class GraphSidebarView extends ItemView {
 
       if (generation !== this.renderGeneration) return;
 
-      // Swap: replace old content with the fresh container now that data is ready
-      if (freshContainer) {
-        this.noteContainer.empty();
-        while (freshContainer.firstChild) {
-          this.noteContainer.appendChild(freshContainer.firstChild);
-        }
-      }
+      // Remove loading indicator
+      loadingEl.remove();
 
       // Ensure periodic prefixes are set for cloud splitting
       if (this.periodicPrefixes.length === 0 && health?.config) {
@@ -700,9 +712,6 @@ export class GraphSidebarView extends ItemView {
         seen.add(key);
         return true;
       });
-
-      // Folder chips — compact frontmatter suggestions below header
-      await this.renderFolderChips(file, generation);
 
       const safeBacklinks = backlinksResp ?? { note: '', backlink_count: 0, returned_count: 0, backlinks: [] as McpBacklinksResponse['backlinks'] };
       const safeForwardLinks = forwardLinksResp ?? { note: '', forward_link_count: 0, forward_links: [] as McpForwardLinksResponse['forward_links'] };
@@ -757,7 +766,7 @@ export class GraphSidebarView extends ItemView {
 
             canvas.addEventListener('click', (e) => {
               const node = hitTest(e);
-              if (node && !node.isCurrent) {
+              if (node && !node.isCurrent && !node.isDeadLink) {
                 this.app.workspace.openLinkText(node.id, '', false);
               }
             });
@@ -1533,7 +1542,7 @@ export class GraphSidebarView extends ItemView {
 
     for (const f of forwardLinksResp?.forward_links ?? []) {
       const p = f.resolved_path ?? f.target;
-      if (!p || !f.exists) continue;
+      if (!p) continue;
       if (!hasNode(p)) {
         const periodic = isPeriodicPath(p);
         neighborPaths.push(p);
@@ -1543,6 +1552,7 @@ export class GraphSidebarView extends ItemView {
           vx: 0, vy: 0, radius: periodic ? Math.max(4, radiusFor(p) * 0.7) : radiusFor(p),
           color: CATEGORY_CANVAS_COLORS.other, isCurrent: false,
           isPeriodic: periodic || undefined,
+          isDeadLink: !f.exists || undefined,
         });
       }
       const cid = canonId(p);
@@ -1873,14 +1883,23 @@ export class GraphSidebarView extends ItemView {
     for (const n of nodes) {
       ctx.beginPath();
       ctx.arc(cx + n.x, cy + n.y, n.radius, 0, Math.PI * 2);
-      ctx.globalAlpha = n.isPeriodic ? 0.3 : n.isSecondary ? 0.45 : 1;
+      ctx.globalAlpha = n.isPeriodic ? 0.3 : n.isSecondary ? 0.45 : n.isDeadLink ? 0.6 : 1;
       // Resolve CSS var for current node color
       if (n.isCurrent) {
         ctx.fillStyle = getComputedStyle(container).getPropertyValue('--interactive-accent').trim() || '#7c3aed';
       } else {
         ctx.fillStyle = n.color;
       }
-      ctx.fill();
+      if (n.isDeadLink) {
+        // Hollow circle for dead links (entity referenced but no note exists)
+        ctx.lineWidth = 2;
+        ctx.strokeStyle = n.color;
+        ctx.setLineDash([3, 3]);
+        ctx.stroke();
+        ctx.setLineDash([]);
+      } else {
+        ctx.fill();
+      }
       ctx.globalAlpha = 1;
     }
 
