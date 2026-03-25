@@ -29,6 +29,8 @@ interface GraphNode {
   radius: number;
   color: string;
   isCurrent: boolean;
+  /** Fine-grained entity category (e.g. "people", "technologies") */
+  category?: string;
   /** 2-hop node — rendered smaller and more faded */
   isSecondary?: boolean;
   /** Periodic note (daily, weekly, etc.) — dimmed and pushed outward */
@@ -43,26 +45,50 @@ interface GraphEdge {
   weight: number;
 }
 
-/** Colorblind-safe category colors — Paul Tol qualitative palette (no same-hue pairs). */
-const CATEGORY_CANVAS_COLORS: Record<string, string> = {
-  people:        '#4477AA', // tol blue
-  projects:      '#EE6677', // tol rose
-  technologies:  '#228833', // tol green
-  locations:     '#CCBB44', // tol yellow
-  organizations: '#66CCEE', // tol cyan
-  concepts:      '#AA3377', // tol magenta
-  animals:       '#BBCC33', // tol pear
-  media:         '#EE8866', // tol orange
-  events:        '#44BB99', // tol teal
-  documents:     '#99DDFF', // tol light cyan
-  vehicles:      '#DDCC77', // tol sand
-  health:        '#CC6677', // tol wine
-  finance:       '#882255', // tol plum
-  food:          '#DDAA33', // tol gold
-  hobbies:       '#332288', // tol indigo
-  acronyms:      '#88CCEE', // tol sky
-  periodical:    '#999999', // neutral gray
-  other:         '#BBBBBB', // light gray
+/** Map each fine-grained entity category to one of 6 color families. */
+const CATEGORY_FAMILY: Record<string, string> = {
+  people: 'blue',        organizations: 'blue',
+  technologies: 'green', documents: 'green',     acronyms: 'green',
+  locations: 'orange',   events: 'orange',       vehicles: 'orange',
+  concepts: 'purple',    projects: 'purple',     hobbies: 'purple',   media: 'purple',
+  health: 'red',         food: 'red',            animals: 'red',
+  periodical: 'gray',    finance: 'gray',        other: 'gray',
+};
+
+/** 6-color palette with dark/light variants. Tailwind-derived, CVD-safe, ≥3:1 contrast. */
+const FAMILY_COLORS: Record<string, { dark: string; light: string }> = {
+  blue:   { dark: '#6EA8FE', light: '#2563EB' },
+  green:  { dark: '#4ADE80', light: '#16A34A' },
+  orange: { dark: '#FB923C', light: '#EA580C' },
+  purple: { dark: '#C084FC', light: '#9333EA' },
+  red:    { dark: '#F87171', light: '#DC2626' },
+  gray:   { dark: '#94A3B8', light: '#64748B' },
+};
+
+/** Resolve category → family color, adapting to current Obsidian theme. */
+function familyColor(category: string): string {
+  const family = CATEGORY_FAMILY[category] ?? 'gray';
+  const isLight = document.body.classList.contains('theme-light');
+  return FAMILY_COLORS[family]?.[isLight ? 'light' : 'dark'] ?? FAMILY_COLORS.gray.dark;
+}
+
+/** Single-letter glyphs for canvas node rendering. Unique per category. */
+const CATEGORY_GLYPH: Record<string, string> = {
+  people: 'P', organizations: 'O', technologies: 'T', locations: 'L',
+  concepts: 'C', animals: 'A', media: 'M', events: 'E',
+  documents: 'D', vehicles: 'V', health: 'H', finance: 'F',
+  food: 'W', projects: 'J', hobbies: 'B', acronyms: '#',
+  periodical: '~', other: '\u00B7',
+};
+
+/** Human-readable family labels for the legend. */
+const FAMILY_LABELS: Record<string, string> = {
+  blue: 'people & orgs',
+  green: 'tech & docs',
+  orange: 'places & events',
+  purple: 'ideas & projects',
+  red: 'living things',
+  gray: 'meta',
 };
 
 export class GraphSidebarView extends ItemView {
@@ -602,7 +628,7 @@ export class GraphSidebarView extends ItemView {
     const isPeriodic = this.periodicPrefixes.some(prefix => file.path.startsWith(prefix))
       || /^\d{4}-\d{2}-\d{2}/.test(file.basename) || /^\d{4}-W\d{2}/.test(file.basename);
 
-    const cat = (fmType && fmType in CATEGORY_CANVAS_COLORS ? fmType : null)
+    const cat = (fmType && fmType in CATEGORY_FAMILY ? fmType : null)
       ?? (isPeriodic ? 'periodical' : null)
       ?? await this.mcpClient.getEntityCategory(file.path).catch(() => null)
       ?? await this.mcpClient.getEntityCategory(file.basename).catch(() => null)
@@ -610,11 +636,11 @@ export class GraphSidebarView extends ItemView {
     catBadge.dataset.category = cat;
     catBadge.empty();
     const badgeDot = catBadge.createEl('span', { cls: 'flywheel-cat-dot' });
-    badgeDot.style.background = CATEGORY_CANVAS_COLORS[cat] ?? CATEGORY_CANVAS_COLORS.other;
+    badgeDot.style.background = familyColor(cat);
     catBadge.createEl('span').setText(cat);
     catBadge.setAttribute('aria-label', 'Click to change category');
 
-    const sortedCategories = Object.keys(CATEGORY_CANVAS_COLORS).sort();
+    const sortedCategories = Object.keys(CATEGORY_FAMILY).sort();
 
     catBadge.addEventListener('click', (e) => {
       e.stopPropagation();
@@ -627,7 +653,7 @@ export class GraphSidebarView extends ItemView {
       for (const c of sortedCategories) {
         const opt = dropdown.createDiv('flywheel-category-option');
         const dot = opt.createEl('span', { cls: 'flywheel-cat-dot' });
-        dot.style.background = CATEGORY_CANVAS_COLORS[c];
+        dot.style.background = familyColor(c);
         opt.createEl('span').setText(c);
         if (c === cat) opt.addClass('is-active');
         opt.addEventListener('click', async () => {
@@ -637,7 +663,7 @@ export class GraphSidebarView extends ItemView {
           catBadge.dataset.category = c;
           catBadge.empty();
           const newDot = catBadge.createEl('span', { cls: 'flywheel-cat-dot' });
-          newDot.style.background = CATEGORY_CANVAS_COLORS[c] ?? CATEGORY_CANVAS_COLORS.other;
+          newDot.style.background = familyColor(c);
           catBadge.createEl('span').setText(c);
           await this.mcpClient.updateFrontmatter(file.path, { type: c });
           this.mcpClient.bustEntityCache();
@@ -752,7 +778,7 @@ export class GraphSidebarView extends ItemView {
               for (const n of nodes) {
                 const dx = mx - n.x;
                 const dy = my - n.y;
-                if (dx * dx + dy * dy <= (n.radius + 3) ** 2) return n;
+                if (dx * dx + dy * dy <= (n.radius + 4) ** 2) return n;
               }
               return null;
             };
@@ -1321,29 +1347,30 @@ export class GraphSidebarView extends ItemView {
     entries: Array<{ name: string; path: string | null; sources: Set<string> }>,
     categories: Map<string, string>,
   ): void {
-    // Collect unique categories present in the cloud
-    const presentCats = new Map<string, number>();
+    // Collect color families present in the cloud (group 18 categories → 6 families)
+    const presentFamilies = new Map<string, number>();
     for (const entry of entries) {
       const cat = categories.get(entry.path ?? '') ?? categories.get(entry.name) ?? 'other';
-      presentCats.set(cat, (presentCats.get(cat) ?? 0) + 1);
+      const family = CATEGORY_FAMILY[cat] ?? 'gray';
+      presentFamilies.set(family, (presentFamilies.get(family) ?? 0) + 1);
     }
 
-    // Sort by count descending, show top 6
-    const topCats = [...presentCats.entries()]
-      .sort((a, b) => b[1] - a[1])
-      .slice(0, 6);
+    // Sort by count descending, show only families present
+    const topFamilies = [...presentFamilies.entries()]
+      .sort((a, b) => b[1] - a[1]);
 
-    if (topCats.length === 0) return;
+    if (topFamilies.length === 0) return;
 
     const legendWrap = container.createDiv('flywheel-cloud-legend-wrap');
 
-    // Category row
+    // Family color row
     const catRow = legendWrap.createDiv('flywheel-cloud-legend');
-    for (const [cat] of topCats) {
+    for (const [family] of topFamilies) {
       const item = catRow.createEl('span', { cls: 'flywheel-legend-item' });
       const dot = item.createEl('span', { cls: 'flywheel-legend-dot' });
-      dot.style.background = CATEGORY_CANVAS_COLORS[cat] ?? CATEGORY_CANVAS_COLORS.other;
-      item.createEl('span').setText(cat);
+      const isLight = document.body.classList.contains('theme-light');
+      dot.style.background = FAMILY_COLORS[family]?.[isLight ? 'light' : 'dark'] ?? FAMILY_COLORS.gray.dark;
+      item.createEl('span').setText(FAMILY_LABELS[family] ?? family);
     }
 
     // Source border row
@@ -1366,7 +1393,7 @@ export class GraphSidebarView extends ItemView {
       for (const [label, color, style] of activeSources) {
         const item = srcRow.createEl('span', { cls: 'flywheel-legend-item' });
         const line = item.createEl('span', { cls: 'flywheel-legend-line' });
-        line.style.borderTop = `2.5px ${style} ${color}`;
+        line.style.borderTop = `3px ${style} ${color}`;
         item.createEl('span').setText(label);
       }
       if (presentSources.size > 1) {
@@ -1499,17 +1526,17 @@ export class GraphSidebarView extends ItemView {
       return /^\d{4}-\d{2}-\d{2}/.test(stem) || /^\d{4}-W\d{2}/.test(stem);
     };
 
-    // Hub score → node radius: base 6, scale by hub score, cap at 14
+    // Hub score → node radius: base 10, scale by hub score, cap at 22
     const radiusFor = (p: string): number => {
       const name = nameOf(p).toLowerCase();
       const hs = hubScores.get(name) ?? 0;
-      return Math.max(6, Math.min(14, 7 + hs * 0.4));
+      return Math.max(10, Math.min(22, 11 + hs * 0.9));
     };
 
     addNode(notePath, {
       id: notePath, label: nameOf(notePath),
       x: 0, y: 0, vx: 0, vy: 0,
-      radius: 10, color: 'var(--interactive-accent)', isCurrent: true,
+      radius: 14, color: 'var(--interactive-accent)', isCurrent: true,
     });
 
     const neighborPaths: string[] = [];
@@ -1522,8 +1549,8 @@ export class GraphSidebarView extends ItemView {
         addNode(p, {
           id: p, label: nameOf(p),
           x: (Math.random() - 0.5) * 200, y: (Math.random() - 0.5) * 200,
-          vx: 0, vy: 0, radius: periodic ? Math.max(4, radiusFor(p) * 0.7) : radiusFor(p),
-          color: CATEGORY_CANVAS_COLORS.other, isCurrent: false,
+          vx: 0, vy: 0, radius: periodic ? Math.max(7, radiusFor(p) * 0.7) : radiusFor(p),
+          color: familyColor('other'), isCurrent: false,
           isPeriodic: periodic || undefined,
         });
       }
@@ -1554,8 +1581,8 @@ export class GraphSidebarView extends ItemView {
         addNode(p, {
           id: p, label: nameOf(p),
           x: (Math.random() - 0.5) * 200, y: (Math.random() - 0.5) * 200,
-          vx: 0, vy: 0, radius: periodic ? Math.max(4, radiusFor(p) * 0.7) : radiusFor(p),
-          color: CATEGORY_CANVAS_COLORS.other, isCurrent: false,
+          vx: 0, vy: 0, radius: periodic ? Math.max(7, radiusFor(p) * 0.7) : radiusFor(p),
+          color: familyColor('other'), isCurrent: false,
           isPeriodic: periodic || undefined,
           isDeadLink: !f.exists || undefined,
         });
@@ -1656,7 +1683,7 @@ export class GraphSidebarView extends ItemView {
           x: (Math.random() - 0.5) * 200, y: (Math.random() - 0.5) * 200,
           vx: 0, vy: 0,
           radius: periodic ? Math.max(4, radiusFor(c.path) * 0.7) : radiusFor(c.path),
-          color: CATEGORY_CANVAS_COLORS.other, isCurrent: false,
+          color: familyColor('other'), isCurrent: false,
           isPeriodic: periodic || undefined,
         });
         // Add a soft edge to the current note
@@ -1716,8 +1743,8 @@ export class GraphSidebarView extends ItemView {
               x: hubNode.x + (Math.random() - 0.5) * 80,
               y: hubNode.y + (Math.random() - 0.5) * 80,
               vx: 0, vy: 0,
-              radius: Math.max(4, radiusFor(p2) * 0.7),
-              color: CATEGORY_CANVAS_COLORS.other,
+              radius: Math.max(7, radiusFor(p2) * 0.7),
+              color: familyColor('other'),
               isCurrent: false,
               isSecondary: true,
               isPeriodic: periodic2 || undefined,
@@ -1745,7 +1772,8 @@ export class GraphSidebarView extends ItemView {
     for (const node of visibleNodes) {
       // Periodic notes get their own muted color regardless of entity category
       const cat = node.isPeriodic ? 'periodical' : (catMap.get(node.id) ?? 'other');
-      node.color = CATEGORY_CANVAS_COLORS[cat] ?? CATEGORY_CANVAS_COLORS.other;
+      node.color = familyColor(cat);
+      node.category = cat;
     }
 
     return { nodes: Array.from(nodeMap.values()), edges };
@@ -1768,7 +1796,7 @@ export class GraphSidebarView extends ItemView {
           const dx = nodes[i].x - nodes[j].x;
           const dy = nodes[i].y - nodes[j].y;
           const dist = Math.max(Math.sqrt(dx * dx + dy * dy), 0.01);
-          const minSep = nodes[i].radius + nodes[j].radius + 18;
+          const minSep = nodes[i].radius + nodes[j].radius + 22;
           const effectiveDist = Math.max(dist - minSep, 0.01);
           const force = (k * k) / effectiveDist;
           const fx = (dx / dist) * force;
@@ -1821,7 +1849,7 @@ export class GraphSidebarView extends ItemView {
 
     // Post-layout collision resolution
     const COLLISION_PASSES = 10;
-    const COLLISION_PAD = 8;
+    const COLLISION_PAD = 10;
     for (let pass = 0; pass < COLLISION_PASSES; pass++) {
       let hadOverlap = false;
       for (let i = 0; i < nodes.length; i++) {
@@ -1923,6 +1951,20 @@ export class GraphSidebarView extends ItemView {
       ctx.globalAlpha = 1;
     }
 
+    // Category glyphs inside nodes (dual encoding: color + letter)
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    for (const n of nodes) {
+      if (n.isDeadLink || n.radius < 9) continue;
+      const glyph = n.isCurrent ? '\u2605' : CATEGORY_GLYPH[n.category ?? 'other'] ?? '\u00B7';
+      const fontSize = Math.max(9, Math.round(n.radius * 0.9));
+      ctx.font = `bold ${fontSize}px -apple-system, sans-serif`;
+      ctx.globalAlpha = n.isPeriodic ? 0.45 : n.isSecondary ? 0.6 : 1;
+      ctx.fillStyle = '#fff';
+      ctx.fillText(glyph, cx + n.x, cy + n.y);
+      ctx.globalAlpha = 1;
+    }
+
     // Labels
     const textColor = getComputedStyle(container).color || '#ccc';
     ctx.textAlign = 'center';
@@ -1930,12 +1972,12 @@ export class GraphSidebarView extends ItemView {
     for (const n of nodes) {
       ctx.globalAlpha = n.isPeriodic ? 0.25 : n.isSecondary ? 0.4 : 1;
       ctx.fillStyle = textColor;
-      ctx.font = n.isCurrent ? 'bold 14px -apple-system, sans-serif'
-        : (n.isSecondary || n.isPeriodic) ? '11px -apple-system, sans-serif'
-        : '12px -apple-system, sans-serif';
+      ctx.font = n.isCurrent ? 'bold 15px -apple-system, sans-serif'
+        : (n.isSecondary || n.isPeriodic) ? '12px -apple-system, sans-serif'
+        : '13px -apple-system, sans-serif';
       const maxLen = n.isSecondary ? 14 : 18;
       const label = n.label.length > maxLen ? n.label.slice(0, maxLen - 2) + '\u2026' : n.label;
-      ctx.fillText(label, cx + n.x, cy + n.y + n.radius + 3);
+      ctx.fillText(label, cx + n.x, cy + n.y + n.radius + 5);
       ctx.globalAlpha = 1;
     }
 
