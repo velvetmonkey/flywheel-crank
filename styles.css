@@ -1086,9 +1086,8 @@
 .flywheel-cloud-item[data-multi="true"] { border: 2px solid var(--text-accent); }
 .flywheel-cloud-item[data-multi="true"] .flywheel-cloud-name { font-weight: var(--font-semibold); }
 /* Multi + other — keep grey bg, multi border already distinguishes */
-.flywheel-cloud-dead { cursor: default; opacity: 0.5; }
+.flywheel-cloud-dead { cursor: pointer; opacity: 0.7; }
 .flywheel-cloud-dead .flywheel-cloud-name { color: var(--text-faint); text-decoration: line-through; }
-.flywheel-cloud-dead:hover { filter: none; }
 .flywheel-cloud-label {
   padding: 6px 16px 0;
   font-size: var(--font-smallest);

@@ -759,7 +759,7 @@ export class GraphSidebarView extends ItemView {
 
             canvas.addEventListener('click', (e) => {
               const node = hitTest(e);
-              if (node && !node.isCurrent && !node.isDeadLink) {
+              if (node && !node.isCurrent) {
                 this.app.workspace.openLinkText(node.id, '', false);
               }
             });
@@ -1309,6 +1309,9 @@ export class GraphSidebarView extends ItemView {
         });
       } else {
         item.addClass('flywheel-cloud-dead');
+        item.addEventListener('click', () => {
+          this.app.workspace.openLinkText(navTarget, '', false);
+        });
       }
     }
   }
