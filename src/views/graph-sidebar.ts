@@ -662,21 +662,6 @@ export class GraphSidebarView extends ItemView {
     try {
       if (generation !== this.renderGeneration) return;
 
-      // Swap immediately so header + loading indicator appear instantly
-      if (freshContainer) {
-        this.noteContainer.empty();
-        while (freshContainer.firstChild) {
-          this.noteContainer.appendChild(freshContainer.firstChild);
-        }
-      }
-
-      // Loading indicator while MCP data arrives
-      const loadingEl = this.noteContainer.createDiv('flywheel-graph-loading');
-      loadingEl.createSpan({ text: 'Loading...' });
-
-      // Fire folder chips independently (has its own MCP call)
-      this.renderFolderChips(file, generation);
-
       const noteContent = await this.app.vault.cachedRead(file);
       const [backlinksResp, forwardLinksResp, suggestResp, similarResp, health, semanticResp, connectionsResp, entityHubScores] = await Promise.all([
         this.mcpClient.getBacklinks(notePath).catch(() => null),
@@ -691,8 +676,16 @@ export class GraphSidebarView extends ItemView {
 
       if (generation !== this.renderGeneration) return;
 
-      // Remove loading indicator
-      loadingEl.remove();
+      // Swap: replace old content with fresh container now that data is ready
+      if (freshContainer) {
+        this.noteContainer.empty();
+        while (freshContainer.firstChild) {
+          this.noteContainer.appendChild(freshContainer.firstChild);
+        }
+      }
+
+      // Folder chips (independent MCP call, renders into noteContainer)
+      this.renderFolderChips(file, generation);
 
       // Ensure periodic prefixes are set for cloud splitting
       if (this.periodicPrefixes.length === 0 && health?.config) {
