@@ -1470,7 +1470,7 @@ export class GraphSidebarView extends ItemView {
     const edges: GraphEdge[] = [];
     const edgeSet = new Set<string>();
 
-    const nameOf = (p: string) => p.replace(/\.md$/, '').split('/').pop() || p;
+    const nameOf = (p: string) => p.replace(/\.md$/, '').replace(/\\/g, '/').split('/').pop() || p;
     // Case-insensitive dedup — prevents duplicates from different MCP sources.
     // Two-level lookup: by lowercased path, then by lowercased label.
     // e.g. backlinks give "tech/Tesla.md", suggestions give "Tesla" — same label.
