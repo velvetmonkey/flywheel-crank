@@ -4070,11 +4070,67 @@
 
 /* === Local Graph === */
 
+.flywheel-graph-zone {
+  display: flex;
+  flex-direction: column;
+  margin-bottom: 8px;
+  position: relative;
+}
+
 .flywheel-local-graph-canvas {
   width: 100%;
   border-radius: 6px;
   background: transparent;
   display: block;
+  flex-shrink: 1;
+  min-height: 0;
+}
+
+.flywheel-graph-legend-wrap {
+  flex-shrink: 0;
+  padding: 8px 10px 20px;
+}
+.flywheel-graph-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 10px;
+  font-size: 12px;
+  color: var(--text-muted);
+  line-height: 1.6;
+}
+.flywheel-graph-legend + .flywheel-graph-legend {
+  margin-top: 6px;
+}
+.flywheel-legend-pill {
+  display: inline-block;
+  padding: 2px 12px;
+  border-radius: 10px;
+  font-size: 12px;
+  color: #fff;
+  line-height: 1.5;
+  white-space: nowrap;
+}
+.flywheel-legend-line {
+  width: 24px;
+  flex-shrink: 0;
+}
+
+.flywheel-graph-tooltip {
+  display: none;
+  position: absolute;
+  z-index: 100;
+  background: var(--background-primary);
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 6px;
+  padding: 8px 12px;
+  font-size: 13px;
+  font-family: var(--font-monospace);
+  line-height: 1.5;
+  color: var(--text-normal);
+  white-space: pre;
+  pointer-events: none;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+  max-width: 320px;
 }
 
 /* === Guided Actions === */

@@ -37,6 +37,34 @@ interface GraphNode {
   isPeriodic?: boolean;
   /** Forward link target that doesn't have its own note */
   isDeadLink?: boolean;
+  /** Pill dimensions (computed at render time from text measurement) */
+  pillWidth?: number;
+  pillHeight?: number;
+  /** How this node entered the graph (backlink, forward, suggested, similar, connection) */
+  sources?: Set<string>;
+  /** Hub score for tooltip */
+  hubScore?: number;
+  /** Edge weight to current note for tooltip */
+  edgeWeight?: number;
+  /** Pre-built tooltip text */
+  tooltip?: string;
+}
+
+/** HSLA fill colors for pill backgrounds on canvas (more opaque than CSS cloud pills). */
+const FAMILY_FILL: Record<string, { dark: string; light: string }> = {
+  blue:   { dark: 'hsla(220, 80%, 60%, 0.40)', light: 'hsla(220, 80%, 55%, 0.35)' },
+  green:  { dark: 'hsla(150, 70%, 50%, 0.40)', light: 'hsla(150, 70%, 45%, 0.35)' },
+  orange: { dark: 'hsla(25, 90%, 60%, 0.40)',  light: 'hsla(25, 90%, 55%, 0.35)' },
+  purple: { dark: 'hsla(270, 70%, 65%, 0.40)', light: 'hsla(270, 70%, 60%, 0.35)' },
+  red:    { dark: 'hsla(0, 75%, 60%, 0.40)',   light: 'hsla(0, 75%, 55%, 0.35)' },
+  gray:   { dark: 'hsla(215, 15%, 55%, 0.35)', light: 'hsla(215, 15%, 50%, 0.30)' },
+};
+
+/** Resolve category → pill fill color for canvas rendering. */
+function familyFill(category: string): string {
+  const family = CATEGORY_FAMILY[category] ?? 'gray';
+  const isLight = document.body.classList.contains('theme-light');
+  return FAMILY_FILL[family]?.[isLight ? 'light' : 'dark'] ?? FAMILY_FILL.gray.dark;
 }
 
 interface GraphEdge {
@@ -749,11 +777,59 @@ export class GraphSidebarView extends ItemView {
         }
       }
 
-      // Context Cloud — rendered directly (no section wrapper)
-      await this.renderContextCloud(safeBacklinks, safeForwardLinks, suggestResp, similarResp, semanticResp, connectionWeights, entityHubScores);
+      // Fetch entity categories for graph node coloring
+      const categoryPaths: string[] = [];
+      for (const b of safeBacklinks.backlinks) categoryPaths.push(b.source);
+      for (const f of safeForwardLinks.forward_links) categoryPaths.push(f.resolved_path ?? f.target);
+      if (suggestResp?.scored_suggestions) {
+        for (const s of suggestResp.scored_suggestions) categoryPaths.push(s.path ?? s.entity);
+      }
+      if (similarResp?.similar) {
+        for (const s of similarResp.similar) categoryPaths.push(s.path);
+      }
+      const categoryMap = await this.mcpClient.getEntityCategories(categoryPaths).catch(() => new Map<string, string>());
 
       {
-        const { nodes, edges } = await this.buildLocalGraph(notePath, safeBacklinks, safeForwardLinks, edgeWeightMap, entityHubScores, suggestResp, similarResp, connectionsResp);
+        const { nodes, edges } = await this.buildLocalGraph(notePath, safeBacklinks, safeForwardLinks, edgeWeightMap, entityHubScores, suggestResp, similarResp, connectionsResp, categoryMap);
+
+        // Enrich nodes with scoring breakdown tooltips
+        const sugBreakdowns = new Map<string, Record<string, number>>();
+        if (suggestResp?.scored_suggestions) {
+          for (const sug of suggestResp.scored_suggestions) {
+            if (sug.breakdown) sugBreakdowns.set((sug.path ?? sug.entity).toLowerCase(), sug.breakdown);
+          }
+        }
+        const fmt = (v: number) => { const s = v > 0 ? '+' : ''; return `${s}${Math.round(v)}`; };
+        for (const n of nodes) {
+          if (n.isCurrent) continue;
+          const lines = [`${n.label} (${n.category ?? 'other'})`];
+          if (n.sources && n.sources.size > 0) lines.push(`Sources: ${[...n.sources].join(', ')}`);
+          if (n.hubScore) lines.push(`Hub score: ${n.hubScore.toFixed(1)}`);
+          if (n.edgeWeight) lines.push(`Edge weight: ${n.edgeWeight.toFixed(1)}`);
+          const bd = sugBreakdowns.get(n.id.toLowerCase()) ?? sugBreakdowns.get(n.label.toLowerCase());
+          if (bd) {
+            const total = (bd.contentMatch ?? 0) + (bd.cooccurrenceBoost ?? 0) + (bd.typeBoost ?? 0)
+              + (bd.contextBoost ?? 0) + (bd.recencyBoost ?? 0) + (bd.crossFolderBoost ?? 0)
+              + (bd.hubBoost ?? 0) + (bd.feedbackAdjustment ?? 0)
+              + (bd.edgeWeightBoost ?? 0) + (bd.suppressionPenalty ?? 0) + (bd.semanticBoost ?? 0);
+            lines.push(
+              `\u2500\u2500\u2500 Score: ${Math.round(total)} \u2500\u2500\u2500`,
+              `  Content:  ${fmt(bd.contentMatch ?? 0)}`,
+              `  Co-occur: ${fmt(bd.cooccurrenceBoost ?? 0)}`,
+              `  Type:     ${fmt(bd.typeBoost ?? 0)}`,
+              `  Context:  ${fmt(bd.contextBoost ?? 0)}`,
+              `  Recency:  ${fmt(bd.recencyBoost ?? 0)}`,
+              `  X-folder: ${fmt(bd.crossFolderBoost ?? 0)}`,
+              `  Hub:      ${fmt(bd.hubBoost ?? 0)}`,
+              `  Edge wt:  ${fmt(bd.edgeWeightBoost ?? 0)}`,
+              `  Feedback: ${fmt(bd.feedbackAdjustment ?? 0)}`,
+              `  Suppress: ${fmt(bd.suppressionPenalty ?? 0)}`,
+              `  Semantic: ${fmt(bd.semanticBoost ?? 0)}`,
+            );
+          }
+          n.tooltip = lines.join('\n');
+        }
+
         const dpr = window.devicePixelRatio || 1;
 
         if (nodes.length > 1) {
@@ -761,13 +837,32 @@ export class GraphSidebarView extends ItemView {
 
           const renderGraph = () => {
             graphZone.empty();
+            // Render legend first so we can measure it
+            this.renderGraphLegend(graphZone, nodes);
+            const legendEl = graphZone.querySelector('.flywheel-graph-legend-wrap') as HTMLElement;
             const W = Math.max(200, this.noteContainer.clientWidth);
-            // Use available viewport height minus space for other sections,
-            // clamped to a sensible range based on pane height
-            const paneH = this.containerEl.clientHeight || window.innerHeight;
-            const H = Math.max(200, Math.min(Math.round(paneH * 0.45), W));
+            // graphZone top relative to pane, minus legend height and status bar
+            const zoneTop = graphZone.getBoundingClientRect().top - this.containerEl.getBoundingClientRect().top;
+            const legendH = legendEl ? legendEl.offsetHeight + 8 : 80;
+            const available = this.containerEl.clientHeight - zoneTop - legendH - 30;
+            const H = Math.max(200, available);
+            // Pre-compute pill dimensions for layout collision
+            const measureCanvas = document.createElement('canvas');
+            const mctx = measureCanvas.getContext('2d')!;
+            const PILL_PAD_X = 12;
+            const PILL_PAD_Y = 6;
+            for (const n of nodes) {
+              const fs = n.isCurrent ? 13 : (n.isSecondary || n.isPeriodic) ? 10 : 11;
+              mctx.font = `${n.isCurrent ? 'bold ' : ''}${fs}px -apple-system, sans-serif`;
+              const maxLen = n.isSecondary ? 14 : 20;
+              const lbl = n.label.length > maxLen ? n.label.slice(0, maxLen - 1) + '\u2026' : n.label;
+              n.pillWidth = mctx.measureText(lbl).width + PILL_PAD_X * 2;
+              n.pillHeight = fs + PILL_PAD_Y * 2;
+            }
             this.layoutGraph(nodes, edges, W, H);
+            // Insert canvas before legend
             const canvas = this.renderLocalGraphCanvas(graphZone, nodes, edges, W, H);
+            if (legendEl) graphZone.insertBefore(canvas, legendEl);
             const cx = W / 2;
             const cy = H / 2;
 
@@ -776,9 +871,10 @@ export class GraphSidebarView extends ItemView {
               const mx = (e.clientX - rect.left) * (canvas.width / rect.width / dpr) - cx;
               const my = (e.clientY - rect.top) * (canvas.height / rect.height / dpr) - cy;
               for (const n of nodes) {
-                const dx = mx - n.x;
-                const dy = my - n.y;
-                if (dx * dx + dy * dy <= (n.radius + 4) ** 2) return n;
+                // Pill bounding box hit test
+                const hw = (n.pillWidth ?? n.radius * 2) / 2 + 2;
+                const hh = (n.pillHeight ?? n.radius * 2) / 2 + 2;
+                if (Math.abs(mx - n.x) <= hw && Math.abs(my - n.y) <= hh) return n;
               }
               return null;
             };
@@ -790,10 +886,46 @@ export class GraphSidebarView extends ItemView {
               }
             });
 
+            // Custom tooltip overlay (native title is too small)
+            const tip = graphZone.createDiv('flywheel-graph-tooltip');
+            let lastTipNode: GraphNode | null = null;
+
             canvas.addEventListener('mousemove', (e) => {
               const node = hitTest(e);
               canvas.style.cursor = node ? 'pointer' : 'default';
-              canvas.title = node ? node.label : '';
+              if (node && node !== lastTipNode) {
+                tip.setText(''); // clear
+                const text = node.tooltip ?? node.label;
+                for (const line of text.split('\n')) {
+                  tip.createDiv().setText(line);
+                }
+                tip.style.display = 'block';
+              } else if (!node) {
+                tip.style.display = 'none';
+              }
+              lastTipNode = node;
+              if (node) {
+                const rect = canvas.getBoundingClientRect();
+                const zoneRect = graphZone.getBoundingClientRect();
+                const tipX = e.clientX - zoneRect.left + 12;
+                const tipY = e.clientY - zoneRect.top - 10;
+                tip.style.left = `${tipX}px`;
+                tip.style.top = `${tipY}px`;
+                // Keep tooltip in bounds
+                requestAnimationFrame(() => {
+                  const tipRect = tip.getBoundingClientRect();
+                  if (tipRect.right > zoneRect.right - 4) {
+                    tip.style.left = `${tipX - tipRect.width - 24}px`;
+                  }
+                  if (tipRect.bottom > zoneRect.bottom - 4) {
+                    tip.style.top = `${tipY - tipRect.height}px`;
+                  }
+                });
+              }
+            });
+            canvas.addEventListener('mouseleave', () => {
+              tip.style.display = 'none';
+              lastTipNode = null;
             });
           };
 
@@ -805,7 +937,7 @@ export class GraphSidebarView extends ItemView {
           const resizeObs = new ResizeObserver(() => {
             const newWidth = this.noteContainer.clientWidth;
             const newHeight = this.containerEl.clientHeight;
-            if (Math.abs(newWidth - lastWidth) > 10 || Math.abs(newHeight - lastHeight) > 30) {
+            if (Math.abs(newWidth - lastWidth) > 10 || Math.abs(newHeight - lastHeight) > 15) {
               lastWidth = newWidth;
               lastHeight = newHeight;
               renderGraph();
@@ -1488,6 +1620,7 @@ export class GraphSidebarView extends ItemView {
     suggestResp?: McpSuggestWikilinksResponse | null,
     similarResp?: McpSimilarResponse | null,
     connectionsResp?: McpStrongConnectionsResponse | null,
+    categoryMap?: Map<string, string>,
   ): Promise<{ nodes: GraphNode[]; edges: GraphEdge[] }> {
     const nodeMap = new Map<string, GraphNode>();
     const edges: GraphEdge[] = [];
@@ -1533,6 +1666,21 @@ export class GraphSidebarView extends ItemView {
       return Math.max(10, Math.min(22, 11 + hs * 0.9));
     };
 
+    // Resolve category from the pre-fetched map
+    const catFor = (p: string): string => {
+      if (isPeriodicPath(p)) return 'periodical';
+      return categoryMap?.get(p) ?? categoryMap?.get(nameOf(p)) ?? 'other';
+    };
+
+    // Add source tag to a node (creates set if needed, merges if node already exists)
+    const tagSource = (p: string, source: string): void => {
+      const node = nodeMap.get(nk(p));
+      if (node) {
+        if (!node.sources) node.sources = new Set();
+        node.sources.add(source);
+      }
+    };
+
     addNode(notePath, {
       id: notePath, label: nameOf(notePath),
       x: 0, y: 0, vx: 0, vy: 0,
@@ -1545,14 +1693,20 @@ export class GraphSidebarView extends ItemView {
       const p = b.source;
       if (!hasNode(p)) {
         const periodic = isPeriodicPath(p);
+        const cat = catFor(p);
+        const hs = hubScores.get(nameOf(p).toLowerCase()) ?? 0;
         neighborPaths.push(p);
         addNode(p, {
           id: p, label: nameOf(p),
           x: (Math.random() - 0.5) * 200, y: (Math.random() - 0.5) * 200,
           vx: 0, vy: 0, radius: periodic ? Math.max(7, radiusFor(p) * 0.7) : radiusFor(p),
-          color: familyColor('other'), isCurrent: false,
+          color: familyColor(cat), isCurrent: false, category: cat,
           isPeriodic: periodic || undefined,
+          sources: new Set(['backlink']),
+          hubScore: hs > 0 ? hs : undefined,
         });
+      } else {
+        tagSource(p, 'backlink');
       }
       const cid = canonId(p);
       const key = `${cid}\u2192${notePath}`;
@@ -1560,6 +1714,9 @@ export class GraphSidebarView extends ItemView {
         edgeSet.add(key);
         const weight = edgeWeightMap.get(key) ?? 1.0;
         edges.push({ source: cid, target: notePath, weight });
+        // Store edge weight on node for tooltip
+        const node = nodeMap.get(nk(p));
+        if (node && !node.edgeWeight) node.edgeWeight = weight;
       }
     }
 
@@ -1577,15 +1734,21 @@ export class GraphSidebarView extends ItemView {
       forwardLinkPaths.add(nk(p));
       if (!hasNode(p)) {
         const periodic = isPeriodicPath(p);
+        const cat = catFor(p);
+        const hs = hubScores.get(nameOf(p).toLowerCase()) ?? 0;
         neighborPaths.push(p);
         addNode(p, {
           id: p, label: nameOf(p),
           x: (Math.random() - 0.5) * 200, y: (Math.random() - 0.5) * 200,
           vx: 0, vy: 0, radius: periodic ? Math.max(7, radiusFor(p) * 0.7) : radiusFor(p),
-          color: familyColor('other'), isCurrent: false,
+          color: familyColor(cat), isCurrent: false, category: cat,
           isPeriodic: periodic || undefined,
           isDeadLink: !f.exists || undefined,
+          sources: new Set(['forward']),
+          hubScore: hs > 0 ? hs : undefined,
         });
+      } else {
+        tagSource(p, 'forward');
       }
       const cid = canonId(p);
       const key = `${notePath}\u2192${cid}`;
@@ -1593,12 +1756,14 @@ export class GraphSidebarView extends ItemView {
         edgeSet.add(key);
         const weight = edgeWeightMap.get(key) ?? 1.0;
         edges.push({ source: notePath, target: cid, weight });
+        const node = nodeMap.get(nk(p));
+        if (node && !node.edgeWeight) node.edgeWeight = weight;
       }
     }
 
     // Cap neighbors — prioritize entity nodes over periodic (daily) notes
-    const MAX_NEIGHBORS = 12;
-    const MAX_PERIODIC = 3;
+    const MAX_NEIGHBORS = 24;
+    const MAX_PERIODIC = 5;
     if (neighborPaths.length > MAX_NEIGHBORS) {
       const ranked = edges
         .map(e => ({ path: e.source === notePath ? e.target : e.source, weight: e.weight }))
@@ -1635,7 +1800,7 @@ export class GraphSidebarView extends ItemView {
 
     // Fill graph with context from suggestions, similar, and strong connections
     // so the graph is always dense-ish (target ~15 primary nodes)
-    const TARGET_PRIMARY = 15;
+    const TARGET_PRIMARY = 30;
     const currentPrimaryCount = [...nodeMap.values()].filter(n => !n.isSecondary).length;
     const slotsAvailable = Math.max(0, TARGET_PRIMARY - currentPrimaryCount);
 
@@ -1678,13 +1843,17 @@ export class GraphSidebarView extends ItemView {
       for (const c of fillNodes) {
         if (hasNode(c.path)) continue; // skip if added by earlier candidate
         const periodic = isPeriodicPath(c.path);
+        const cat = catFor(c.path);
+        const hs = hubScores.get(nameOf(c.path).toLowerCase()) ?? 0;
         addNode(c.path, {
           id: c.path, label: nameOf(c.path),
           x: (Math.random() - 0.5) * 200, y: (Math.random() - 0.5) * 200,
           vx: 0, vy: 0,
           radius: periodic ? Math.max(4, radiusFor(c.path) * 0.7) : radiusFor(c.path),
-          color: familyColor('other'), isCurrent: false,
+          color: familyColor(cat), isCurrent: false, category: cat,
           isPeriodic: periodic || undefined,
+          sources: new Set([c.source]),
+          hubScore: hs > 0 ? hs : undefined,
         });
         // Add a soft edge to the current note
         const eKey = `${notePath}\u2192${c.path}`;
@@ -1697,8 +1866,8 @@ export class GraphSidebarView extends ItemView {
 
     // N+1 hops: expand top hub neighbors to show bridge structure
     try {
-      const MAX_SECONDARY = 5; // expand up to 5 hub neighbors
-      const MAX_SECONDARY_EDGES = 6; // up to 6 connections per expanded hub
+      const MAX_SECONDARY = 8; // expand up to 8 hub neighbors
+      const MAX_SECONDARY_EDGES = 8; // up to 8 connections per expanded hub
       const currentNeighbors = [...nodeMap.keys()].filter(p => p !== notePath);
       const hubNeighbors = currentNeighbors
         .map(p => ({ path: p, hs: hubScores.get(nameOf(p).toLowerCase()) ?? 0 }))
@@ -1738,16 +1907,18 @@ export class GraphSidebarView extends ItemView {
             // Add secondary node — smaller, faded
             const hubNode = nodeMap.get(nk(hubPath))!;
             const periodic2 = isPeriodicPath(p2);
+            const cat2 = catFor(p2);
             addNode(p2, {
               id: p2, label: nameOf(p2),
               x: hubNode.x + (Math.random() - 0.5) * 80,
               y: hubNode.y + (Math.random() - 0.5) * 80,
               vx: 0, vy: 0,
               radius: Math.max(7, radiusFor(p2) * 0.7),
-              color: familyColor('other'),
-              isCurrent: false,
+              color: familyColor(cat2),
+              isCurrent: false, category: cat2,
               isSecondary: true,
               isPeriodic: periodic2 || undefined,
+              sources: new Set(['secondary']),
             });
 
             const cidHub = canonId(hubPath);
@@ -1791,16 +1962,21 @@ export class GraphSidebarView extends ItemView {
     for (let iter = 0; iter < ITERATIONS; iter++) {
       for (const n of nodes) { n.vx = 0; n.vy = 0; }
 
+      // Aspect ratio bias — spread more in the longer dimension
+      const aspectX = width >= height ? 1.0 : 0.7;
+      const aspectY = height >= width ? 1.0 : 0.7;
+
       for (let i = 0; i < nodes.length; i++) {
         for (let j = i + 1; j < nodes.length; j++) {
           const dx = nodes[i].x - nodes[j].x;
           const dy = nodes[i].y - nodes[j].y;
           const dist = Math.max(Math.sqrt(dx * dx + dy * dy), 0.01);
-          const minSep = nodes[i].radius + nodes[j].radius + 22;
+          // Pills are wider than tall — use larger horizontal separation
+          const minSep = nodes[i].radius + nodes[j].radius + 50;
           const effectiveDist = Math.max(dist - minSep, 0.01);
           const force = (k * k) / effectiveDist;
-          const fx = (dx / dist) * force;
-          const fy = (dy / dist) * force;
+          const fx = (dx / dist) * force * aspectX;
+          const fy = (dy / dist) * force * aspectY;
           nodes[i].vx += fx; nodes[i].vy += fy;
           nodes[j].vx -= fx; nodes[j].vy -= fy;
         }
@@ -1838,8 +2014,8 @@ export class GraphSidebarView extends ItemView {
           n.x += (n.vx / disp) * capped;
           n.y += (n.vy / disp) * capped;
         }
-        const hw = width / 2 - 40;
-        const hh = height / 2 - 40;
+        const hw = width / 2 - 70;
+        const hh = height / 2 - 30;
         n.x = Math.max(-hw, Math.min(hw, n.x));
         n.y = Math.max(-hh, Math.min(hh, n.y));
       }
@@ -1847,37 +2023,41 @@ export class GraphSidebarView extends ItemView {
       temperature -= cooling;
     }
 
-    // Post-layout collision resolution
-    const COLLISION_PASSES = 10;
-    const COLLISION_PAD = 10;
+    // Post-layout collision resolution using pill bounding boxes
+    const COLLISION_PASSES = 20;
+    const COLLISION_GAP = 8; // px gap between pills
     for (let pass = 0; pass < COLLISION_PASSES; pass++) {
       let hadOverlap = false;
       for (let i = 0; i < nodes.length; i++) {
         for (let j = i + 1; j < nodes.length; j++) {
-          const dx = nodes[i].x - nodes[j].x;
-          const dy = nodes[i].y - nodes[j].y;
-          const dist = Math.sqrt(dx * dx + dy * dy);
-          const minDist = nodes[i].radius + nodes[j].radius + COLLISION_PAD;
-          if (dist < minDist) {
+          const ni = nodes[i], nj = nodes[j];
+          // Axis-aligned pill overlap check
+          const hwI = (ni.pillWidth ?? ni.radius * 2) / 2 + COLLISION_GAP;
+          const hhI = (ni.pillHeight ?? ni.radius * 2) / 2 + COLLISION_GAP;
+          const hwJ = (nj.pillWidth ?? nj.radius * 2) / 2 + COLLISION_GAP;
+          const hhJ = (nj.pillHeight ?? nj.radius * 2) / 2 + COLLISION_GAP;
+          const overlapX = (hwI + hwJ) - Math.abs(ni.x - nj.x);
+          const overlapY = (hhI + hhJ) - Math.abs(ni.y - nj.y);
+          if (overlapX > 0 && overlapY > 0) {
             hadOverlap = true;
-            const overlap = minDist - dist;
-            const angle = dist > 0.01 ? Math.atan2(dy, dx) : Math.random() * Math.PI * 2;
-            const mx = Math.cos(angle) * overlap * 0.5;
-            const my = Math.sin(angle) * overlap * 0.5;
-            if (nodes[i].isCurrent) {
-              nodes[j].x -= mx * 2; nodes[j].y -= my * 2;
-            } else if (nodes[j].isCurrent) {
-              nodes[i].x += mx * 2; nodes[i].y += my * 2;
+            // Push apart along axis of least overlap
+            if (overlapX < overlapY) {
+              const sign = ni.x >= nj.x ? 1 : -1;
+              if (ni.isCurrent) { nj.x -= sign * overlapX; }
+              else if (nj.isCurrent) { ni.x += sign * overlapX; }
+              else { ni.x += sign * overlapX * 0.5; nj.x -= sign * overlapX * 0.5; }
             } else {
-              nodes[i].x += mx; nodes[i].y += my;
-              nodes[j].x -= mx; nodes[j].y -= my;
+              const sign = ni.y >= nj.y ? 1 : -1;
+              if (ni.isCurrent) { nj.y -= sign * overlapY; }
+              else if (nj.isCurrent) { ni.y += sign * overlapY; }
+              else { ni.y += sign * overlapY * 0.5; nj.y -= sign * overlapY * 0.5; }
             }
           }
         }
       }
-      // Re-clamp to canvas boundaries
-      const hw = width / 2 - 40;
-      const hh = height / 2 - 40;
+      // Re-clamp to canvas boundaries (account for pill width)
+      const hw = width / 2 - 80;
+      const hh = height / 2 - 20;
       for (const n of nodes) {
         if (n.isCurrent) continue;
         n.x = Math.max(-hw, Math.min(hw, n.x));
@@ -1909,79 +2089,172 @@ export class GraphSidebarView extends ItemView {
 
     ctx.clearRect(0, 0, width, height);
 
-    // Edges — thickness + opacity scaled by edge weight
+    // Pre-compute pill dimensions for each node
+    const PILL_PAD_X = 12;
+    const PILL_PAD_Y = 6;
+    const PILL_RADIUS = 10;
+    for (const n of nodes) {
+      const fontSize = n.isCurrent ? 13 : (n.isSecondary || n.isPeriodic) ? 10 : 11;
+      ctx.font = `${n.isCurrent ? 'bold ' : ''}${fontSize}px -apple-system, sans-serif`;
+      const maxLen = n.isSecondary ? 14 : 20;
+      const label = n.label.length > maxLen ? n.label.slice(0, maxLen - 1) + '\u2026' : n.label;
+      const tw = ctx.measureText(label).width;
+      n.pillWidth = tw + PILL_PAD_X * 2;
+      n.pillHeight = fontSize + PILL_PAD_Y * 2;
+    }
+
+    // Shadow edges first — inter-node connections (not involving active note)
+    const nodeById = new Map(nodes.map(n => [n.id, n]));
     for (const e of edges) {
-      const src = nodes.find(n => n.id === e.source);
-      const tgt = nodes.find(n => n.id === e.target);
+      const src = nodeById.get(e.source);
+      const tgt = nodeById.get(e.target);
       if (!src || !tgt) continue;
+      if (src.isCurrent || tgt.isCurrent) continue; // drawn later as primary edges
       ctx.beginPath();
       ctx.moveTo(cx + src.x, cy + src.y);
       ctx.lineTo(cx + tgt.x, cy + tgt.y);
-      const isPeriodicEdge = src.isPeriodic || tgt.isPeriodic;
-      const isSecondaryEdge = src.isSecondary || tgt.isSecondary;
+      ctx.lineWidth = 0.8;
+      ctx.strokeStyle = 'rgba(128, 128, 128, 0.10)';
+      ctx.setLineDash([3, 4]);
+      ctx.stroke();
+    }
+
+    // Primary edges — connections to/from active note
+    for (const e of edges) {
+      const src = nodeById.get(e.source);
+      const tgt = nodeById.get(e.target);
+      if (!src || !tgt) continue;
+      if (!src.isCurrent && !tgt.isCurrent) continue; // already drawn as shadow
+      ctx.beginPath();
+      ctx.moveTo(cx + src.x, cy + src.y);
+      ctx.lineTo(cx + tgt.x, cy + tgt.y);
+      const other = src.isCurrent ? tgt : src;
+      const isPeriodicEdge = other.isPeriodic;
+      const isSecondaryEdge = other.isSecondary;
       const isDimEdge = isPeriodicEdge || isSecondaryEdge;
-      ctx.lineWidth = isDimEdge ? 1 : Math.min(1 + e.weight * 0.8, 5);
-      const alpha = isPeriodicEdge ? 0.15 : isSecondaryEdge ? 0.25 : Math.min(0.3 + e.weight * 0.15, 0.7);
+      ctx.lineWidth = isDimEdge ? 1.5 : Math.min(2 + e.weight * 1.0, 5);
+      const alpha = isPeriodicEdge ? 0.18 : isSecondaryEdge ? 0.25 : Math.min(0.35 + e.weight * 0.15, 0.65);
       ctx.strokeStyle = `rgba(128, 128, 128, ${alpha.toFixed(2)})`;
       ctx.setLineDash(isDimEdge ? [3, 3] : []);
       ctx.stroke();
     }
+    ctx.setLineDash([]);
 
-    // Nodes
-    for (const n of nodes) {
-      ctx.beginPath();
-      ctx.arc(cx + n.x, cy + n.y, n.radius, 0, Math.PI * 2);
-      ctx.globalAlpha = n.isPeriodic ? 0.3 : n.isSecondary ? 0.45 : n.isDeadLink ? 0.6 : 1;
-      // Resolve CSS var for current node color
+    // Pill nodes — draw periodic/secondary behind, then primary on top
+    const textColor = getComputedStyle(container).color || '#ccc';
+    const backNodes = nodes.filter(n => n.isPeriodic || n.isSecondary);
+    const frontNodes = nodes.filter(n => !n.isPeriodic && !n.isSecondary);
+    for (const n of [...backNodes, ...frontNodes]) {
+      const pw = n.pillWidth!;
+      const ph = n.pillHeight!;
+      const px = cx + n.x - pw / 2;
+      const py = cy + n.y - ph / 2;
+
+      ctx.globalAlpha = n.isPeriodic ? 0.35 : n.isSecondary ? 0.50 : n.isDeadLink ? 0.55 : 1;
+
+      // Fill color
+      let fillColor: string;
       if (n.isCurrent) {
-        ctx.fillStyle = getComputedStyle(container).getPropertyValue('--interactive-accent').trim() || '#7c3aed';
+        fillColor = getComputedStyle(container).getPropertyValue('--interactive-accent').trim() || '#7c3aed';
       } else {
-        ctx.fillStyle = n.color;
+        fillColor = familyFill(n.category ?? 'other');
       }
+
+      // Draw rounded rect pill
+      ctx.beginPath();
+      ctx.roundRect(px, py, pw, ph, PILL_RADIUS);
+
       if (n.isDeadLink) {
-        // Hollow circle for dead links (entity referenced but no note exists)
-        ctx.lineWidth = 2;
-        ctx.strokeStyle = n.color;
+        ctx.lineWidth = 1.5;
+        ctx.strokeStyle = familyColor(n.category ?? 'other');
         ctx.setLineDash([3, 3]);
         ctx.stroke();
         ctx.setLineDash([]);
       } else {
+        ctx.fillStyle = fillColor;
         ctx.fill();
+        // Source-colored border showing why this node is on the graph
+        if (!n.isCurrent && n.sources) {
+          const isMulti = n.sources.size > 1;
+          const accentColor = getComputedStyle(container).getPropertyValue('--text-accent').trim() || '#7c3aed';
+          if (isMulti) {
+            ctx.lineWidth = 3;
+            ctx.strokeStyle = accentColor;
+            ctx.setLineDash([]);
+          } else if (n.sources.has('backlink')) {
+            ctx.lineWidth = 2.5; ctx.strokeStyle = '#5b9bf5'; ctx.setLineDash([]);
+          } else if (n.sources.has('forward')) {
+            ctx.lineWidth = 2.5; ctx.strokeStyle = '#43d17a'; ctx.setLineDash([]);
+          } else if (n.sources.has('suggestion')) {
+            ctx.lineWidth = 2.5; ctx.strokeStyle = '#f59e42'; ctx.setLineDash([5, 3]);
+          } else if (n.sources.has('similar')) {
+            ctx.lineWidth = 2.5; ctx.strokeStyle = '#a78bfa'; ctx.setLineDash([3, 3]);
+          } else if (n.sources.has('connection')) {
+            ctx.lineWidth = 2.5; ctx.strokeStyle = '#06b6d4'; ctx.setLineDash([]);
+          } else {
+            ctx.lineWidth = 1.5; ctx.strokeStyle = familyColor(n.category ?? 'other'); ctx.setLineDash([]);
+          }
+          ctx.stroke();
+          ctx.setLineDash([]);
+        }
       }
-      ctx.globalAlpha = 1;
-    }
 
-    // Category glyphs inside nodes (dual encoding: color + letter)
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-    for (const n of nodes) {
-      if (n.isDeadLink || n.radius < 9) continue;
-      const glyph = n.isCurrent ? '\u2605' : CATEGORY_GLYPH[n.category ?? 'other'] ?? '\u00B7';
-      const fontSize = Math.max(9, Math.round(n.radius * 0.9));
-      ctx.font = `bold ${fontSize}px -apple-system, sans-serif`;
-      ctx.globalAlpha = n.isPeriodic ? 0.45 : n.isSecondary ? 0.6 : 1;
-      ctx.fillStyle = '#fff';
-      ctx.fillText(glyph, cx + n.x, cy + n.y);
-      ctx.globalAlpha = 1;
-    }
+      // Label text inside pill
+      const fontSize = n.isCurrent ? 13 : (n.isSecondary || n.isPeriodic) ? 10 : 11;
+      ctx.font = `${n.isCurrent ? 'bold ' : ''}${fontSize}px -apple-system, sans-serif`;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillStyle = n.isCurrent ? '#fff' : textColor;
+      const maxLen = n.isSecondary ? 14 : 20;
+      const label = n.label.length > maxLen ? n.label.slice(0, maxLen - 1) + '\u2026' : n.label;
+      ctx.fillText(label, cx + n.x, cy + n.y);
 
-    // Labels
-    const textColor = getComputedStyle(container).color || '#ccc';
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'top';
-    for (const n of nodes) {
-      ctx.globalAlpha = n.isPeriodic ? 0.25 : n.isSecondary ? 0.4 : 1;
-      ctx.fillStyle = textColor;
-      ctx.font = n.isCurrent ? 'bold 15px -apple-system, sans-serif'
-        : (n.isSecondary || n.isPeriodic) ? '12px -apple-system, sans-serif'
-        : '13px -apple-system, sans-serif';
-      const maxLen = n.isSecondary ? 14 : 18;
-      const label = n.label.length > maxLen ? n.label.slice(0, maxLen - 2) + '\u2026' : n.label;
-      ctx.fillText(label, cx + n.x, cy + n.y + n.radius + 5);
       ctx.globalAlpha = 1;
     }
 
     return canvas;
+  }
+
+  // ---------------------------------------------------------------------------
+  // Graph legend — filled pills for category families
+  // ---------------------------------------------------------------------------
+
+  private renderGraphLegend(container: HTMLElement, _nodes: GraphNode[]): void {
+    const isLight = document.body.classList.contains('theme-light');
+    const legendWrap = container.createDiv('flywheel-graph-legend-wrap');
+
+    // Row 1: all category family pills
+    const allFamilies: [string, string][] = [
+      ['blue', FAMILY_LABELS.blue],
+      ['green', FAMILY_LABELS.green],
+      ['purple', FAMILY_LABELS.purple],
+      ['orange', FAMILY_LABELS.orange],
+      ['red', FAMILY_LABELS.red],
+      ['gray', FAMILY_LABELS.gray],
+    ];
+    const catRow = legendWrap.createDiv('flywheel-graph-legend');
+    for (const [family, label] of allFamilies) {
+      const pill = catRow.createEl('span', { cls: 'flywheel-legend-pill' });
+      pill.style.background = FAMILY_COLORS[family]?.[isLight ? 'light' : 'dark'] ?? FAMILY_COLORS.gray.dark;
+      pill.setText(label);
+    }
+
+    // Row 2: all source border styles
+    const sourceStyles: [string, string, string][] = [
+      ['backlink', '#5b9bf5', 'solid'],
+      ['forward', '#43d17a', 'solid'],
+      ['suggested', '#f59e42', 'dashed'],
+      ['similar', '#a78bfa', 'dotted'],
+      ['connection', '#06b6d4', 'solid'],
+      ['multi', 'var(--text-accent)', 'solid'],
+    ];
+    const srcRow = legendWrap.createDiv('flywheel-graph-legend');
+    for (const [label, color, style] of sourceStyles) {
+      const item = srcRow.createEl('span', { cls: 'flywheel-legend-item' });
+      const line = item.createEl('span', { cls: 'flywheel-legend-line' });
+      line.style.borderTop = `3px ${style} ${color}`;
+      item.createEl('span').setText(label);
+    }
   }
 
   // ---------------------------------------------------------------------------
