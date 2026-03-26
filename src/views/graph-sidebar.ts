@@ -50,21 +50,24 @@ interface GraphNode {
   tooltip?: string;
 }
 
-/** HSLA fill colors for pill backgrounds on canvas (more opaque than CSS cloud pills). */
+/** HSLA fill colors for pill backgrounds on canvas — colorful families only.
+ *  Grey family reads --interactive-normal at render time for theme adaptation. */
 const FAMILY_FILL: Record<string, { dark: string; light: string }> = {
-  blue:   { dark: 'hsla(220, 80%, 60%, 0.40)', light: 'hsla(220, 80%, 55%, 0.35)' },
-  green:  { dark: 'hsla(150, 70%, 50%, 0.40)', light: 'hsla(150, 70%, 45%, 0.35)' },
-  orange: { dark: 'hsla(25, 90%, 60%, 0.40)',  light: 'hsla(25, 90%, 55%, 0.35)' },
-  purple: { dark: 'hsla(270, 70%, 65%, 0.40)', light: 'hsla(270, 70%, 60%, 0.35)' },
-  red:    { dark: 'hsla(0, 75%, 60%, 0.40)',   light: 'hsla(0, 75%, 55%, 0.35)' },
-  gray:   { dark: 'hsla(215, 15%, 55%, 0.35)', light: 'hsla(215, 15%, 50%, 0.30)' },
+  blue:   { dark: 'hsla(220, 80%, 60%, 0.40)', light: 'hsl(220, 65%, 55%)' },
+  green:  { dark: 'hsla(150, 70%, 50%, 0.40)', light: 'hsl(150, 55%, 42%)' },
+  orange: { dark: 'hsla(25, 90%, 60%, 0.40)',  light: 'hsl(25, 75%, 52%)' },
+  purple: { dark: 'hsla(270, 70%, 65%, 0.40)', light: 'hsl(270, 55%, 58%)' },
+  red:    { dark: 'hsla(0, 75%, 60%, 0.40)',   light: 'hsl(0, 60%, 55%)' },
 };
 
 /** Resolve category → pill fill color for canvas rendering. */
 function familyFill(category: string): string {
   const family = CATEGORY_FAMILY[category] ?? 'gray';
+  if (family === 'gray') {
+    return getComputedStyle(document.body).getPropertyValue('--interactive-normal').trim() || 'rgba(128,128,128,0.2)';
+  }
   const isLight = document.body.classList.contains('theme-light');
-  return FAMILY_FILL[family]?.[isLight ? 'light' : 'dark'] ?? FAMILY_FILL.gray.dark;
+  return FAMILY_FILL[family]?.[isLight ? 'light' : 'dark'] ?? 'rgba(128,128,128,0.3)';
 }
 
 interface GraphEdge {
@@ -83,21 +86,29 @@ const CATEGORY_FAMILY: Record<string, string> = {
   periodical: 'gray',    finance: 'gray',        other: 'gray',
 };
 
-/** 6-color palette with dark/light variants. Tailwind-derived, CVD-safe, ≥3:1 contrast. */
-const FAMILY_COLORS: Record<string, { dark: string; light: string }> = {
-  blue:   { dark: '#6EA8FE', light: '#2563EB' },
-  green:  { dark: '#4ADE80', light: '#16A34A' },
-  orange: { dark: '#FB923C', light: '#EA580C' },
-  purple: { dark: '#C084FC', light: '#9333EA' },
-  red:    { dark: '#F87171', light: '#DC2626' },
-  gray:   { dark: '#94A3B8', light: '#64748B' },
+/** Map color families to Obsidian CSS custom property names.
+ *  These auto-adapt between light/dark themes — no manual overrides needed. */
+const FAMILY_CSS_VAR: Record<string, string> = {
+  blue: '--color-blue',
+  green: '--color-green',
+  orange: '--color-orange',
+  purple: '--color-purple',
+  red: '--color-red',
+  gray: '--text-muted',
 };
 
-/** Resolve category → family color, adapting to current Obsidian theme. */
+/** Hardcoded fallbacks only used when CSS vars are unavailable. */
+const FAMILY_COLORS_FALLBACK: Record<string, string> = {
+  blue: '#6EA8FE', green: '#4ADE80', orange: '#FB923C',
+  purple: '#C084FC', red: '#F87171', gray: '#94A3B8',
+};
+
+/** Resolve category → family color, reading Obsidian's theme-aware CSS variables. */
 function familyColor(category: string): string {
   const family = CATEGORY_FAMILY[category] ?? 'gray';
-  const isLight = document.body.classList.contains('theme-light');
-  return FAMILY_COLORS[family]?.[isLight ? 'light' : 'dark'] ?? FAMILY_COLORS.gray.dark;
+  const cssVar = FAMILY_CSS_VAR[family] ?? '--text-muted';
+  return getComputedStyle(document.body).getPropertyValue(cssVar).trim()
+    || FAMILY_COLORS_FALLBACK[family] || '#888';
 }
 
 /** Single-letter glyphs for canvas node rendering. Unique per category. */
@@ -116,7 +127,7 @@ const FAMILY_LABELS: Record<string, string> = {
   orange: 'places & events',
   purple: 'ideas & projects',
   red: 'living things',
-  gray: 'meta',
+  gray: 'other',
 };
 
 export class GraphSidebarView extends ItemView {
@@ -2090,8 +2101,8 @@ export class GraphSidebarView extends ItemView {
     ctx.clearRect(0, 0, width, height);
 
     // Pre-compute pill dimensions for each node
-    const PILL_PAD_X = 12;
-    const PILL_PAD_Y = 6;
+    const PILL_PAD_X = 16;
+    const PILL_PAD_Y = 8;
     const PILL_RADIUS = 10;
     for (const n of nodes) {
       const fontSize = n.isCurrent ? 13 : (n.isSecondary || n.isPeriodic) ? 10 : 11;
@@ -2103,18 +2114,23 @@ export class GraphSidebarView extends ItemView {
       n.pillHeight = fontSize + PILL_PAD_Y * 2;
     }
 
+    // Theme-aware colors (read CSS vars once, used throughout render)
+    const isLightTheme = document.body.classList.contains('theme-light');
+    const edgeColor = isLightTheme ? '80, 80, 80' : '128, 128, 128';
+    const borderColor = getComputedStyle(container).getPropertyValue('--background-modifier-border').trim() || '#ddd';
+
     // Shadow edges first — inter-node connections (not involving active note)
     const nodeById = new Map(nodes.map(n => [n.id, n]));
     for (const e of edges) {
       const src = nodeById.get(e.source);
       const tgt = nodeById.get(e.target);
       if (!src || !tgt) continue;
-      if (src.isCurrent || tgt.isCurrent) continue; // drawn later as primary edges
+      if (src.isCurrent || tgt.isCurrent) continue;
       ctx.beginPath();
       ctx.moveTo(cx + src.x, cy + src.y);
       ctx.lineTo(cx + tgt.x, cy + tgt.y);
-      ctx.lineWidth = 0.8;
-      ctx.strokeStyle = 'rgba(128, 128, 128, 0.10)';
+      ctx.lineWidth = isLightTheme ? 1.0 : 0.8;
+      ctx.strokeStyle = `rgba(${edgeColor}, ${isLightTheme ? '0.18' : '0.10'})`;
       ctx.setLineDash([3, 4]);
       ctx.stroke();
     }
@@ -2124,7 +2140,7 @@ export class GraphSidebarView extends ItemView {
       const src = nodeById.get(e.source);
       const tgt = nodeById.get(e.target);
       if (!src || !tgt) continue;
-      if (!src.isCurrent && !tgt.isCurrent) continue; // already drawn as shadow
+      if (!src.isCurrent && !tgt.isCurrent) continue;
       ctx.beginPath();
       ctx.moveTo(cx + src.x, cy + src.y);
       ctx.lineTo(cx + tgt.x, cy + tgt.y);
@@ -2133,8 +2149,9 @@ export class GraphSidebarView extends ItemView {
       const isSecondaryEdge = other.isSecondary;
       const isDimEdge = isPeriodicEdge || isSecondaryEdge;
       ctx.lineWidth = isDimEdge ? 1.5 : Math.min(2 + e.weight * 1.0, 5);
-      const alpha = isPeriodicEdge ? 0.18 : isSecondaryEdge ? 0.25 : Math.min(0.35 + e.weight * 0.15, 0.65);
-      ctx.strokeStyle = `rgba(128, 128, 128, ${alpha.toFixed(2)})`;
+      const alphaBase = isLightTheme ? 0.15 : 0.0;
+      const alpha = isPeriodicEdge ? 0.18 + alphaBase : isSecondaryEdge ? 0.25 + alphaBase : Math.min(0.35 + e.weight * 0.15 + alphaBase, 0.75);
+      ctx.strokeStyle = `rgba(${edgeColor}, ${alpha.toFixed(2)})`;
       ctx.setLineDash(isDimEdge ? [3, 3] : []);
       ctx.stroke();
     }
@@ -2150,6 +2167,13 @@ export class GraphSidebarView extends ItemView {
       const px = cx + n.x - pw / 2;
       const py = cy + n.y - ph / 2;
 
+      // Opaque background to hide edges underneath the pill (always full alpha)
+      const bgColor = getComputedStyle(container).getPropertyValue('--background-primary').trim() || (isLightTheme ? '#fff' : '#1e1e1e');
+      ctx.beginPath();
+      ctx.roundRect(px, py, pw, ph, PILL_RADIUS);
+      ctx.fillStyle = bgColor;
+      ctx.fill();
+
       ctx.globalAlpha = n.isPeriodic ? 0.35 : n.isSecondary ? 0.50 : n.isDeadLink ? 0.55 : 1;
 
       // Fill color
@@ -2163,6 +2187,8 @@ export class GraphSidebarView extends ItemView {
       // Draw rounded rect pill
       ctx.beginPath();
       ctx.roundRect(px, py, pw, ph, PILL_RADIUS);
+
+      const family = CATEGORY_FAMILY[n.category ?? 'other'] ?? 'gray';
 
       if (n.isDeadLink) {
         ctx.lineWidth = 1.5;
@@ -2191,11 +2217,18 @@ export class GraphSidebarView extends ItemView {
             ctx.lineWidth = 2.5; ctx.strokeStyle = '#a78bfa'; ctx.setLineDash([3, 3]);
           } else if (n.sources.has('connection')) {
             ctx.lineWidth = 2.5; ctx.strokeStyle = '#06b6d4'; ctx.setLineDash([]);
+          } else if (family === 'gray') {
+            // Grey pills get a subtle border to define their shape
+            ctx.lineWidth = 1; ctx.strokeStyle = borderColor; ctx.setLineDash([]);
           } else {
             ctx.lineWidth = 1.5; ctx.strokeStyle = familyColor(n.category ?? 'other'); ctx.setLineDash([]);
           }
           ctx.stroke();
           ctx.setLineDash([]);
+        } else if (!n.isCurrent && family === 'gray') {
+          // Grey pills always get a border for definition
+          ctx.lineWidth = 1; ctx.strokeStyle = borderColor; ctx.setLineDash([]);
+          ctx.stroke();
         }
       }
 
@@ -2204,7 +2237,8 @@ export class GraphSidebarView extends ItemView {
       ctx.font = `${n.isCurrent ? 'bold ' : ''}${fontSize}px -apple-system, sans-serif`;
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
-      ctx.fillStyle = n.isCurrent ? '#fff' : textColor;
+      // Grey and dead-link pills use theme text; colorful pills use white
+      ctx.fillStyle = n.isCurrent ? '#fff' : (n.isDeadLink || family === 'gray') ? textColor : '#fff';
       const maxLen = n.isSecondary ? 14 : 20;
       const label = n.label.length > maxLen ? n.label.slice(0, maxLen - 1) + '\u2026' : n.label;
       ctx.fillText(label, cx + n.x, cy + n.y);
@@ -2221,6 +2255,7 @@ export class GraphSidebarView extends ItemView {
 
   private renderGraphLegend(container: HTMLElement, _nodes: GraphNode[]): void {
     const isLight = document.body.classList.contains('theme-light');
+    container.createEl('hr', { cls: 'flywheel-graph-legend-hr' });
     const legendWrap = container.createDiv('flywheel-graph-legend-wrap');
 
     // Row 1: all category family pills
@@ -2232,10 +2267,21 @@ export class GraphSidebarView extends ItemView {
       ['red', FAMILY_LABELS.red],
       ['gray', FAMILY_LABELS.gray],
     ];
+    legendWrap.createEl('span', { cls: 'flywheel-legend-label', text: 'category' });
     const catRow = legendWrap.createDiv('flywheel-graph-legend');
     for (const [family, label] of allFamilies) {
+      const cssVar = FAMILY_CSS_VAR[family] ?? '--text-muted';
+      const color = getComputedStyle(document.body).getPropertyValue(cssVar).trim()
+        || FAMILY_COLORS_FALLBACK[family] || '#888';
       const pill = catRow.createEl('span', { cls: 'flywheel-legend-pill' });
-      pill.style.background = FAMILY_COLORS[family]?.[isLight ? 'light' : 'dark'] ?? FAMILY_COLORS.gray.dark;
+      if (family === 'gray') {
+        // Grey pill: subtle bg + theme text (matches graph pill style)
+        pill.style.background = getComputedStyle(document.body).getPropertyValue('--interactive-hover').trim() || '#e9e9e9';
+        pill.style.color = getComputedStyle(document.body).getPropertyValue('--text-normal').trim() || '#ccc';
+        pill.style.border = `1px solid ${getComputedStyle(document.body).getPropertyValue('--background-modifier-border').trim() || '#ddd'}`;
+      } else {
+        pill.style.background = color;
+      }
       pill.setText(label);
     }
 
@@ -2248,6 +2294,7 @@ export class GraphSidebarView extends ItemView {
       ['connection', '#06b6d4', 'solid'],
       ['multi', 'var(--text-accent)', 'solid'],
     ];
+    legendWrap.createEl('span', { cls: 'flywheel-legend-label', text: 'source' });
     const srcRow = legendWrap.createDiv('flywheel-graph-legend');
     for (const [label, color, style] of sourceStyles) {
       const item = srcRow.createEl('span', { cls: 'flywheel-legend-item' });

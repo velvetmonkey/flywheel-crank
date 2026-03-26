@@ -393,25 +393,25 @@
   position: relative;
 }
 .flywheel-header-category:hover:not(.dropdown-open) { filter: brightness(1.15); }
-/* Header badges — 6 color families */
+/* Header badges — use Obsidian's theme-aware --color-X / --color-X-rgb variables */
 .flywheel-header-category[data-category="people"],
-.flywheel-header-category[data-category="organizations"] { background: hsla(220, 80%, 60%, 0.2); color: #6EA8FE; }
+.flywheel-header-category[data-category="organizations"] { background: rgba(var(--color-blue-rgb), 0.15); color: var(--color-blue); }
 .flywheel-header-category[data-category="technologies"],
 .flywheel-header-category[data-category="documents"],
-.flywheel-header-category[data-category="acronyms"] { background: hsla(150, 70%, 50%, 0.2); color: #4ADE80; }
+.flywheel-header-category[data-category="acronyms"] { background: rgba(var(--color-green-rgb), 0.15); color: var(--color-green); }
 .flywheel-header-category[data-category="locations"],
 .flywheel-header-category[data-category="events"],
-.flywheel-header-category[data-category="vehicles"] { background: hsla(25, 90%, 60%, 0.2); color: #FB923C; }
+.flywheel-header-category[data-category="vehicles"] { background: rgba(var(--color-orange-rgb), 0.15); color: var(--color-orange); }
 .flywheel-header-category[data-category="concepts"],
 .flywheel-header-category[data-category="projects"],
 .flywheel-header-category[data-category="hobbies"],
-.flywheel-header-category[data-category="media"] { background: hsla(270, 70%, 65%, 0.2); color: #C084FC; }
+.flywheel-header-category[data-category="media"] { background: rgba(var(--color-purple-rgb), 0.15); color: var(--color-purple); }
 .flywheel-header-category[data-category="health"],
 .flywheel-header-category[data-category="food"],
-.flywheel-header-category[data-category="animals"] { background: hsla(0, 75%, 60%, 0.2); color: #F87171; }
+.flywheel-header-category[data-category="animals"] { background: rgba(var(--color-red-rgb), 0.15); color: var(--color-red); }
 .flywheel-header-category[data-category="periodical"],
 .flywheel-header-category[data-category="finance"],
-.flywheel-header-category[data-category="other"] { background: hsla(215, 15%, 55%, 0.2); color: #94A3B8; }
+.flywheel-header-category[data-category="other"] { background: rgba(var(--mono-rgb-100), 0.07); color: var(--text-muted); }
 
 /* Category dropdown chooser */
 .flywheel-header-category.dropdown-open { filter: none; }
@@ -1039,25 +1039,26 @@
 }
 .flywheel-cloud-item:hover { filter: brightness(1.2); }
 .flywheel-cloud-name { line-height: 1.4; color: var(--text-normal); }
-/* 6 color families — background tint only, text is theme-native */
+/* 6 color families — use Obsidian's theme-aware --color-X-rgb variables.
+   These auto-adapt between light/dark — no .theme-light overrides needed. */
 .flywheel-cloud-item[data-category="people"],
-.flywheel-cloud-item[data-category="organizations"] { background: hsla(220, 80%, 60%, 0.22); }
+.flywheel-cloud-item[data-category="organizations"] { background: rgba(var(--color-blue-rgb), 0.15); }
 .flywheel-cloud-item[data-category="technologies"],
 .flywheel-cloud-item[data-category="documents"],
-.flywheel-cloud-item[data-category="acronyms"] { background: hsla(150, 70%, 50%, 0.22); }
+.flywheel-cloud-item[data-category="acronyms"] { background: rgba(var(--color-green-rgb), 0.15); }
 .flywheel-cloud-item[data-category="locations"],
 .flywheel-cloud-item[data-category="events"],
-.flywheel-cloud-item[data-category="vehicles"] { background: hsla(25, 90%, 60%, 0.22); }
+.flywheel-cloud-item[data-category="vehicles"] { background: rgba(var(--color-orange-rgb), 0.15); }
 .flywheel-cloud-item[data-category="concepts"],
 .flywheel-cloud-item[data-category="projects"],
 .flywheel-cloud-item[data-category="hobbies"],
-.flywheel-cloud-item[data-category="media"] { background: hsla(270, 70%, 65%, 0.22); }
+.flywheel-cloud-item[data-category="media"] { background: rgba(var(--color-purple-rgb), 0.15); }
 .flywheel-cloud-item[data-category="health"],
 .flywheel-cloud-item[data-category="food"],
-.flywheel-cloud-item[data-category="animals"] { background: hsla(0, 75%, 60%, 0.22); }
+.flywheel-cloud-item[data-category="animals"] { background: rgba(var(--color-red-rgb), 0.15); }
 .flywheel-cloud-item[data-category="periodical"],
 .flywheel-cloud-item[data-category="finance"],
-.flywheel-cloud-item[data-category="other"] { background: hsla(215, 15%, 55%, 0.18); }
+.flywheel-cloud-item[data-category="other"] { background: rgba(var(--mono-rgb-100), 0.07); }
 /* Source indicator — border shows how entity relates to current note */
 .flywheel-cloud-item[data-source="backlink"] { border-color: #5b9bf5; }
 .flywheel-cloud-item[data-source="forward"] { border-color: #43d17a; }
@@ -4086,29 +4087,42 @@
   min-height: 0;
 }
 
+.flywheel-graph-legend-hr {
+  border: none;
+  border-top: 1px solid var(--background-modifier-border);
+  margin: 0;
+}
 .flywheel-graph-legend-wrap {
   flex-shrink: 0;
-  padding: 8px 10px 20px;
+  padding: 12px 16px 20px;
 }
 .flywheel-graph-legend {
   display: flex;
   flex-wrap: wrap;
-  gap: 6px 10px;
+  gap: 8px 10px;
   font-size: 12px;
   color: var(--text-muted);
   line-height: 1.6;
 }
 .flywheel-graph-legend + .flywheel-graph-legend {
-  margin-top: 6px;
+  margin-top: 10px;
 }
 .flywheel-legend-pill {
   display: inline-block;
-  padding: 2px 12px;
+  padding: 4px 14px;
   border-radius: 10px;
   font-size: 12px;
   color: #fff;
   line-height: 1.5;
   white-space: nowrap;
+}
+.flywheel-legend-label {
+  display: block;
+  font-size: var(--font-smallest);
+  color: var(--text-faint);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  margin-bottom: 4px;
 }
 .flywheel-legend-line {
   width: 24px;
@@ -4427,24 +4441,7 @@
    Light theme overrides — pill text is theme-native (no color override needed).
    Slightly lower background opacity so tints don't overpower light backgrounds.
    ======================================================================== */
-.theme-light .flywheel-cloud-item[data-category="people"],
-.theme-light .flywheel-cloud-item[data-category="organizations"] { background: hsla(220, 80%, 55%, 0.16); }
-.theme-light .flywheel-cloud-item[data-category="technologies"],
-.theme-light .flywheel-cloud-item[data-category="documents"],
-.theme-light .flywheel-cloud-item[data-category="acronyms"] { background: hsla(150, 70%, 45%, 0.16); }
-.theme-light .flywheel-cloud-item[data-category="locations"],
-.theme-light .flywheel-cloud-item[data-category="events"],
-.theme-light .flywheel-cloud-item[data-category="vehicles"] { background: hsla(25, 90%, 55%, 0.16); }
-.theme-light .flywheel-cloud-item[data-category="concepts"],
-.theme-light .flywheel-cloud-item[data-category="projects"],
-.theme-light .flywheel-cloud-item[data-category="hobbies"],
-.theme-light .flywheel-cloud-item[data-category="media"] { background: hsla(270, 70%, 60%, 0.16); }
-.theme-light .flywheel-cloud-item[data-category="health"],
-.theme-light .flywheel-cloud-item[data-category="food"],
-.theme-light .flywheel-cloud-item[data-category="animals"] { background: hsla(0, 75%, 55%, 0.16); }
-.theme-light .flywheel-cloud-item[data-category="periodical"],
-.theme-light .flywheel-cloud-item[data-category="finance"],
-.theme-light .flywheel-cloud-item[data-category="other"] { background: hsla(215, 15%, 50%, 0.14); }
+/* Cloud and header badge light overrides no longer needed — --color-X-rgb vars auto-adapt */
 
 /* Hub badge text — darken for light theme, 6 families */
 .theme-light .flywheel-entity-hub-badge[data-category="people"],
