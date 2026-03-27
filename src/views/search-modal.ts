@@ -251,9 +251,21 @@ export class SearchModal extends Modal {
       return;
     }
 
-    const topRrf = this.results[0]?.rrf_score || 1;
+    // Results arrive score-sorted (consumer: 'human' preserves order)
+    const topScore = this.results[0]?.rrf_score || 1;
+    let prevPct = 100;
 
     this.results.forEach((result, i) => {
+      const pct = topScore > 0 && result.rrf_score != null
+        ? Math.round((result.rrf_score / topScore) * 100)
+        : 0;
+
+      // Tier separator when score drops significantly
+      if (prevPct - pct > 25 && i > 0) {
+        this.resultsEl.createDiv('flywheel-search-tier-separator');
+      }
+      prevPct = pct;
+
       const item = this.resultsEl.createDiv({
         cls: `flywheel-search-result-item ${i === this.selectedIndex ? 'is-selected' : ''}`,
       });
@@ -277,7 +289,7 @@ export class SearchModal extends Modal {
         item.addClass('is-selected');
       });
 
-      // Title row: [icon] Title [source] [folder · time] [score]
+      // Title row: [icon] Title [source] [graph] [folder · time] [score]
       const titleRow = item.createDiv('flywheel-search-result-title-row');
 
       if (result.category) {
@@ -290,14 +302,22 @@ export class SearchModal extends Modal {
       const titleEl = titleRow.createDiv('flywheel-search-result-title');
       titleEl.setText(result.title);
 
-      // Source label inline after title
+      // Source label — color-coded by confidence
       const sources: string[] = [];
-      if (result.in_fts5) sources.push('fts');
+      if (result.in_fts5) sources.push('keyword');
       if (result.in_semantic) sources.push('semantic');
       if (result.in_entity) sources.push('entity');
       if (sources.length === 0) sources.push('metadata');
       const sourceEl = titleRow.createSpan('flywheel-search-result-source');
       sourceEl.setText(sources.join('+'));
+      if (sources.length > 1) sourceEl.addClass('flywheel-search-result-source-multi');
+
+      // Graph boost indicator
+      if (result.graph_boost && result.graph_boost > 0) {
+        const graphEl = titleRow.createSpan('flywheel-search-result-graph-boost');
+        setIcon(graphEl, 'git-fork');
+        graphEl.setAttribute('aria-label', `Graph boost: +${Math.round(result.graph_boost)}`);
+      }
 
       // Inline metadata: folder · time · backlinks
       const metaParts: string[] = [];
@@ -312,12 +332,11 @@ export class SearchModal extends Modal {
         metaEl.setText(metaParts.join(' \u00b7 '));
       }
 
-      // Score badge — normalize relative to top result
-      if (result.rrf_score != null && topRrf > 0) {
-        const pct = Math.round((result.rrf_score / topRrf) * 100);
+      // Score badge
+      if (pct > 0) {
         const badge = titleRow.createDiv('flywheel-search-score-badge');
         badge.setText(`${pct}%`);
-        badge.style.opacity = String(0.4 + (result.rrf_score / topRrf) * 0.6);
+        badge.style.opacity = String(0.4 + (pct / 100) * 0.6);
       }
 
       // Snippet (1-line clamp, keyword matches only)
@@ -325,20 +344,30 @@ export class SearchModal extends Modal {
         const snippetEl = item.createDiv('flywheel-search-result-snippet');
         snippetEl.innerHTML = result.snippet;
       }
+
+      // Score bar — thin line showing relative relevance
+      if (pct > 0) {
+        const bar = item.createDiv('flywheel-search-result-score-bar');
+        bar.style.width = `${pct}%`;
+      }
     });
   }
 
   private selectNext(): void {
     if (this.results.length === 0) return;
+    const items = this.resultsEl.querySelectorAll('.flywheel-search-result-item');
+    items[this.selectedIndex]?.removeClass('is-selected');
     this.selectedIndex = (this.selectedIndex + 1) % this.results.length;
-    this.renderResults();
+    items[this.selectedIndex]?.addClass('is-selected');
     this.scrollToSelected();
   }
 
   private selectPrev(): void {
     if (this.results.length === 0) return;
+    const items = this.resultsEl.querySelectorAll('.flywheel-search-result-item');
+    items[this.selectedIndex]?.removeClass('is-selected');
     this.selectedIndex = (this.selectedIndex - 1 + this.results.length) % this.results.length;
-    this.renderResults();
+    items[this.selectedIndex]?.addClass('is-selected');
     this.scrollToSelected();
   }
 
