@@ -138,7 +138,7 @@ export class FlywheelCrankSettingTab extends PluginSettingTab {
       .setName('Exclude from analysis')
       .setDesc('Comma-separated list of #tags or entity names to exclude from all analysis — tasks, graph, suggestions, hub rankings. Tags are prefixed with #. Recurring tags like #habit and #daily are auto-detected on startup.');
 
-    if (this.plugin.mcpClient.connected) {
+    if (this.plugin.mcpClient?.connected) {
       excludeSetting.addTextArea(text => {
         text.setPlaceholder('#habit, #daily, walk, vitamins');
         text.inputEl.rows = 3;
