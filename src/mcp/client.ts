@@ -37,6 +37,8 @@ export interface McpSearchResult {
   outlink_count?: number;
   outlink_names?: string[];
   modified?: string;
+  graph_boost?: number;
+  _combined_score?: number;
   // Multi-hop provenance
   via?: string;
   hop?: number;
@@ -1209,8 +1211,8 @@ export class FlywheelMcpClient {
   async search(query: string, limit = 20): Promise<McpSearchResponse> {
     return this.callTool<McpSearchResponse>('search', {
       query,
-      scope: 'all',
       limit,
+      consumer: 'human',
     });
   }
 

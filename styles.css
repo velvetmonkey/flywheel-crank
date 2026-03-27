@@ -217,6 +217,7 @@
 }
 
 .flywheel-search-result-item {
+  position: relative;
   padding: 6px 20px;
   cursor: pointer;
   border-left: 3px solid transparent;
@@ -328,6 +329,43 @@
   color: var(--text-normal);
   padding: 0 1px;
   border-radius: 2px;
+}
+
+/* Score bar — thin line at bottom showing relative relevance */
+.flywheel-search-result-score-bar {
+  position: absolute;
+  left: 0;
+  bottom: 0;
+  height: 2px;
+  background: var(--interactive-accent);
+  opacity: 0.4;
+  transition: width 0.15s ease;
+}
+
+/* Tier separator — visual break between score tiers */
+.flywheel-search-tier-separator {
+  height: 1px;
+  margin: 4px 0;
+  background: var(--background-modifier-border);
+  opacity: 0.5;
+}
+
+/* Multi-source badge — accent color for higher confidence */
+.flywheel-search-result-source-multi {
+  background: hsla(var(--interactive-accent-hsl), 0.15);
+  color: var(--interactive-accent);
+}
+
+/* Graph boost indicator */
+.flywheel-search-result-graph-boost {
+  display: inline-flex;
+  align-items: center;
+  flex-shrink: 0;
+  color: var(--text-faint);
+}
+.flywheel-search-result-graph-boost .svg-icon {
+  width: 12px;
+  height: 12px;
 }
 
 
