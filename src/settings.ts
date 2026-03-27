@@ -82,22 +82,6 @@ export class FlywheelCrankSettingTab extends PluginSettingTab {
         })
       );
 
-    // Search settings
-    containerEl.createEl('h3', { text: 'Search' });
-
-    new Setting(containerEl)
-      .setName('Max search results')
-      .setDesc('Maximum number of search results to show')
-      .addSlider(slider => slider
-        .setLimits(5, 50, 5)
-        .setValue(this.plugin.settings.maxSearchResults)
-        .setDynamicTooltip()
-        .onChange(async (value) => {
-          this.plugin.settings.maxSearchResults = value;
-          await this.plugin.saveSettings();
-        })
-      );
-
     // MCP Server
     containerEl.createEl('h3', { text: 'MCP Server' });
 
