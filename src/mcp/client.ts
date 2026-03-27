@@ -609,8 +609,13 @@ export interface McpFlywheelConfigResponse {
   vault_name?: string;
   paths?: Record<string, string>;
   templates?: Record<string, string>;
+  /** Unified exclusion list — #tags and entity names */
+  exclude?: string[];
+  /** @deprecated Use exclude */
   exclude_task_tags?: string[];
+  /** @deprecated Use exclude */
   exclude_analysis_tags?: string[];
+  /** @deprecated Use exclude */
   exclude_entities?: string[];
   [key: string]: unknown;
 }

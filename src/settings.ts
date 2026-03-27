@@ -131,71 +131,38 @@ export class FlywheelCrankSettingTab extends PluginSettingTab {
         })
       );
 
-    // Analysis
-    containerEl.createEl('h3', { text: 'Analysis' });
+    // Exclusions
+    containerEl.createEl('h3', { text: 'Exclusions' });
 
-    const excludeTagsSetting = new Setting(containerEl)
-      .setName('Exclude tags from analysis')
-      .setDesc('Notes with these tags are filtered from hub rankings and semantic link suggestions (comma-separated). Recurring tags like "habit" and "daily" are auto-detected on startup.');
+    const excludeSetting = new Setting(containerEl)
+      .setName('Exclude from analysis')
+      .setDesc('Comma-separated list of #tags or entity names to exclude from all analysis — tasks, graph, suggestions, hub rankings. Tags are prefixed with #. Recurring tags like #habit and #daily are auto-detected on startup.');
 
-    // Load current value from MCP server, fall back to empty
     if (this.plugin.mcpClient.connected) {
-      excludeTagsSetting.addTextArea(text => {
-        text.setPlaceholder('habit, daily, recurring');
-        text.inputEl.rows = 2;
+      excludeSetting.addTextArea(text => {
+        text.setPlaceholder('#habit, #daily, walk, vitamins');
+        text.inputEl.rows = 3;
 
-        // Load async
         this.plugin.mcpClient.getFlywheelConfig().then(cfg => {
-          const tags = cfg.exclude_analysis_tags ?? [];
-          text.setValue(tags.join(', '));
+          const items = cfg.exclude ?? [];
+          text.setValue(items.join(', '));
         }).catch(() => {
           text.setPlaceholder('(connect to server to load)');
         });
 
         text.onChange(async (value) => {
-          const tags = value.split(',').map(s => s.trim()).filter(s => s.length > 0);
+          const items = value.split(',').map(s => s.trim()).filter(s => s.length > 0);
           try {
-            await this.plugin.mcpClient.setFlywheelConfig('exclude_analysis_tags', tags);
+            await this.plugin.mcpClient.setFlywheelConfig('exclude', items);
           } catch (err) {
-            console.error('Flywheel Crank: failed to save exclude_analysis_tags', err);
+            console.error('Flywheel Crank: failed to save exclude', err);
           }
         });
 
         return text;
       });
     } else {
-      excludeTagsSetting.setDesc('Connect to MCP server to configure. ' + excludeTagsSetting.descEl.textContent);
-    }
-
-    const excludeEntitiesSetting = new Setting(containerEl)
-      .setName('Exclude entities from analysis')
-      .setDesc('Entity names to filter from all graph analysis (comma-separated). Use for common entities that add noise, like "walk" or "vitamins".');
-
-    if (this.plugin.mcpClient.connected) {
-      excludeEntitiesSetting.addTextArea(text => {
-        text.setPlaceholder('walk, stretch, vitamins');
-        text.inputEl.rows = 2;
-
-        this.plugin.mcpClient.getFlywheelConfig().then(cfg => {
-          const entities = cfg.exclude_entities ?? [];
-          text.setValue(entities.join(', '));
-        }).catch(() => {
-          text.setPlaceholder('(connect to server to load)');
-        });
-
-        text.onChange(async (value) => {
-          const entities = value.split(',').map(s => s.trim()).filter(s => s.length > 0);
-          try {
-            await this.plugin.mcpClient.setFlywheelConfig('exclude_entities', entities);
-          } catch (err) {
-            console.error('Flywheel Crank: failed to save exclude_entities', err);
-          }
-        });
-
-        return text;
-      });
-    } else {
-      excludeEntitiesSetting.setDesc('Connect to MCP server to configure. ' + excludeEntitiesSetting.descEl.textContent);
+      excludeSetting.setDesc('Connect to MCP server to configure. ' + excludeSetting.descEl.textContent);
     }
   }
 }
