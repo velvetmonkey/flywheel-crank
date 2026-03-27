@@ -4,7 +4,7 @@
   <p><strong>A window into your local vault's Flywheel MCP server.</strong><br/>Obsidian plugin — no data leaves your machine, no accounts, no sync.</p>
 </div>
 
-[![License: AGPL-3.0](https://img.shields.io/badge/License-AGPL--3.0-blue.svg)](https://www.gnu.org/licenses/agpl-3.0)
+[![License: Apache-2.0](https://img.shields.io/badge/License-Apache--2.0-blue.svg)](https://www.apache.org/licenses/LICENSE-2.0)
 [![Obsidian](https://img.shields.io/badge/Obsidian-plugin-blueviolet.svg)](https://obsidian.md/)
 [![Platform](https://img.shields.io/badge/platform-desktop%20only-blue.svg)](https://github.com/velvetmonkey/flywheel-crank)
 
@@ -122,4 +122,4 @@ npm test       # run vitest suite
 
 Part of the [Flywheel](https://github.com/velvetmonkey/flywheel) ecosystem. Powered by [Flywheel Memory](https://github.com/velvetmonkey/flywheel-memory).
 
-AGPL-3.0 — see [LICENSE](./LICENSE) for details.
+Apache-2.0 — see [LICENSE](./LICENSE) for details.
