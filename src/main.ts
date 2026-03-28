@@ -32,6 +32,9 @@ export default class FlywheelCrankPlugin extends Plugin {
   private graphRefreshTimer: number | null = null;
   private lastRebuildTimestamp = 0;
   private lastPipelineTimestamp = 0;
+  /** Entity name from last right-click on a rendered internal link (Live Preview fallback) */
+  private contextMenuLinkEntity: string | null = null;
+  private contextMenuLinkLine: number | null = null;
 
   async onload(): Promise<void> {
     console.log(`[flywheel-crank] v${this.manifest.version} loading`);
@@ -213,6 +216,34 @@ export default class FlywheelCrankPlugin extends Plugin {
       })
     );
 
+    // Capture right-click target for rendered internal links in Live Preview.
+    // In Live Preview, right-clicking a rendered wikilink doesn't reposition
+    // the cursor, so getWikilinkAtPosition() fails. This listener grabs the
+    // entity from the DOM before editor-menu fires.
+    const contextMenuHandler = (evt: MouseEvent) => {
+      this.contextMenuLinkEntity = null;
+      this.contextMenuLinkLine = null;
+      const target = evt.target as HTMLElement;
+      if (!target) return;
+      const linkEl = target.closest('.internal-link') as HTMLElement | null;
+      if (!linkEl) return;
+      this.contextMenuLinkEntity = linkEl.getAttribute('data-href')?.trim() || null;
+      // Resolve the line number while the element is still in the DOM
+      const activeView = this.app.workspace.getActiveViewOfType(MarkdownView);
+      if (activeView) {
+        try {
+          const cmEditor = (activeView.editor as any).cm;
+          if (cmEditor?.posAtDOM) {
+            const pos = cmEditor.posAtDOM(linkEl);
+            const lineInfo = cmEditor.state.doc.lineAt(pos);
+            this.contextMenuLinkLine = lineInfo.number - 1; // 0-indexed for Editor API
+          }
+        } catch { /* posAtDOM can throw for detached nodes */ }
+      }
+    };
+    document.addEventListener('contextmenu', contextMenuHandler, true);
+    this.register(() => document.removeEventListener('contextmenu', contextMenuHandler, true));
+
     // Context menu actions on [[wikilinks]]
     this.registerEvent(
       (this.app.workspace as any).on('editor-menu', (menu: Menu, editor: Editor, view: MarkdownView) => {
@@ -220,7 +251,14 @@ export default class FlywheelCrankPlugin extends Plugin {
 
         const cursor = editor.getCursor();
         const line = editor.getLine(cursor.line);
-        const entity = this.getWikilinkAtPosition(line, cursor.ch);
+        let entity = this.getWikilinkAtPosition(line, cursor.ch);
+        let wikilinkLine = cursor.line;
+
+        // Fallback: use entity from rendered internal-link element (Live Preview)
+        if (!entity && this.contextMenuLinkEntity) {
+          entity = this.contextMenuLinkEntity;
+          if (this.contextMenuLinkLine !== null) wikilinkLine = this.contextMenuLinkLine;
+        }
         if (!entity) return;
 
         const notePath = view?.file?.path;
@@ -250,9 +288,14 @@ export default class FlywheelCrankPlugin extends Plugin {
                 // Strip [[wikilink]] brackets from the editor
                 const cur = editor.getCursor();
                 const curLine = editor.getLine(cur.line);
-                const stripped = this.stripWikilinkAtPosition(curLine, cur.ch);
+                let stripped = this.stripWikilinkAtPosition(curLine, cur.ch);
                 if (stripped) {
                   editor.setLine(cur.line, stripped);
+                } else {
+                  // Fallback: cursor wasn't inside the wikilink (Live Preview)
+                  const fallbackLine = editor.getLine(wikilinkLine);
+                  stripped = this.stripWikilinkForEntity(fallbackLine, entity);
+                  if (stripped) editor.setLine(wikilinkLine, stripped);
                 }
                 await this.mcpClient.reportWikilinkFeedback(entity, notePath, false, true);
                 new Notice(`"${entity}" suppressed — won't be suggested in this note again`);
@@ -712,6 +755,19 @@ export default class FlywheelCrankPlugin extends Plugin {
     const replacement = pipeIdx >= 0 ? inner.substring(pipeIdx + 1).trim() : inner.trim();
 
     return line.substring(0, openIdx) + replacement + line.substring(closeIdx + 2);
+  }
+
+  /**
+   * Strip the first [[entity]] or [[entity|alias]] matching the given entity name.
+   * Used as fallback when cursor-based stripping fails (Live Preview rendered links).
+   */
+  private stripWikilinkForEntity(line: string, entity: string): string | null {
+    const escaped = entity.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const regex = new RegExp(`\\[\\[${escaped}(?:\\|([^\\]]*?))?\\]\\]`);
+    const match = line.match(regex);
+    if (!match || match.index === undefined) return null;
+    const replacement = match[1]?.trim() || entity;
+    return line.substring(0, match.index) + replacement + line.substring(match.index + match[0].length);
   }
 
   private setStatus(text: string, active = false, tooltip?: string): void {
