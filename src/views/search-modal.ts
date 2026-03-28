@@ -195,7 +195,7 @@ export class SearchModal extends Modal {
     this.statusEl.removeClass('flywheel-search-status-warning');
 
     try {
-      const response = await this.mcpClient.search(query, 20);
+      const response = await this.mcpClient.search(query);
       const elapsed = Math.round(performance.now() - start);
 
       // Handle building state — FTS5 index not ready yet

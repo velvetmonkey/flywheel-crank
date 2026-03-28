@@ -1208,10 +1208,10 @@ export class FlywheelMcpClient {
   /**
    * Unified search: FTS5 keyword + semantic hybrid.
    */
-  async search(query: string, limit = 20): Promise<McpSearchResponse> {
+  async search(query: string, limit?: number): Promise<McpSearchResponse> {
     return this.callTool<McpSearchResponse>('search', {
       query,
-      limit,
+      ...(limit != null && { limit }),
       consumer: 'human',
     });
   }
