@@ -105,26 +105,20 @@ export class VaultHealthView extends ItemView {
 
     const content = container.createDiv('flywheel-health-content');
 
-    // Vault Config section — lazy-loaded (subscribes to health updates if config not yet inferred)
+    // Vault Config section — lazy-loaded via flywheel_config tool
     this.renderLazySection(content, 'Vault Config', 'settings', async (el) => {
-      const health = this.mcpClient.lastHealth ?? await this.mcpClient.healthCheck();
-      const cfg = health.config as Record<string, any> | undefined;
-      if (!cfg || Object.keys(cfg).length === 0) {
-        const waitMsg = el.createDiv('flywheel-health-empty-msg');
-        waitMsg.setText('Waiting for config inference...');
-        // Re-render when config arrives via health poll
-        const unsub = this.mcpClient.onHealthUpdate((h) => {
-          const c = h.config as Record<string, any> | undefined;
-          if (c && Object.keys(c).length > 0) {
-            unsub();
-            el.empty();
-            this.renderVaultConfig(el, c);
-          }
-        });
-        this.register(() => unsub());
+      try {
+        const configResp = await this.mcpClient.getFlywheelConfig();
+        const cfg = configResp.config as Record<string, any> | undefined;
+        if (!cfg || Object.keys(cfg).length === 0) {
+          el.createDiv('flywheel-health-empty-msg').setText('No config detected yet');
+          return 0;
+        }
+        return this.renderVaultConfig(el, cfg);
+      } catch {
+        el.createDiv('flywheel-health-empty-msg').setText('Could not load config');
         return 0;
       }
-      return this.renderVaultConfig(el, cfg);
     }, 'Auto-detected folder paths and templates for periodic notes (daily, weekly, monthly, etc.).');
 
     // Vault Stats section — lazy-loaded
@@ -1061,13 +1055,31 @@ export class VaultHealthView extends ItemView {
 
     let lastPipelineTs = 0;
 
-    const populateLog = () => {
-      const health = this.mcpClient.lastHealth;
-      if (!health) return;
+    const populateLog = async () => {
+      // Try pipeline_status first (new tool), fall back to health data
+      let pipelines: Array<{
+        timestamp: number; trigger: string; duration_ms: number;
+        files_changed: number | null; changed_paths: string[] | null;
+        steps: import('../mcp/client').McpPipelineStep[];
+      }> = [];
 
-      const pipelines = health.recent_pipelines?.length
-        ? health.recent_pipelines
-        : health.last_pipeline ? [health.last_pipeline] : [];
+      try {
+        const ps = await this.mcpClient.pipelineStatus(true);
+        if (ps.recent_runs && ps.recent_runs.length > 0) {
+          pipelines = ps.recent_runs.map(r => ({
+            ...r,
+            changed_paths: null,
+          }));
+        }
+      } catch {
+        // Fall back to health data (older server without pipeline_status)
+        const health = this.mcpClient.lastHealth;
+        if (health) {
+          pipelines = health.recent_pipelines?.length
+            ? health.recent_pipelines
+            : health.last_pipeline ? [health.last_pipeline] : [];
+        }
+      }
 
       if (pipelines.length === 0) {
         if (lastPipelineTs === 0) {

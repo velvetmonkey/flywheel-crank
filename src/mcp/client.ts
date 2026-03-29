@@ -150,6 +150,17 @@ export interface McpHealthCheckResponse {
   tasks_building?: boolean;
   watcher_state?: 'starting' | 'ready' | 'rebuilding' | 'dirty' | 'error';
   watcher_pending?: number;
+  last_index_activity_at?: number;
+  last_index_activity_ago_seconds?: number;
+  last_full_rebuild_at?: number;
+  last_watcher_batch_at?: number;
+  pipeline_activity?: {
+    busy: boolean;
+    current_step: string | null;
+    started_at: number | null;
+    progress: string | null;
+    last_completed_ago_seconds: number | null;
+  };
   recommendations: string[];
 }
 
@@ -666,6 +677,32 @@ export interface McpDoctorCheck {
 
 export interface McpDoctorResponse {
   checks: McpDoctorCheck[];
+}
+
+// Pipeline status
+export interface McpPipelineStatusResponse {
+  busy: boolean;
+  trigger: string | null;
+  started_at: number | null;
+  age_ms: number | null;
+  current_step: string | null;
+  progress: string | null;
+  pending_events: number;
+  last_completed: {
+    at: number;
+    ago_seconds: number;
+    trigger: string | null;
+    duration_ms: number | null;
+    files: number | null;
+    steps: string[];
+  } | null;
+  recent_runs?: Array<{
+    timestamp: number;
+    trigger: string;
+    duration_ms: number;
+    files_changed: number | null;
+    steps: McpPipelineStep[];
+  }>;
 }
 
 // Co-occurrence gaps
@@ -1255,8 +1292,8 @@ export class FlywheelMcpClient {
   /**
    * Get vault health check — note counts, config, index status.
    */
-  async healthCheck(): Promise<McpHealthCheckResponse> {
-    return this.callTool<McpHealthCheckResponse>('health_check', {});
+  async healthCheck(mode: 'summary' | 'full' = 'summary'): Promise<McpHealthCheckResponse> {
+    return this.callTool<McpHealthCheckResponse>('health_check', { mode });
   }
 
   /**
@@ -1264,6 +1301,13 @@ export class FlywheelMcpClient {
    */
   async runDoctor(): Promise<McpDoctorResponse> {
     return this.callTool<McpDoctorResponse>('flywheel_doctor', {});
+  }
+
+  /**
+   * Get live pipeline activity and recent runs.
+   */
+  async pipelineStatus(detail = false): Promise<McpPipelineStatusResponse> {
+    return this.callTool<McpPipelineStatusResponse>('pipeline_status', { detail });
   }
 
   /**
