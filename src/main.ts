@@ -431,12 +431,16 @@ export default class FlywheelCrankPlugin extends Plugin {
 
     const tooltip = this.buildTooltip(health);
 
-    // --- Watcher processing ---
-    const watcherProcessing = health.watcher_state === 'rebuilding'
-      || (health.watcher_pending != null && health.watcher_pending > 0);
-    if (watcherProcessing) {
+    // --- Watcher processing (prefer pipeline_activity over watcher_state) ---
+    const pa = health.pipeline_activity;
+    const pipelineBusy = pa?.busy
+      ?? (health.watcher_state === 'rebuilding' || (health.watcher_pending != null && health.watcher_pending > 0));
+    if (pipelineBusy) {
+      const stepLabel = pa?.current_step ?? null;
       const pending = health.watcher_pending ?? 0;
-      const label = pending > 0 ? `processing ${pending} files...` : 'processing...';
+      const label = stepLabel
+        ? `${stepLabel}${pa?.progress ? ` (${pa.progress})` : ''}...`
+        : (pending > 0 ? `processing ${pending} files...` : 'processing...');
       this.setStatus(label, true, tooltip);
       return;
     }
@@ -451,16 +455,24 @@ export default class FlywheelCrankPlugin extends Plugin {
       return;
     }
 
+    // --- Recent activity window (sticky for 10s after batch completion) ---
+    const completedAgo = health.pipeline_activity?.last_completed_ago_seconds;
+    if (completedAgo != null && completedAgo < 10) {
+      this.setStatus('updated just now', false, tooltip);
+      return;
+    }
+
     // --- Idle ---
-    const ago = health.last_rebuild?.ago_seconds ?? 0;
+    const ago = health.last_index_activity_ago_seconds ?? health.last_rebuild?.ago_seconds ?? 0;
     const agoText = formatAgo(ago);
     this.setStatus(`ready · ${agoText}`, false, tooltip);
   }
 
   /** Build a rich tooltip showing all subsystem states. */
   private buildTooltip(health: import('./mcp/client').McpHealthCheckResponse): string {
-    const ago = health.last_rebuild?.ago_seconds ?? 0;
+    const ago = health.last_index_activity_ago_seconds ?? health.last_rebuild?.ago_seconds ?? 0;
     const agoText = formatAgo(ago);
+    const pa = health.pipeline_activity;
 
     const lines: string[] = [];
 
@@ -472,12 +484,15 @@ export default class FlywheelCrankPlugin extends Plugin {
     // Watcher state
     const ws = health.watcher_state;
     if (ws === undefined) {
-      // Older server — no watcher_state reported
       lines.push('Watcher: unknown');
-    } else if (ws === 'rebuilding') {
+    } else if (pa?.busy || ws === 'rebuilding') {
+      const step = pa?.current_step;
+      const progress = pa?.progress;
       const pending = health.watcher_pending ?? 0;
-      const detail = pending > 0 ? ` (${pending} pending)` : '';
-      lines.push(`Watcher: processing${detail}`);
+      const detail = step
+        ? `${step}${progress ? ` (${progress})` : ''}`
+        : (pending > 0 ? `${pending} pending` : '');
+      lines.push(`Watcher: processing${detail ? ` — ${detail}` : ''}`);
       // Include last pipeline detail if available
       if (health.last_pipeline) {
         const p = health.last_pipeline;
@@ -497,8 +512,11 @@ export default class FlywheelCrankPlugin extends Plugin {
     } else {
       // 'ready'
       const pending = health.watcher_pending ?? 0;
+      const completedAgo = pa?.last_completed_ago_seconds;
       if (pending > 0) {
         lines.push(`Watcher: ready (${pending} pending)`);
+      } else if (completedAgo != null && completedAgo < 60) {
+        lines.push(`Watcher: ready (last batch ${formatAgo(completedAgo)})`);
       } else {
         lines.push('Watcher: ready');
       }
