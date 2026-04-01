@@ -96,6 +96,7 @@ export interface McpForwardLinksResponse {
   forward_links: McpForwardLink[];
 }
 
+/** @deprecated Use McpCompactStep instead */
 export interface McpPipelineStep {
   name: string;
   duration_ms: number;
@@ -103,6 +104,15 @@ export interface McpPipelineStep {
   output: Record<string, unknown>;
   skipped?: boolean;
   skip_reason?: string;
+}
+
+/** Compact step shape returned by flywheel-memory response-size hardening */
+export interface McpCompactStep {
+  name: string;
+  duration_ms: number;
+  skipped?: boolean;
+  skip_reason?: string;
+  summary: Record<string, number | boolean | string>;
 }
 
 export interface McpHealthCheckResponse {
@@ -130,16 +140,20 @@ export interface McpHealthCheckResponse {
     trigger: string;
     duration_ms: number;
     files_changed: number | null;
-    changed_paths: string[] | null;
-    steps: McpPipelineStep[];
+    changed_paths_total: number;
+    changed_paths_sample: string[];
+    step_count: number;
+    steps?: McpCompactStep[];
   };
   recent_pipelines?: Array<{
     timestamp: number;
     trigger: string;
     duration_ms: number;
     files_changed: number | null;
-    changed_paths: string[] | null;
-    steps: McpPipelineStep[];
+    changed_paths_total: number;
+    changed_paths_sample: string[];
+    step_count: number;
+    steps: McpCompactStep[];
   }>;
   fts5_ready?: boolean;
   fts5_building?: boolean;
@@ -701,7 +715,10 @@ export interface McpPipelineStatusResponse {
     trigger: string;
     duration_ms: number;
     files_changed: number | null;
-    steps: McpPipelineStep[];
+    changed_paths_total?: number;
+    changed_paths_sample?: string[];
+    step_count?: number;
+    steps: McpCompactStep[];
   }>;
 }
 
@@ -1421,8 +1438,11 @@ export class FlywheelMcpClient {
   /**
    * List all entities grouped by category with hub scores.
    */
-  async listEntities(): Promise<McpEntityIndexResponse> {
-    return this.callTool<McpEntityIndexResponse>('list_entities', {});
+  async listEntities(category?: string, limit?: number): Promise<McpEntityIndexResponse> {
+    return this.callTool<McpEntityIndexResponse>('list_entities', {
+      ...(category ? { category } : {}),
+      ...(limit != null ? { limit } : {}),
+    });
   }
 
   /**
@@ -1840,7 +1860,7 @@ export class FlywheelMcpClient {
   private async ensureEntityCache(): Promise<void> {
     if (this.entityCategoryCache && Date.now() - this.entityCategoryCacheTime < FlywheelMcpClient.ENTITY_CACHE_TTL) return;
 
-    const resp = await this.listEntities();
+    const resp = await this.listEntities(undefined, 2000);
     const catMap = new Map<string, string>();
     const hubMap = new Map<string, number>();
     for (const [category, items] of Object.entries(resp)) {

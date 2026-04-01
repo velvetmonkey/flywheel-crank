@@ -2367,83 +2367,12 @@ export class GraphSidebarView extends ItemView {
   // Pipeline pulse — animate cloud pills on pipeline events (T4 + T5)
   // ---------------------------------------------------------------------------
 
-  private handlePipelineUpdate(health: McpHealthCheckResponse): void {
-    const pipeline = health.last_pipeline;
-    if (!pipeline) return;
-
-    // Collect entity names affected by pipeline steps
-    const affectedEntities = new Set<string>();
-
-    const entityStep = pipeline.steps?.find(s => s.name === 'entity_scan');
-    if (entityStep && !entityStep.skipped) {
-      const added = (entityStep.output?.added as Array<string | { name: string }>) ?? [];
-      const removed = (entityStep.output?.removed as Array<string | { name: string }>) ?? [];
-      for (const e of added) affectedEntities.add(typeof e === 'string' ? e : e.name);
-      for (const e of removed) affectedEntities.add(typeof e === 'string' ? e : e.name);
-    }
-
-    const wlStep = pipeline.steps?.find(s => s.name === 'wikilink_check');
-    if (wlStep && !wlStep.skipped) {
-      const mentions = (wlStep.output?.mentions as Array<{ entities: string[] }>) ?? [];
-      for (const m of mentions) for (const e of m.entities ?? []) affectedEntities.add(e);
-    }
-
-    const fbStep = pipeline.steps?.find(s => s.name === 'implicit_feedback');
-    if (fbStep && !fbStep.skipped) {
-      const removals = (fbStep.output?.removals as Array<{ entity: string }>) ?? [];
-      for (const r of removals) affectedEntities.add(r.entity);
-    }
-
-    // Collect hub_score diffs for floating score changes (T5)
-    const hubStep = pipeline.steps?.find(s => s.name === 'hub_scores');
-    const hubDiffs = new Map<string, number>();
-    if (hubStep && !hubStep.skipped) {
-      const diffs = (hubStep.output?.diffs as Array<{ entity: string; before: number; after: number }>) ?? [];
-      for (const d of diffs) {
-        const delta = d.after - d.before;
-        if (delta !== 0) {
-          hubDiffs.set(d.entity, delta);
-          affectedEntities.add(d.entity);
-        }
-      }
-    }
-
-    if (affectedEntities.size === 0) return;
-
-    // Find matching cloud pills and animate
-    const cloudItems = this.contentContainer?.querySelectorAll('.flywheel-cloud-item[data-entity]');
-    if (!cloudItems) return;
-
-    for (const el of Array.from(cloudItems)) {
-      const entityName = (el as HTMLElement).dataset.entity;
-      if (!entityName) continue;
-
-      const matched = affectedEntities.has(entityName) ||
-        Array.from(affectedEntities).some(e => e.toLowerCase() === entityName.toLowerCase());
-
-      if (!matched) continue;
-
-      // Pulse animation (T4)
-      el.classList.remove('flywheel-cloud-pulse');
-      void (el as HTMLElement).offsetWidth; // force reflow to re-trigger
-      el.classList.add('flywheel-cloud-pulse');
-      el.addEventListener('animationend', () => el.classList.remove('flywheel-cloud-pulse'), { once: true });
-
-      // Floating score change (T5)
-      const delta = hubDiffs.get(entityName) ??
-        Array.from(hubDiffs.entries()).find(([k]) => k.toLowerCase() === entityName.toLowerCase())?.[1];
-      if (delta != null) {
-        const rect = (el as HTMLElement).getBoundingClientRect();
-        const parentRect = this.contentContainer!.getBoundingClientRect();
-        const floater = document.createElement('span');
-        floater.className = `flywheel-cloud-score-float ${delta > 0 ? 'flywheel-cloud-score-float-up' : 'flywheel-cloud-score-float-down'}`;
-        floater.textContent = delta > 0 ? `+${delta}` : `${delta}`;
-        floater.style.left = `${rect.left - parentRect.left + rect.width / 2}px`;
-        floater.style.top = `${rect.top - parentRect.top}px`;
-        this.contentContainer!.style.position = 'relative';
-        this.contentContainer!.appendChild(floater);
-        floater.addEventListener('animationend', () => floater.remove());
-      }
-    }
+  /**
+   * Handle pipeline completion by refreshing the entity cloud.
+   * Previously animated individual entities from raw step output arrays,
+   * but compact step summaries only contain counters — so we refresh instead.
+   */
+  private handlePipelineUpdate(_health: McpHealthCheckResponse): void {
+    this.refresh();
   }
 }
