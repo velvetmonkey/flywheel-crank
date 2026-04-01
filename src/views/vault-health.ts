@@ -6,7 +6,7 @@
  */
 
 import { ItemView, WorkspaceLeaf, TFile, setIcon, setTooltip } from 'obsidian';
-import type { FlywheelMcpClient, McpHealthCheckResponse, McpPipelineStep } from '../mcp/client';
+import type { FlywheelMcpClient, McpHealthCheckResponse, McpCompactStep } from '../mcp/client';
 
 export const VAULT_HEALTH_VIEW_TYPE = 'flywheel-vault-health';
 
@@ -1059,17 +1059,15 @@ export class VaultHealthView extends ItemView {
       // Try pipeline_status first (new tool), fall back to health data
       let pipelines: Array<{
         timestamp: number; trigger: string; duration_ms: number;
-        files_changed: number | null; changed_paths: string[] | null;
-        steps: import('../mcp/client').McpPipelineStep[];
+        files_changed: number | null;
+        step_count?: number;
+        steps?: import('../mcp/client').McpCompactStep[];
       }> = [];
 
       try {
         const ps = await this.mcpClient.pipelineStatus(true);
         if (ps.recent_runs && ps.recent_runs.length > 0) {
-          pipelines = ps.recent_runs.map(r => ({
-            ...r,
-            changed_paths: null,
-          }));
+          pipelines = ps.recent_runs;
         }
       } catch {
         // Fall back to health data (older server without pipeline_status)
@@ -1077,7 +1075,7 @@ export class VaultHealthView extends ItemView {
         if (health) {
           pipelines = health.recent_pipelines?.length
             ? health.recent_pipelines
-            : health.last_pipeline ? [health.last_pipeline] : [];
+            : health.last_pipeline ? [{ ...health.last_pipeline }] : [];
         }
       }
 
@@ -1139,7 +1137,7 @@ export class VaultHealthView extends ItemView {
   /** Render a single pipeline run entry. */
   private renderPipelineEntry(
     container: HTMLDivElement,
-    pipeline: { timestamp: number; trigger: string; duration_ms: number; files_changed: number | null; changed_paths: string[] | null; steps: McpPipelineStep[] },
+    pipeline: { timestamp: number; trigger: string; duration_ms: number; files_changed: number | null; step_count?: number; steps?: McpCompactStep[] },
   ): void {
     const row = container.createDiv('flywheel-activity-entry');
 
@@ -1152,19 +1150,17 @@ export class VaultHealthView extends ItemView {
     badge.setText(pipeline.trigger);
 
     // Summary: files changed + duration
-    const paths = pipeline.changed_paths ?? [];
-    const fileCount = pipeline.files_changed ?? paths.length;
-    const summary = paths.length === 1
-      ? this.shortenPath(paths[0])
-      : paths.length > 1
-        ? `${fileCount} files`
-        : fileCount > 0 ? `${fileCount} file${fileCount !== 1 ? 's' : ''}` : 'no changes';
+    const fileCount = pipeline.files_changed ?? 0;
+    const summary = fileCount === 1
+      ? `1 file`
+      : fileCount > 0 ? `${fileCount} files` : 'no changes';
     row.createSpan('flywheel-activity-msg').setText(`${summary} \u00B7 ${pipeline.duration_ms}ms`);
 
     // Step details (collapsible)
-    if (pipeline.steps.length > 0) {
+    const steps = pipeline.steps ?? [];
+    if (steps.length > 0) {
       const stepsEl = row.createDiv('flywheel-pipeline-steps');
-      for (const step of pipeline.steps) {
+      for (const step of steps) {
         if (step.skipped) continue;
         const stepRow = stepsEl.createDiv('flywheel-pipeline-step');
         stepRow.createSpan('flywheel-pipeline-step-name').setText(step.name);
@@ -1182,71 +1178,44 @@ export class VaultHealthView extends ItemView {
     }
   }
 
-  /** Summarize a pipeline step's output into a human-readable string. */
-  private summarizeStepOutput(step: McpPipelineStep): string | null {
-    const out = step.output;
+  /** Summarize a compact pipeline step into a human-readable string. */
+  private summarizeStepOutput(step: McpCompactStep): string | null {
+    const s = step.summary;
     switch (step.name) {
-      case 'discover': {
-        const added = out.added as unknown[] | undefined;
-        const removed = out.removed as unknown[] | undefined;
+      case 'entity_scan': {
         const parts: string[] = [];
-        if (added?.length) parts.push(`+${added.length} entities`);
-        if (removed?.length) parts.push(`-${removed.length} entities`);
+        if (s.added_count) parts.push(`+${s.added_count} entities`);
+        if (s.removed_count) parts.push(`-${s.removed_count} entities`);
         return parts.length > 0 ? parts.join(', ') : null;
       }
-      case 'apply': {
-        const tracked = out.tracked as unknown[] | undefined;
-        return tracked?.length ? `${tracked.length} file${tracked.length !== 1 ? 's' : ''} linked` : null;
-      }
-      case 'learn': {
-        const removals = out.removals as unknown[] | undefined;
-        return removals?.length ? `${removals.length} negative feedback` : null;
-      }
-      case 'hub_scores': {
-        const diffs = out.diffs as unknown[] | undefined;
-        return diffs?.length ? `${diffs.length} hub score${diffs.length !== 1 ? 's' : ''} changed` : null;
-      }
-      case 'entity_embeddings': {
-        const entities = out.updated_entities as string[] | undefined;
-        return entities?.length ? `${entities.length} embeddings updated` : null;
-      }
+      case 'hub_scores':
+        return s.diff_count ? `${s.diff_count} hub score${s.diff_count !== 1 ? 's' : ''} changed` : null;
+      case 'entity_embeddings':
+        return s.updated ? `${s.updated} embeddings updated` : null;
       case 'prospect_scan': {
-        const prospects = out.prospects as any[] | undefined;
-        if (!prospects?.length) return null;
-        const implicitCount = prospects.reduce((s: number, p: any) => s + (p.implicit?.length ?? 0), 0);
-        const deadCount = prospects.reduce((s: number, p: any) => s + (p.deadLinkMatches?.length ?? 0), 0);
         const parts: string[] = [];
-        if (implicitCount > 0) parts.push(`${implicitCount} implicit`);
-        if (deadCount > 0) parts.push(`${deadCount} prospects`);
+        if (s.implicit_count) parts.push(`${s.implicit_count} implicit`);
+        if (s.dead_match_count) parts.push(`${s.dead_match_count} prospects`);
         return parts.length > 0 ? parts.join(', ') : null;
       }
-      case 'suggestion_scoring': {
-        const scored = out.scored_files as number | undefined;
-        return scored ? `${scored} files scored` : null;
-      }
+      case 'suggestion_scoring':
+        return s.scored_files ? `${s.scored_files} files scored` : null;
       case 'forward_links': {
-        const newDead = out.new_dead_links as any[] | undefined;
-        const totalDead = out.total_dead as number | undefined;
-        const totalResolved = out.total_resolved as number | undefined;
         const parts: string[] = [];
-        if (totalResolved) parts.push(`${totalResolved} resolved`);
-        if (totalDead) parts.push(`${totalDead} dead`);
-        if (newDead?.length) {
-          const count = newDead.reduce((s: number, d: any) => s + (d.targets?.length ?? 0), 0);
-          if (count > 0) parts.push(`${count} new dead`);
-        }
+        if (s.total_resolved) parts.push(`${s.total_resolved} resolved`);
+        if (s.total_dead) parts.push(`${s.total_dead} dead`);
+        if (s.new_dead_count) parts.push(`${s.new_dead_count} new dead`);
         return parts.length > 0 ? parts.join(', ') : null;
       }
       case 'implicit_feedback': {
-        const removals = out.removals as unknown[] | undefined;
-        const additions = out.additions as unknown[] | undefined;
-        const suppressed = out.newly_suppressed as string[] | undefined;
         const parts: string[] = [];
-        if (removals?.length) parts.push(`${removals.length} negative`);
-        if (additions?.length) parts.push(`${additions.length} positive`);
-        if (suppressed?.length) parts.push(`${suppressed.length} suppressed`);
+        if (s.removal_count) parts.push(`${s.removal_count} negative`);
+        if (s.addition_count) parts.push(`${s.addition_count} positive`);
+        if (s.suppressed_count) parts.push(`${s.suppressed_count} suppressed`);
         return parts.length > 0 ? parts.join(', ') : null;
       }
+      case 'wikilink_check':
+        return s.tracked_count ? `${s.tracked_count} tracked, ${s.mention_count ?? 0} mentions` : null;
       default:
         return null;
     }

@@ -234,7 +234,7 @@ export class EntityBrowserView extends ItemView {
     }
 
     try {
-      this.entityData = await this.mcpClient.listEntities();
+      this.entityData = await this.mcpClient.listEntities(undefined, 2000);
       this.totalEntities = this.entityData._metadata?.total_entities ?? 0;
     } catch (err) {
       console.error('Flywheel Entities: failed to fetch entities', err);
