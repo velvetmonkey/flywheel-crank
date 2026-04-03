@@ -187,16 +187,14 @@ export default class FlywheelCrankPlugin extends Plugin {
       this.app.vault.on('create', (file) => {
         this.mcpClient.invalidateForPath(file.path);
         this.mcpClient.invalidateTool('list_entities');
-        this.mcpClient.invalidateTool('get_folder_structure');
-        this.mcpClient.invalidateTool('health_check');
+        this.mcpClient.invalidateTool('flywheel_doctor');
       })
     );
     this.registerEvent(
       this.app.vault.on('delete', (file) => {
         this.mcpClient.invalidateForPath(file.path);
         this.mcpClient.invalidateTool('list_entities');
-        this.mcpClient.invalidateTool('get_folder_structure');
-        this.mcpClient.invalidateTool('health_check');
+        this.mcpClient.invalidateTool('flywheel_doctor');
       })
     );
     this.registerEvent(
@@ -204,8 +202,7 @@ export default class FlywheelCrankPlugin extends Plugin {
         this.mcpClient.invalidateForPath(file.path);
         this.mcpClient.invalidateForPath(oldPath);
         this.mcpClient.invalidateTool('list_entities');
-        this.mcpClient.invalidateTool('get_folder_structure');
-        this.mcpClient.invalidateTool('health_check');
+        this.mcpClient.invalidateTool('flywheel_doctor');
       })
     );
 

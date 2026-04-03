@@ -690,7 +690,10 @@ export interface McpDoctorCheck {
 }
 
 export interface McpDoctorResponse {
+  status: 'healthy' | 'needs_attention' | 'unhealthy';
+  summary: string;
   checks: McpDoctorCheck[];
+  fixes: Array<{ check: string; fix: string }>;
 }
 
 // Pipeline status
@@ -987,7 +990,7 @@ export class FlywheelMcpClient {
     if (this.healthTimer) return;
     const poll = async () => {
       try {
-        this.cache.invalidateTool('health_check');
+        this.cache.invalidateTool('flywheel_doctor');
         const health = await this.healthCheck();
         this._healthFailCount = 0;
         this.lastHealth = health;
@@ -1310,14 +1313,14 @@ export class FlywheelMcpClient {
    * Get vault health check — note counts, config, index status.
    */
   async healthCheck(mode: 'summary' | 'full' = 'summary'): Promise<McpHealthCheckResponse> {
-    return this.callTool<McpHealthCheckResponse>('health_check', { mode });
+    return this.callTool<McpHealthCheckResponse>('flywheel_doctor', { report: 'health', detail: mode });
   }
 
   /**
    * Run comprehensive vault diagnostics (flywheel_doctor).
    */
   async runDoctor(): Promise<McpDoctorResponse> {
-    return this.callTool<McpDoctorResponse>('flywheel_doctor', {});
+    return this.callTool<McpDoctorResponse>('flywheel_doctor', { report: 'diagnosis' });
   }
 
   /**
@@ -1384,7 +1387,7 @@ export class FlywheelMcpClient {
    * Get comprehensive vault statistics.
    */
   async vaultStats(): Promise<McpVaultStatsResponse> {
-    return this.callTool<McpVaultStatsResponse>('get_vault_stats', {});
+    return this.callTool<McpVaultStatsResponse>('flywheel_doctor', { report: 'stats' });
   }
 
   /**

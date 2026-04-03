@@ -12,14 +12,11 @@ interface CacheEntry {
 
 // TTL tiers by tool name
 const SESSION_TOOLS = new Set([
-  'get_folder_structure',
   'list_entities',
   'flywheel_config',
 ]);
 
 const TTL_5S_TOOLS = new Set([
-  'get_backlinks',
-  'get_forward_links',
   'vault_schema',
   'schema_conventions',
   'schema_validate',
@@ -28,7 +25,6 @@ const TTL_5S_TOOLS = new Set([
   'note_intelligence',
   'graph_analysis',
   'semantic_analysis',
-  'get_vault_stats',
   'tasks',
   'server_log',
   'validate_links',
@@ -38,8 +34,7 @@ const TTL_5S_TOOLS = new Set([
   'track_concept_evolution',
 ]);
 
-const TTL_30S_TOOLS = new Set([
-  'health_check',
+const TTL_30S_TOOLS = new Set<string>([
 ]);
 
 // Tools that should never be cached
