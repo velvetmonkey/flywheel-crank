@@ -26,23 +26,9 @@ All intelligence lives in the server. Crank is the window.
 
 ## Screenshots
 
-<details open>
-<summary><strong>Wikilink Suggestions in Action</strong></summary>
+![Flywheel Crank](screenshots/readme1.png)
 
-https://github.com/user-attachments/assets/67abebec-fa2f-4c0a-be9d-e6d4958ffe86
-
-</details>
-
-<table>
-  <tr>
-    <td align="center"><a href="screenshots/graph-sidebar.png"><img src="screenshots/graph-sidebar.png" width="400" alt="Graph Sidebar"/></a><br/><sub>Graph Sidebar</sub></td>
-    <td align="center"><a href="screenshots/search-modal.png"><img src="screenshots/search-modal.png" width="400" alt="Semantic Search"/></a><br/><sub>Semantic Search</sub></td>
-  </tr>
-  <tr>
-    <td align="center"><a href="screenshots/entity-browser.png"><img src="screenshots/entity-browser.png" width="400" alt="Entity Browser"/></a><br/><sub>Entity Browser</sub></td>
-    <td align="center"><a href="screenshots/vault-health.png"><img src="screenshots/vault-health.png" width="400" alt="Vault Health"/></a><br/><sub>Vault Health</sub></td>
-  </tr>
-</table>
+![Flywheel Crank](screenshots/readme2.png)
 
 ## Features
 
