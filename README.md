@@ -28,7 +28,7 @@ All intelligence lives in the server. Crank is the window.
 
 ## Demo
 
-<video src="https://github.com/user-attachments/assets/88266c83-36f5-4631-91f7-f3bc6f4b04ed" autoplay loop muted playsinline width="100%"></video>
+<video src="https://github.com/user-attachments/assets/56f0ef3c-687a-4436-aaed-23fbd53525a9" autoplay loop muted playsinline width="100%"></video>
 
 <video src="https://github.com/user-attachments/assets/c772f0fc-faf3-40e7-abfa-53c88677f8ed" autoplay loop muted playsinline width="100%"></video>
 
