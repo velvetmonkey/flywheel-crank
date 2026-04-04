@@ -28,9 +28,9 @@ All intelligence lives in the server. Crank is the window.
 
 ## Demo
 
-<video src="https://github.com/user-attachments/assets/56f0ef3c-687a-4436-aaed-23fbd53525a9" autoplay loop muted playsinline width="100%"></video>
+![Flywheel Crank demo](https://github.com/user-attachments/assets/56f0ef3c-687a-4436-aaed-23fbd53525a9)
 
-<video src="https://github.com/user-attachments/assets/68157200-36ad-4b30-9f84-a1d71ca7ff91" autoplay loop muted playsinline width="100%"></video>
+![Flywheel Crank demo 2](https://github.com/user-attachments/assets/68157200-36ad-4b30-9f84-a1d71ca7ff91)
 
 ## Screenshots
 
