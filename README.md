@@ -24,6 +24,12 @@ All intelligence lives in the server. Crank is the window.
 | **What Crank stores** | Nothing. No caches, no databases, no state beyond Obsidian's plugin settings |
 | **What the server stores** | A single SQLite file per vault (`.flywheel/state.db`) — entity index, FTS5 search, feedback history, embeddings |
 
+## Demo
+
+<video src="https://github.com/user-attachments/assets/88266c83-36f5-4631-91f7-f3bc6f4b04ed" autoplay loop muted playsinline width="100%"></video>
+
+<video src="https://github.com/user-attachments/assets/c772f0fc-faf3-40e7-abfa-53c88677f8ed" autoplay loop muted playsinline width="100%"></video>
+
 ## Screenshots
 
 ![Flywheel Crank](screenshots/readme1.png)
