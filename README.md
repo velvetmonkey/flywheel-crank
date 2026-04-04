@@ -8,6 +8,8 @@
 [![Obsidian](https://img.shields.io/badge/Obsidian-plugin-blueviolet.svg)](https://obsidian.md/)
 [![Platform](https://img.shields.io/badge/platform-desktop%20only-blue.svg)](https://github.com/velvetmonkey/flywheel-crank)
 
+> **Part of the Flywheel suite** &mdash; Flywheel Crank is the Obsidian plugin. [**Flywheel Memory**](https://github.com/velvetmonkey/flywheel-memory) is the MCP server that powers it.
+
 ## What is Flywheel Crank?
 
 Flywheel Crank is a **purely visual layer** on top of [Flywheel Memory](https://github.com/velvetmonkey/flywheel-memory), a local-only MCP server that indexes your Obsidian vault into a knowledge graph. Crank doesn't index, score, or store anything itself — it calls the MCP server over stdio and renders what comes back.
