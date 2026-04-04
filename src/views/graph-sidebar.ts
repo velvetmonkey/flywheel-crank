@@ -799,8 +799,6 @@ export class GraphSidebarView extends ItemView {
         for (const s of similarResp.similar) categoryPaths.push(s.path);
       }
       const categoryMap = await this.mcpClient.getEntityCategories(categoryPaths).catch(() => new Map<string, string>());
-      console.log('[crank-debug] categoryPaths:', categoryPaths.filter(p => /emily|chen/i.test(p)));
-      console.log('[crank-debug] categoryMap emily entries:', [...categoryMap.entries()].filter(([k]) => /emily|chen/i.test(k)));
 
       {
         const { nodes, edges } = await this.buildLocalGraph(notePath, safeBacklinks, safeForwardLinks, edgeWeightMap, entityHubScores, suggestResp, similarResp, connectionsResp, categoryMap);
@@ -1683,9 +1681,7 @@ export class GraphSidebarView extends ItemView {
     const catFor = (p: string): string => {
       if (isPeriodicPath(p)) return 'periodical';
       const lp = p.toLowerCase();
-      const result = categoryMap?.get(lp) ?? categoryMap?.get(nameOf(p).toLowerCase()) ?? 'other';
-      if (/emily|chen/i.test(p)) console.log(`[crank-debug] catFor("${p}") lp="${lp}" name="${nameOf(p).toLowerCase()}" → ${result}, map has lp=${categoryMap?.has(lp)}, map has name=${categoryMap?.has(nameOf(p).toLowerCase())}`);
-      return result;
+      return categoryMap?.get(lp) ?? categoryMap?.get(nameOf(p).toLowerCase()) ?? 'other';
     };
 
     // Add source tag to a node (creates set if needed, merges if node already exists)

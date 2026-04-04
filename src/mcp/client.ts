@@ -1852,7 +1852,6 @@ export class FlywheelMcpClient {
       const lk = item.toLowerCase();
       const cat = this.entityCategoryCache?.get(lk);
       if (cat) result.set(lk, cat);
-      if (/emily|chen/i.test(item)) console.log(`[crank-debug] getEntityCategories: item="${item}" lk="${lk}" cat=${cat} cacheHas=${this.entityCategoryCache?.has(lk)}`);
     }
     return result;
   }
@@ -1882,8 +1881,6 @@ export class FlywheelMcpClient {
     this.entityCategoryCache = catMap;
     this.entityHubScoreCache = hubMap;
     this.entityCategoryCacheTime = Date.now();
-    const emilyEntries = [...catMap.entries()].filter(([k]) => /emily|chen/i.test(k));
-    console.log(`[crank-debug] entity cache built: ${catMap.size} entries, emily keys:`, emilyEntries.map(([k, v]) => `"${k}" → ${v}`));
   }
 
   invalidateEntityCache(): void {
