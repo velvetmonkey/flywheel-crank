@@ -1849,8 +1849,10 @@ export class FlywheelMcpClient {
     await this.ensureEntityCache();
     const result = new Map<string, string>();
     for (const item of items) {
-      const cat = this.entityCategoryCache?.get(item.toLowerCase());
-      if (cat) result.set(item.toLowerCase(), cat);
+      const lk = item.toLowerCase();
+      const cat = this.entityCategoryCache?.get(lk);
+      if (cat) result.set(lk, cat);
+      if (/emily|chen/i.test(item)) console.log(`[crank-debug] getEntityCategories: item="${item}" lk="${lk}" cat=${cat} cacheHas=${this.entityCategoryCache?.has(lk)}`);
     }
     return result;
   }
@@ -1870,7 +1872,7 @@ export class FlywheelMcpClient {
       if (category.startsWith('_')) continue;
       for (const item of items as McpEntityItem[]) {
         catMap.set(item.name.toLowerCase(), category);
-        if (item.path) catMap.set(item.path.toLowerCase(), category);
+        if (item.path) catMap.set(item.path.replace(/\\/g, '/').toLowerCase(), category);
         for (const alias of item.aliases ?? []) catMap.set(alias.toLowerCase(), category);
         if (item.hubScore != null && item.hubScore > 0) {
           hubMap.set(item.name.toLowerCase(), item.hubScore);
@@ -1880,6 +1882,8 @@ export class FlywheelMcpClient {
     this.entityCategoryCache = catMap;
     this.entityHubScoreCache = hubMap;
     this.entityCategoryCacheTime = Date.now();
+    const emilyEntries = [...catMap.entries()].filter(([k]) => /emily|chen/i.test(k));
+    console.log(`[crank-debug] entity cache built: ${catMap.size} entries, emily keys:`, emilyEntries.map(([k, v]) => `"${k}" → ${v}`));
   }
 
   invalidateEntityCache(): void {
