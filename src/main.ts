@@ -177,6 +177,12 @@ export default class FlywheelCrankPlugin extends Plugin {
         if (!this.mcpClient.connected || this.indexing) return;
         this.mcpClient.invalidateForPath(file.path);
         this.setStatus('processing...', true);
+        // Re-render graph if the modified file is the currently viewed note
+        const activeFile = this.app.workspace.getActiveFile();
+        if (activeFile && file.path === activeFile.path) {
+          // Delay to allow the watcher pipeline to re-index the updated content
+          window.setTimeout(() => this.updateGraphSidebar(true), 2000);
+        }
       })
     );
 
