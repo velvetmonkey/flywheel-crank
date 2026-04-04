@@ -108,8 +108,7 @@ export class VaultHealthView extends ItemView {
     // Vault Config section — lazy-loaded via flywheel_config tool
     this.renderLazySection(content, 'Vault Config', 'settings', async (el) => {
       try {
-        const configResp = await this.mcpClient.getFlywheelConfig();
-        const cfg = configResp.config as Record<string, any> | undefined;
+        const cfg = await this.mcpClient.getFlywheelConfig() as Record<string, any> | undefined;
         if (!cfg || Object.keys(cfg).length === 0) {
           el.createDiv('flywheel-health-empty-msg').setText('No config detected yet');
           return 0;
@@ -888,12 +887,53 @@ export class VaultHealthView extends ItemView {
     stat.createDiv('flywheel-health-growth-stat-label').setText(label);
   }
 
-  /** Render vault config (paths + templates) into a container. Returns item count. */
+  /** Render vault config into a container. Returns item count. */
   private renderVaultConfig(el: HTMLDivElement, cfg: Record<string, any>): number {
     let count = 0;
-    const paths = cfg.paths as Record<string, string> | undefined;
-    const templates = cfg.templates as Record<string, string> | undefined;
 
+    // General config fields
+    const scalarLabels: Record<string, string> = {
+      vault_name: 'Vault name',
+      wikilink_strictness: 'Wikilink strictness',
+      implicit_detection: 'Implicit detection',
+      adaptive_strictness: 'Adaptive strictness',
+      proactive_linking: 'Proactive linking',
+      proactive_min_score: 'Proactive min score',
+      proactive_max_per_file: 'Proactive max/file',
+      proactive_max_per_day: 'Proactive max/day',
+      tool_tier_override: 'Tool tier override',
+    };
+    const skipKeys = new Set(['paths', 'templates', 'exclude', 'exclude_entity_folders', 'custom_categories',
+      'exclude_task_tags', 'exclude_analysis_tags', 'exclude_entities']);
+    for (const [key, label] of Object.entries(scalarLabels)) {
+      if (cfg[key] != null) {
+        this.renderInfoRow(el, label, String(cfg[key]));
+        count++;
+      }
+    }
+    // Remaining scalar keys not in the label map or skip list
+    for (const [key, value] of Object.entries(cfg)) {
+      if (scalarLabels[key] || skipKeys.has(key) || value == null) continue;
+      if (typeof value !== 'object') {
+        this.renderInfoRow(el, key, String(value));
+        count++;
+      }
+    }
+
+    // Exclusions
+    const exclude = cfg.exclude as string[] | undefined;
+    if (exclude && exclude.length > 0) {
+      this.renderInfoRow(el, 'Exclusions', exclude.join(', '));
+      count++;
+    }
+    const excludeFolders = cfg.exclude_entity_folders as string[] | undefined;
+    if (excludeFolders && excludeFolders.length > 0) {
+      this.renderInfoRow(el, 'Excluded folders', excludeFolders.join(', '));
+      count++;
+    }
+
+    // Periodic note paths
+    const paths = cfg.paths as Record<string, string> | undefined;
     if (paths && Object.keys(paths).length > 0) {
       const labels: Record<string, string> = {
         daily_notes: 'Daily', weekly_notes: 'Weekly', monthly_notes: 'Monthly',
@@ -903,6 +943,9 @@ export class VaultHealthView extends ItemView {
         if (path) { this.renderInfoRow(el, labels[key] ?? key, path); count++; }
       }
     }
+
+    // Templates
+    const templates = cfg.templates as Record<string, string> | undefined;
     if (templates && Object.keys(templates).length > 0) {
       const tplLabels: Record<string, string> = {
         daily: 'Daily tpl', weekly: 'Weekly tpl', monthly: 'Monthly tpl',
@@ -912,9 +955,7 @@ export class VaultHealthView extends ItemView {
         if (path) { this.renderInfoRow(el, tplLabels[key] ?? key, path); count++; }
       }
     }
-    if (count === 0) {
-      el.createDiv('flywheel-health-empty-msg').setText('No periodic locations configured');
-    }
+
     return count;
   }
 
