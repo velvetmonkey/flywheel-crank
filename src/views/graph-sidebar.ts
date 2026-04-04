@@ -1401,8 +1401,8 @@ export class GraphSidebarView extends ItemView {
       const item = cloudEl.createEl('span', { cls: 'flywheel-cloud-item' });
 
       // Category for pill coloring (aligned with graph node colors)
-      const cat = categories.get(entry.path ?? '')
-        ?? categories.get(entry.name)
+      const cat = categories.get((entry.path ?? '').toLowerCase())
+        ?? categories.get(entry.name.toLowerCase())
         ?? 'other';
       item.dataset.category = cat;
 
@@ -1493,7 +1493,7 @@ export class GraphSidebarView extends ItemView {
     // Collect color families present in the cloud (group 18 categories → 6 families)
     const presentFamilies = new Map<string, number>();
     for (const entry of entries) {
-      const cat = categories.get(entry.path ?? '') ?? categories.get(entry.name) ?? 'other';
+      const cat = categories.get((entry.path ?? '').toLowerCase()) ?? categories.get(entry.name.toLowerCase()) ?? 'other';
       const family = CATEGORY_FAMILY[cat] ?? 'gray';
       presentFamilies.set(family, (presentFamilies.get(family) ?? 0) + 1);
     }
@@ -1680,7 +1680,8 @@ export class GraphSidebarView extends ItemView {
     // Resolve category from the pre-fetched map
     const catFor = (p: string): string => {
       if (isPeriodicPath(p)) return 'periodical';
-      return categoryMap?.get(p) ?? categoryMap?.get(nameOf(p)) ?? 'other';
+      const lp = p.toLowerCase();
+      return categoryMap?.get(lp) ?? categoryMap?.get(nameOf(p).toLowerCase()) ?? 'other';
     };
 
     // Add source tag to a node (creates set if needed, merges if node already exists)
@@ -1953,7 +1954,7 @@ export class GraphSidebarView extends ItemView {
     const catMap = await this.mcpClient.getEntityCategories(visibleIds).catch(() => new Map<string, string>());
     for (const node of visibleNodes) {
       // Periodic notes get their own muted color regardless of entity category
-      const cat = node.isPeriodic ? 'periodical' : (catMap.get(node.id) ?? 'other');
+      const cat = node.isPeriodic ? 'periodical' : (catMap.get(node.id.toLowerCase()) ?? 'other');
       node.color = familyColor(cat);
       node.category = cat;
     }

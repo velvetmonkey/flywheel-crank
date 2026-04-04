@@ -1051,7 +1051,7 @@ export class FlywheelMcpClient {
       args = [serverPath];
     } else {
       command = isWindows ? 'npx.cmd' : 'npx';
-      args = ['-y', '@velvetmonkey/flywheel-memory@2.5.3']; // Pin version — bump when releasing new flywheel-memory
+      args = ['-y', '@velvetmonkey/flywheel-memory@2.5.7']; // Pin version — bump when releasing new flywheel-memory
     }
 
     console.log(`Flywheel Crank: spawning ${command} ${args.join(' ')}`);
@@ -1850,7 +1850,7 @@ export class FlywheelMcpClient {
     const result = new Map<string, string>();
     for (const item of items) {
       const cat = this.entityCategoryCache?.get(item.toLowerCase());
-      if (cat) result.set(item, cat);
+      if (cat) result.set(item.toLowerCase(), cat);
     }
     return result;
   }
