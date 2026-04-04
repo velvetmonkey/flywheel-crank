@@ -32,12 +32,6 @@ https://github.com/user-attachments/assets/812029aa-bc19-4426-8f91-c7b7e542ab16
 
 https://github.com/user-attachments/assets/7d768ba1-b39d-46fe-9d3a-ea6bf1386291
 
-## Screenshots
-
-![Flywheel Crank](screenshots/readme1.png)
-
-![Flywheel Crank](screenshots/readme2.png)
-
 ## Features
 
 Everything below is rendered by Crank, powered by the MCP server.
