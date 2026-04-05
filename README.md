@@ -32,6 +32,8 @@ https://github.com/user-attachments/assets/812029aa-bc19-4426-8f91-c7b7e542ab16
 
 https://github.com/user-attachments/assets/7d768ba1-b39d-46fe-9d3a-ea6bf1386291
 
+https://github.com/user-attachments/assets/4a0635ff-dd73-4fb1-933d-bf384822e2ce
+
 ## Features
 
 Everything below is rendered by Crank, powered by the MCP server.
