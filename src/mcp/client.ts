@@ -889,6 +889,7 @@ export class FlywheelMcpClient {
   // Entity category + hub score cache
   private entityCategoryCache: Map<string, string> | null = null;
   private entityHubScoreCache: Map<string, number> | null = null;
+  private entityAliasToPathCache: Map<string, string> | null = null;
   private entityCategoryCacheTime = 0;
   private static ENTITY_CACHE_TTL = 5 * 60 * 1000; // 5 min
 
@@ -1052,7 +1053,7 @@ export class FlywheelMcpClient {
       args = [serverPath];
     } else {
       command = isWindows ? 'npx.cmd' : 'npx';
-      args = ['-y', '@velvetmonkey/flywheel-memory@2.6.0']; // Pin version — bump when releasing new flywheel-memory
+      args = ['-y', '@velvetmonkey/flywheel-memory@2.6.1']; // Pin version — bump when releasing new flywheel-memory
     }
 
     console.log(`Flywheel Crank: spawning ${command} ${args.join(' ')}`);
@@ -1868,11 +1869,17 @@ export class FlywheelMcpClient {
     const resp = await this.listEntities(undefined, 2000);
     const catMap = new Map<string, string>();
     const hubMap = new Map<string, number>();
+    const aliasPathMap = new Map<string, string>();
     for (const [category, items] of Object.entries(resp)) {
       if (category.startsWith('_')) continue;
       for (const item of items as McpEntityItem[]) {
         catMap.set(item.name.toLowerCase(), category);
-        if (item.path) catMap.set(item.path.replace(/\\/g, '/').toLowerCase(), category);
+        if (item.path) {
+          const normPath = item.path.replace(/\\/g, '/');
+          catMap.set(normPath.toLowerCase(), category);
+          aliasPathMap.set(item.name.toLowerCase(), normPath);
+          for (const alias of item.aliases ?? []) aliasPathMap.set(alias.toLowerCase(), normPath);
+        }
         for (const alias of item.aliases ?? []) catMap.set(alias.toLowerCase(), category);
         if (item.hubScore != null && item.hubScore > 0) {
           hubMap.set(item.name.toLowerCase(), item.hubScore);
@@ -1881,12 +1888,19 @@ export class FlywheelMcpClient {
     }
     this.entityCategoryCache = catMap;
     this.entityHubScoreCache = hubMap;
+    this.entityAliasToPathCache = aliasPathMap;
     this.entityCategoryCacheTime = Date.now();
+  }
+
+  /** Resolve an entity name or alias to its canonical note path. Returns undefined if not found. */
+  resolveEntityPath(node: string): string | undefined {
+    return this.entityAliasToPathCache?.get(node.toLowerCase());
   }
 
   invalidateEntityCache(): void {
     this.entityCategoryCache = null;
     this.entityHubScoreCache = null;
+    this.entityAliasToPathCache = null;
   }
 
   // -------------------------------------------------------------------------
