@@ -1855,30 +1855,27 @@ export class GraphSidebarView extends ItemView {
     const currentPrimaryCount = [...nodeMap.values()].filter(n => !n.isSecondary).length;
     const slotsAvailable = Math.max(0, TARGET_PRIMARY - currentPrimaryCount);
 
+    // Build alias map and resolver outside the slotsAvailable guard so N+1 hub
+    // expansion (below) can also use resolveConnNode without a ReferenceError.
+    const aliasMap = new Map<string, string>();
+    for (const file of this.app.vault.getMarkdownFiles()) {
+      const cache = this.app.metadataCache.getFileCache(file);
+      const stem = file.basename.toLowerCase();
+      if (stem && !aliasMap.has(stem)) aliasMap.set(stem, file.path);
+      const raw = cache?.frontmatter?.aliases;
+      const aliases: string[] = Array.isArray(raw) ? raw : (typeof raw === 'string' ? [raw] : []);
+      for (const alias of aliases) {
+        if (typeof alias === 'string' && !aliasMap.has(alias.toLowerCase())) {
+          aliasMap.set(alias.toLowerCase(), file.path);
+        }
+      }
+    }
+    const resolveConnNode = (node: string): string =>
+      aliasMap.get(node.toLowerCase()) ?? this.mcpClient.resolveEntityPath(node) ?? node;
+
     if (slotsAvailable > 0) {
       // Collect candidate paths from all context sources, ranked by relevance
       const candidates: { path: string; weight: number; source: 'suggestion' | 'similar' | 'connection' }[] = [];
-
-      // Build a case-insensitive alias→path map from Obsidian's metadata cache.
-      // getFirstLinkpathDest is case-sensitive for aliases, so we do the lookup manually.
-      // This covers all notes (including work/ticket notes not in the entities table).
-      const aliasMap = new Map<string, string>();
-      for (const file of this.app.vault.getMarkdownFiles()) {
-        const cache = this.app.metadataCache.getFileCache(file);
-        // Map by filename stem (case-insensitive)
-        const stem = file.basename.toLowerCase();
-        if (stem && !aliasMap.has(stem)) aliasMap.set(stem, file.path);
-        // Map by frontmatter aliases
-        const raw = cache?.frontmatter?.aliases;
-        const aliases: string[] = Array.isArray(raw) ? raw : (typeof raw === 'string' ? [raw] : []);
-        for (const alias of aliases) {
-          if (typeof alias === 'string' && !aliasMap.has(alias.toLowerCase())) {
-            aliasMap.set(alias.toLowerCase(), file.path);
-          }
-        }
-      }
-      const resolveConnNode = (node: string): string =>
-        aliasMap.get(node.toLowerCase()) ?? this.mcpClient.resolveEntityPath(node) ?? node;
 
       // Strong connections not already in graph
       if (connectionsResp?.connections) {
