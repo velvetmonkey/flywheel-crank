@@ -801,6 +801,7 @@ export interface McpStrongConnection {
   node: string;
   weight: number;
   direction: 'outgoing' | 'incoming';
+  resolved_path?: string;
 }
 
 export interface McpStrongConnectionsResponse {

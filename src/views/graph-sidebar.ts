@@ -1824,7 +1824,7 @@ export class GraphSidebarView extends ItemView {
       if (connectionsResp?.connections) {
         for (const conn of connectionsResp.connections) {
           if (!hasNode(conn.node) && nk(conn.node) !== nk(notePath)) {
-            candidates.push({ path: conn.node, weight: conn.weight, source: 'connection' });
+            candidates.push({ path: conn.resolved_path ?? conn.node, weight: conn.weight, source: 'connection' });
           }
         }
       }
