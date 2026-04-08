@@ -55,6 +55,7 @@ export class SearchModal extends Modal {
   private indexBarEl!: HTMLDivElement;
   private debounceTimer: number | null = null;
   private healthUnsub: (() => void) | null = null;
+  private connectionUnsub: (() => void) | null = null;
 
   constructor(app: App, mcpClient: FlywheelMcpClient) {
     super(app);
@@ -98,16 +99,37 @@ export class SearchModal extends Modal {
       item.createSpan({ text: hint.label });
     }
 
-    // Show index status via centralized health subscription
+    // Show index status via centralized health subscription.
+    // Also watch for connection state changes so the modal recovers if MCP
+    // connects after the modal was opened (e.g. still starting up).
+    const setupHealthSub = () => {
+      if (this.healthUnsub) { this.healthUnsub(); this.healthUnsub = null; }
+      this.healthUnsub = this.mcpClient.onHealthUpdate(health => {
+        this.renderIndexBar(health);
+      });
+    };
+
     if (!this.mcpClient.connected) {
       this.statusEl.setText('MCP server not connected');
       this.statusEl.addClass('flywheel-search-status-warning');
       this.renderIndexBar(null);
     } else {
-      this.healthUnsub = this.mcpClient.onHealthUpdate(health => {
-        this.renderIndexBar(health);
-      });
+      setupHealthSub();
     }
+
+    this.connectionUnsub = this.mcpClient.onConnectionStateChange(() => {
+      if (this.mcpClient.connected) {
+        this.statusEl.setText('');
+        this.statusEl.removeClass('flywheel-search-status-warning');
+        setupHealthSub();
+        // Re-run any pending search now that we're connected
+        if (this.inputEl.value.trim()) this.performSearch();
+      } else {
+        this.statusEl.setText('MCP server not connected');
+        this.statusEl.addClass('flywheel-search-status-warning');
+        this.renderIndexBar(null);
+      }
+    });
 
     // Event handlers
     this.inputEl.addEventListener('input', () => {
@@ -394,6 +416,7 @@ export class SearchModal extends Modal {
   onClose(): void {
     if (this.debounceTimer) clearTimeout(this.debounceTimer);
     if (this.healthUnsub) { this.healthUnsub(); this.healthUnsub = null; }
+    if (this.connectionUnsub) { this.connectionUnsub(); this.connectionUnsub = null; }
     this.contentEl.empty();
   }
 }
