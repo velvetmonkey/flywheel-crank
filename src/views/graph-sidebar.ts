@@ -2292,7 +2292,6 @@ export class GraphSidebarView extends ItemView {
       ['forward', '#43d17a', 'solid'],
       ['suggested', '#f59e42', 'dashed'],
       ['similar', '#a78bfa', 'dotted'],
-      ['connection', '#06b6d4', 'solid'],
       ['multi', 'var(--text-accent)', 'solid'],
     ];
     legendWrap.createEl('span', { cls: 'flywheel-legend-label', text: 'source' });
