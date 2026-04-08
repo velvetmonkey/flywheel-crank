@@ -1820,11 +1820,21 @@ export class GraphSidebarView extends ItemView {
       // Collect candidate paths from all context sources, ranked by relevance
       const candidates: { path: string; weight: number; source: 'suggestion' | 'similar' | 'connection' }[] = [];
 
+      // Resolve a connection node (possibly an alias) to its canonical vault path.
+      // Uses Obsidian's metadata cache first (covers all frontmatter aliases for every note),
+      // with flywheel's entity cache as fallback for entities not in Obsidian's index.
+      const resolveConnNode = (node: string): string => {
+        const file = this.app.metadataCache.getFirstLinkpathDest(node, '');
+        if (file) return file.path;
+        return this.mcpClient.resolveEntityPath(node) ?? node;
+      };
+
       // Strong connections not already in graph
       if (connectionsResp?.connections) {
         for (const conn of connectionsResp.connections) {
-          if (!hasNode(conn.node) && nk(conn.node) !== nk(notePath)) {
-            candidates.push({ path: conn.resolved_path ?? conn.node, weight: conn.weight, source: 'connection' });
+          const connPath = resolveConnNode(conn.node);
+          if (!hasNode(connPath) && nk(connPath) !== nk(notePath)) {
+            candidates.push({ path: connPath, weight: conn.weight, source: 'connection' });
           }
         }
       }
@@ -1899,7 +1909,7 @@ export class GraphSidebarView extends ItemView {
           if (!conns) continue;
 
           for (const conn of conns.slice(0, MAX_SECONDARY_EDGES)) {
-            const p2 = conn.node;
+            const p2 = resolveConnNode(conn.node);
             // Skip if already in graph or is the current note
             if (hasNode(p2) || nk(p2) === nk(notePath)) {
               // Still add the inter-neighbor edge if both nodes exist
