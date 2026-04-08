@@ -1773,6 +1773,45 @@ export class GraphSidebarView extends ItemView {
       }
     }
 
+    // Supplement forward links with Obsidian's live metadata cache.
+    // The MCP server may lag by up to 15 seconds (poll interval) before picking up edits.
+    // Obsidian's cache reflects the file as-saved and is always current.
+    const currentTFile = this.app.vault.getAbstractFileByPath(notePath);
+    if (currentTFile instanceof TFile) {
+      const obsCache = this.app.metadataCache.getFileCache(currentTFile);
+      for (const link of obsCache?.links ?? []) {
+        const linkTarget = link.link.split('#')[0]; // strip heading fragments
+        if (!linkTarget) continue;
+        const resolvedFile = this.app.metadataCache.getFirstLinkpathDest(linkTarget, notePath);
+        const p = resolvedFile?.path ?? linkTarget;
+        if (hasNode(p)) { tagSource(p, 'forward'); continue; }
+        const exists = !!resolvedFile;
+        if (!exists && deadLinkCount >= MAX_DEAD_LINKS) continue;
+        if (!exists) deadLinkCount++;
+        forwardLinkPaths.add(nk(p));
+        neighborPaths.push(p);
+        const periodic = isPeriodicPath(p);
+        const cat = catFor(p);
+        const hs = hubScores.get(nameOf(p).toLowerCase()) ?? 0;
+        addNode(p, {
+          id: p, label: nameOf(p),
+          x: (Math.random() - 0.5) * 200, y: (Math.random() - 0.5) * 200,
+          vx: 0, vy: 0, radius: periodic ? Math.max(7, radiusFor(p) * 0.7) : radiusFor(p),
+          color: familyColor(cat), isCurrent: false, category: cat,
+          isPeriodic: periodic || undefined,
+          isDeadLink: !exists || undefined,
+          sources: new Set(['forward']),
+          hubScore: hs > 0 ? hs : undefined,
+        });
+        const cid = canonId(p);
+        const edgeKey = `${notePath}\u2192${cid}`;
+        if (!edgeSet.has(edgeKey)) {
+          edgeSet.add(edgeKey);
+          edges.push({ source: notePath, target: cid, weight: 1.0 });
+        }
+      }
+    }
+
     // Cap neighbors — prioritize entity nodes over periodic (daily) notes
     const MAX_NEIGHBORS = 24;
     const MAX_PERIODIC = 5;
@@ -1820,14 +1859,26 @@ export class GraphSidebarView extends ItemView {
       // Collect candidate paths from all context sources, ranked by relevance
       const candidates: { path: string; weight: number; source: 'suggestion' | 'similar' | 'connection' }[] = [];
 
-      // Resolve a connection node (possibly an alias) to its canonical vault path.
-      // Uses Obsidian's metadata cache first (covers all frontmatter aliases for every note),
-      // with flywheel's entity cache as fallback for entities not in Obsidian's index.
-      const resolveConnNode = (node: string): string => {
-        const file = this.app.metadataCache.getFirstLinkpathDest(node, '');
-        if (file) return file.path;
-        return this.mcpClient.resolveEntityPath(node) ?? node;
-      };
+      // Build a case-insensitive alias→path map from Obsidian's metadata cache.
+      // getFirstLinkpathDest is case-sensitive for aliases, so we do the lookup manually.
+      // This covers all notes (including work/ticket notes not in the entities table).
+      const aliasMap = new Map<string, string>();
+      for (const file of this.app.vault.getMarkdownFiles()) {
+        const cache = this.app.metadataCache.getFileCache(file);
+        // Map by filename stem (case-insensitive)
+        const stem = file.basename.toLowerCase();
+        if (stem && !aliasMap.has(stem)) aliasMap.set(stem, file.path);
+        // Map by frontmatter aliases
+        const raw = cache?.frontmatter?.aliases;
+        const aliases: string[] = Array.isArray(raw) ? raw : (typeof raw === 'string' ? [raw] : []);
+        for (const alias of aliases) {
+          if (typeof alias === 'string' && !aliasMap.has(alias.toLowerCase())) {
+            aliasMap.set(alias.toLowerCase(), file.path);
+          }
+        }
+      }
+      const resolveConnNode = (node: string): string =>
+        aliasMap.get(node.toLowerCase()) ?? this.mcpClient.resolveEntityPath(node) ?? node;
 
       // Strong connections not already in graph
       if (connectionsResp?.connections) {
