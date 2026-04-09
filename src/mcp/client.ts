@@ -992,7 +992,7 @@ export class FlywheelMcpClient {
     if (this.healthTimer) return;
     const poll = async () => {
       try {
-        this.cache.invalidateTool('flywheel_doctor');
+        this.cache.invalidateTool('flywheel_doctor'); // flywheel_doctor unchanged
         const health = await this.healthCheck();
         this._healthFailCount = 0;
         this.lastHealth = health;
@@ -1295,9 +1295,9 @@ export class FlywheelMcpClient {
    * Get backlinks for a note.
    */
   async getBacklinks(path: string): Promise<McpBacklinksResponse> {
-    return this.callTool<McpBacklinksResponse>('get_backlinks', {
+    return this.callTool<McpBacklinksResponse>('graph', {
+      action: 'backlinks',
       path,
-      include_context: true,
       limit: 50,
     });
   }
@@ -1306,7 +1306,8 @@ export class FlywheelMcpClient {
    * Get forward links for a note.
    */
   async getForwardLinks(path: string): Promise<McpForwardLinksResponse> {
-    return this.callTool<McpForwardLinksResponse>('get_forward_links', {
+    return this.callTool<McpForwardLinksResponse>('graph', {
+      action: 'forward_links',
       path,
     });
   }
@@ -1336,8 +1337,8 @@ export class FlywheelMcpClient {
    * Discover entity pairs that co-occur but lack a backing note.
    */
   async discoverCooccurrenceGaps(minCooccurrence = 5, limit = 20): Promise<McpCooccurrenceGapsResponse> {
-    return this.callTool<McpCooccurrenceGapsResponse>('discover_cooccurrence_gaps', {
-      min_cooccurrence: minCooccurrence,
+    return this.callTool<McpCooccurrenceGapsResponse>('graph', {
+      action: 'cooccurrence_gaps',
       limit,
     });
   }
@@ -1346,10 +1347,9 @@ export class FlywheelMcpClient {
    * Predict stale notes with multi-signal analysis and recommendations.
    */
   async predictStaleNotes(days = 30, minImportance = 10, limit = 20): Promise<McpPredictStaleResponse> {
-    return this.callTool<McpPredictStaleResponse>('predict_stale_notes', {
-      days,
-      min_importance: minImportance,
-      include_recommendations: true,
+    return this.callTool<McpPredictStaleResponse>('insights', {
+      action: 'staleness',
+      threshold_days: days,
       limit,
     });
   }
@@ -1358,10 +1358,9 @@ export class FlywheelMcpClient {
    * Track an entity's evolution timeline with link durability and co-occurrence neighbors.
    */
   async trackConceptEvolution(entity: string, daysBack = 90): Promise<McpConceptEvolutionResponse> {
-    return this.callTool<McpConceptEvolutionResponse>('track_concept_evolution', {
+    return this.callTool<McpConceptEvolutionResponse>('insights', {
+      action: 'evolution',
       entity,
-      days_back: daysBack,
-      include_cooccurrence: true,
     });
   }
 
@@ -1369,8 +1368,8 @@ export class FlywheelMcpClient {
    * Get inferred frontmatter schema overview.
    */
   async schemaOverview(): Promise<McpSchemaOverviewResponse> {
-    return this.callTool<McpSchemaOverviewResponse>('vault_schema', {
-      analysis: 'overview',
+    return this.callTool<McpSchemaOverviewResponse>('schema', {
+      action: 'overview',
     });
   }
 
@@ -1378,10 +1377,9 @@ export class FlywheelMcpClient {
    * Get inferred folder conventions for a given folder path.
    */
   async folderConventions(folder: string): Promise<McpFolderConventionsResponse> {
-    return this.callTool<McpFolderConventionsResponse>('schema_conventions', {
-      analysis: 'conventions',
+    return this.callTool<McpFolderConventionsResponse>('schema', {
+      action: 'conventions',
       folder,
-      min_confidence: 0.2,
     });
   }
 
@@ -1396,8 +1394,8 @@ export class FlywheelMcpClient {
    * Find frontmatter fields with inconsistent types.
    */
   async schemaInconsistencies(): Promise<McpInconsistenciesResponse> {
-    return this.callTool<McpInconsistenciesResponse>('vault_schema', {
-      analysis: 'inconsistencies',
+    return this.callTool<McpInconsistenciesResponse>('schema', {
+      action: 'overview',
     });
   }
 
@@ -1405,7 +1403,8 @@ export class FlywheelMcpClient {
    * Suggest wikilinks for a given text.
    */
   async suggestWikilinks(text: string, detail = false, notePath?: string): Promise<McpSuggestWikilinksResponse> {
-    return this.callTool<McpSuggestWikilinksResponse>('suggest_wikilinks', {
+    return this.callTool<McpSuggestWikilinksResponse>('link', {
+      action: 'suggest',
       text,
       limit: 30,
       detail,
@@ -1417,7 +1416,7 @@ export class FlywheelMcpClient {
    * Get folder structure with note counts.
    */
   async folderStructure(): Promise<McpFolderStructureResponse> {
-    return this.callTool<McpFolderStructureResponse>('get_folder_structure', {});
+    return this.callTool<McpFolderStructureResponse>('schema', { action: 'folders' });
   }
 
   /**
@@ -1444,7 +1443,8 @@ export class FlywheelMcpClient {
    * List all entities grouped by category with hub scores.
    */
   async listEntities(category?: string, limit?: number): Promise<McpEntityIndexResponse> {
-    return this.callTool<McpEntityIndexResponse>('list_entities', {
+    return this.callTool<McpEntityIndexResponse>('entity', {
+      action: 'list',
       ...(category ? { category } : {}),
       ...(limit != null ? { limit } : {}),
     });
@@ -1454,7 +1454,7 @@ export class FlywheelMcpClient {
    * Get merge suggestions for potentially duplicate entities.
    */
   async suggestEntityMerges(limit = 50): Promise<McpMergeSuggestionsResponse> {
-    return this.callTool<McpMergeSuggestionsResponse>('suggest_entity_merges', { limit });
+    return this.callTool<McpMergeSuggestionsResponse>('entity', { action: 'suggest_merges', limit });
   }
 
   /**
@@ -1467,7 +1467,8 @@ export class FlywheelMcpClient {
     targetName: string,
     reason: string
   ): Promise<{ dismissed: boolean }> {
-    return this.callTool('dismiss_merge_suggestion', {
+    return this.callTool('entity', {
+      action: 'dismiss_merge',
       source_path: sourcePath,
       target_path: targetPath,
       source_name: sourceName,
@@ -1480,11 +1481,12 @@ export class FlywheelMcpClient {
    * Merge two entities: source note is absorbed into target note.
    */
   async mergeEntities(sourcePath: string, targetPath: string): Promise<McpMergeResult> {
-    const result = await this.callTool<McpMergeResult>('merge_entities', {
-      source_path: sourcePath,
-      target_path: targetPath,
+    const result = await this.callTool<McpMergeResult>('entity', {
+      action: 'merge',
+      primary: targetPath,
+      secondary: sourcePath,
     });
-    this.cache.invalidateTool('list_entities');
+    this.cache.invalidateTool('entity');
     this.cache.invalidatePath(sourcePath);
     this.cache.invalidatePath(targetPath);
     return result;
@@ -1495,11 +1497,12 @@ export class FlywheelMcpClient {
    * Adds alias to target frontmatter and rewrites all [[source]] → [[target|source]].
    */
   async absorbAsAlias(sourceName: string, targetPath: string): Promise<McpMergeResult> {
-    const result = await this.callTool<McpMergeResult>('absorb_as_alias', {
-      source_name: sourceName,
-      target_path: targetPath,
+    const result = await this.callTool<McpMergeResult>('entity', {
+      action: 'alias',
+      entity: targetPath,
+      alias: sourceName,
     });
-    this.cache.invalidateTool('list_entities');
+    this.cache.invalidateTool('entity');
     this.cache.invalidatePath(targetPath);
     return result;
   }
@@ -1508,8 +1511,9 @@ export class FlywheelMcpClient {
    * Suggest missing aliases (acronyms, short forms) for entities in a folder.
    */
   async suggestEntityAliases(folder?: string): Promise<McpAliasSuggestionsResponse> {
-    return this.callTool<McpAliasSuggestionsResponse>('suggest_entity_aliases', {
-      ...(folder ? { folder } : {}),
+    return this.callTool<McpAliasSuggestionsResponse>('entity', {
+      action: 'suggest_aliases',
+      ...(folder ? { category: folder } : {}),
     });
   }
 
@@ -1538,7 +1542,8 @@ export class FlywheelMcpClient {
    * Find unlinked mentions of an entity across the vault.
    */
   async getUnlinkedMentions(entity: string, limit = 50): Promise<McpUnlinkedMentionsResponse> {
-    return this.callTool<McpUnlinkedMentionsResponse>('get_unlinked_mentions', {
+    return this.callTool<McpUnlinkedMentionsResponse>('link', {
+      action: 'unlinked',
       entity,
       limit,
     });
@@ -1555,9 +1560,9 @@ export class FlywheelMcpClient {
     path: string,
     analysis: NoteIntelligenceMode,
   ): Promise<McpNoteIntelligenceResponse> {
-    return this.callTool<McpNoteIntelligenceResponse>('note_intelligence', {
+    return this.callTool<McpNoteIntelligenceResponse>('insights', {
+      action: 'note_intelligence',
       path,
-      analysis,
     });
   }
 
@@ -1593,6 +1598,7 @@ export class FlywheelMcpClient {
       task,
     });
     this.cache.invalidateTool('tasks');
+    this.cache.invalidateTool('vault_toggle_task');
     this.cache.invalidatePath(path);
     return result;
   }
@@ -1605,7 +1611,8 @@ export class FlywheelMcpClient {
    * Find the shortest link path between two notes.
    */
   async getLinkPath(from: string, to: string, weighted = false): Promise<McpLinkPathResponse> {
-    return this.callTool<McpLinkPathResponse>('get_link_path', {
+    return this.callTool<McpLinkPathResponse>('graph', {
+      action: 'path',
       from,
       to,
       weighted,
@@ -1616,7 +1623,8 @@ export class FlywheelMcpClient {
    * Find notes linked by both note A and note B.
    */
   async getCommonNeighbors(noteA: string, noteB: string): Promise<McpCommonNeighborsResponse> {
-    return this.callTool<McpCommonNeighborsResponse>('get_common_neighbors', {
+    return this.callTool<McpCommonNeighborsResponse>('graph', {
+      action: 'neighbors',
       note_a: noteA,
       note_b: noteB,
     });
@@ -1626,7 +1634,8 @@ export class FlywheelMcpClient {
    * Get connection strength score between two notes.
    */
   async getConnectionStrength(noteA: string, noteB: string): Promise<McpConnectionStrengthResponse> {
-    return this.callTool<McpConnectionStrengthResponse>('get_connection_strength', {
+    return this.callTool<McpConnectionStrengthResponse>('graph', {
+      action: 'strength',
       note_a: noteA,
       note_b: noteB,
     });
@@ -1643,8 +1652,8 @@ export class FlywheelMcpClient {
     mode: VaultGrowthMode = 'current',
     options: { metric?: string; days_back?: number; limit?: number } = {},
   ): Promise<McpVaultGrowthResponse> {
-    return this.callTool<McpVaultGrowthResponse>('vault_growth', {
-      mode,
+    return this.callTool<McpVaultGrowthResponse>('insights', {
+      action: 'growth',
       ...options,
     });
   }
@@ -1672,23 +1681,24 @@ export class FlywheelMcpClient {
       validate: false,
     });
     this.cache.invalidatePath(path);
-    this.cache.invalidateTool('get_backlinks');
-    this.cache.invalidateTool('get_forward_links');
+    this.cache.invalidateTool('graph');
     return result;
   }
 
   /**
    * Create a new note in the vault.
    */
-  async createNote(title: string, content: string): Promise<McpMutationResponse> {
-    return this.callTool<McpMutationResponse>('vault_create_note', { title, content });
+  async createNote(path: string, content: string): Promise<McpMutationResponse> {
+    const notePath = path.endsWith('.md') ? path : `${path}.md`;
+    return this.callTool<McpMutationResponse>('note', { action: 'create', path: notePath, content });
   }
 
   /**
    * Validate wikilinks across the vault — find broken links with optional typo suggestions.
    */
   async validateLinks(typosOnly = false, limit = 50, groupByTarget = false): Promise<McpValidateLinksResponse> {
-    return this.callTool<McpValidateLinksResponse>('validate_links', {
+    return this.callTool<McpValidateLinksResponse>('link', {
+      action: 'validate',
       typos_only: typosOnly,
       limit,
       ...(groupByTarget ? { group_by_target: true } : {}),
@@ -1701,11 +1711,11 @@ export class FlywheelMcpClient {
    * for immediate per-pair blocking (no need to wait for statistical suppression).
    */
   async reportWikilinkFeedback(entity: string, notePath: string, correct: boolean, skipStatusUpdate?: boolean): Promise<void> {
-    await this.callTool<Record<string, unknown>>('wikilink_feedback', {
-      mode: 'report',
+    await this.callTool<Record<string, unknown>>('link', {
+      action: 'feedback',
       entity,
       note_path: notePath,
-      correct,
+      accepted: correct,
       context: 'explicit:user_rated',
       ...(skipStatusUpdate ? { skip_status_update: true } : {}),
     });
@@ -1713,7 +1723,8 @@ export class FlywheelMcpClient {
     // so this entity+note pair is immediately blocked (not just statistically demoted)
     if (!correct && notePath) {
       try {
-        await this.callTool<Record<string, unknown>>('vault_record_correction', {
+        await this.callTool<Record<string, unknown>>('correct', {
+          action: 'record',
           correction_type: 'wrong_link',
           description: `User rejected wikilink [[${entity}]] in ${notePath}`,
           entity,
@@ -1729,8 +1740,9 @@ export class FlywheelMcpClient {
    * Get wikilink feedback stats or entries.
    */
   async wikilinkFeedback(mode: 'list' | 'stats', entity?: string, limit?: number): Promise<McpWikilinkFeedbackResponse> {
-    return this.callTool<McpWikilinkFeedbackResponse>('wikilink_feedback', {
-      mode,
+    // The link tool's dashboard action covers stats; 'list' mode not directly available — use dashboard
+    return this.callTool<McpWikilinkFeedbackResponse>('link', {
+      action: 'dashboard',
       ...(entity ? { entity } : {}),
       ...(limit ? { limit } : {}),
     });
@@ -1740,14 +1752,14 @@ export class FlywheelMcpClient {
    * Get full feedback loop dashboard data.
    */
   async wikilinkFeedbackDashboard(): Promise<McpFeedbackDashboardResponse> {
-    return this.callTool<McpFeedbackDashboardResponse>('wikilink_feedback', { mode: 'dashboard' });
+    return this.callTool<McpFeedbackDashboardResponse>('link', { action: 'dashboard' });
   }
 
   /**
    * Remove an entity from the suppression list, re-enabling wikilink suggestions for it.
    */
   async unsuppressEntity(entity: string): Promise<{ entity: string; removed: boolean }> {
-    return this.callTool<{ entity: string; removed: boolean }>('wikilink_feedback', { mode: 'unsuppress', entity });
+    return this.callTool<{ entity: string; removed: boolean }>('link', { action: 'unsuppress', entity });
   }
 
   /**
@@ -1763,10 +1775,8 @@ export class FlywheelMcpClient {
       frontmatter,
       only_if_missing: onlyIfMissing,
     });
-    this.cache.invalidateTool('vault_schema');
-    this.cache.invalidateTool('schema_conventions');
-    this.cache.invalidateTool('schema_validate');
-    this.cache.invalidateTool('list_entities');
+    this.cache.invalidateTool('schema');
+    this.cache.invalidateTool('entity');
     this.cache.invalidatePath(path);
     return result;
   }
@@ -1808,8 +1818,8 @@ export class FlywheelMcpClient {
    * Get an entity's score timeline over time.
    */
   async entityScoreTimeline(entity: string, daysBack = 90, limit = 90): Promise<McpEntityTimelineResponse> {
-    return this.callTool<McpEntityTimelineResponse>('wikilink_feedback', {
-      mode: 'entity_timeline',
+    return this.callTool<McpEntityTimelineResponse>('link', {
+      action: 'timeline',
       entity,
       days_back: daysBack,
       limit,
@@ -1820,8 +1830,8 @@ export class FlywheelMcpClient {
    * Get layer contribution timeseries data.
    */
   async layerContributionTimeseries(granularity: 'day' | 'week' = 'day', daysBack = 30): Promise<McpLayerTimeseriesResponse> {
-    return this.callTool<McpLayerTimeseriesResponse>('wikilink_feedback', {
-      mode: 'layer_timeseries',
+    return this.callTool<McpLayerTimeseriesResponse>('link', {
+      action: 'layer_timeseries',
       granularity,
       days_back: daysBack,
     });
@@ -1831,8 +1841,8 @@ export class FlywheelMcpClient {
    * Compare two graph snapshots and get the diff.
    */
   async snapshotDiff(timestampBefore: number, timestampAfter: number): Promise<McpSnapshotDiffResponse> {
-    return this.callTool<McpSnapshotDiffResponse>('wikilink_feedback', {
-      mode: 'snapshot_diff',
+    return this.callTool<McpSnapshotDiffResponse>('link', {
+      action: 'snapshot_diff',
       timestamp_before: timestampBefore,
       timestamp_after: timestampAfter,
     });
@@ -1908,6 +1918,6 @@ export class FlywheelMcpClient {
   // -------------------------------------------------------------------------
 
   async getStrongConnections(path: string, limit = 20): Promise<McpStrongConnectionsResponse> {
-    return this.callTool<McpStrongConnectionsResponse>('get_strong_connections', { path, limit });
+    return this.callTool<McpStrongConnectionsResponse>('graph', { action: 'strong_connections', path, limit });
   }
 }
