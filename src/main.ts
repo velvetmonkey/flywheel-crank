@@ -5,7 +5,7 @@
  * Search and graph views are powered by flywheel-memory via MCP.
  */
 
-import { Plugin, Notice, WorkspaceLeaf, Menu, Editor, MarkdownView, FuzzySuggestModal, App } from 'obsidian';
+import { Plugin, Notice, WorkspaceLeaf, Menu, Editor, MarkdownView, FuzzySuggestModal, FuzzyMatch, App, TFile } from 'obsidian';
 import type { FlywheelCrankSettings } from './core/types';
 import { DEFAULT_SETTINGS } from './core/types';
 import { FlywheelCrankSettingTab } from './settings';
@@ -322,7 +322,7 @@ export default class FlywheelCrankPlugin extends Plugin {
           item.setTitle('Flywheel: Merge as alias into...')
             .setIcon('arrow-right-circle')
             .onClick(() => {
-              new EntityPickerModal(this.app, this.mcpClient, entity).open();
+              new EntityPickerModal(this.app, this.mcpClient, entity, notePath).open();
             });
         });
       })
@@ -828,41 +828,63 @@ function formatAgo(seconds: number): string {
 }
 
 /**
- * Fuzzy entity picker for the "Merge as alias into..." context menu action.
- * Loads all entities from the MCP server and lets the user pick a target.
+ * Fuzzy picker for the "Merge as alias into..." context menu action.
+ * Unions the entity index with every markdown file in the vault so that
+ * notes filtered out of the entity index (pure-numeric names, date-formatted
+ * names, etc.) can still be chosen as merge targets.
  */
 class EntityPickerModal extends FuzzySuggestModal<McpEntityItem> {
   private mcpClient: FlywheelMcpClient;
   private sourceName: string;
+  private sourceFile: TFile | null;
   private entities: McpEntityItem[] = [];
 
-  constructor(app: App, mcpClient: FlywheelMcpClient, sourceName: string) {
+  constructor(app: App, mcpClient: FlywheelMcpClient, sourceName: string, sourceContextPath: string) {
     super(app);
     this.mcpClient = mcpClient;
     this.sourceName = sourceName;
-    this.setPlaceholder(`Pick target entity to absorb "${sourceName}" into...`);
+    this.sourceFile = app.metadataCache.getFirstLinkpathDest(sourceName, sourceContextPath);
+    this.setPlaceholder(`Pick target note to absorb "${sourceName}" into...`);
     this.loadEntities();
   }
 
   private async loadEntities(): Promise<void> {
+    const byPath = new Map<string, McpEntityItem>();
+
     try {
       const index = await this.mcpClient.listEntities();
-      const allEntities: McpEntityItem[] = [];
       for (const [key, value] of Object.entries(index)) {
         if (key === '_metadata') continue;
-        if (Array.isArray(value)) {
-          allEntities.push(...(value as McpEntityItem[]));
+        if (!Array.isArray(value)) continue;
+        for (const entity of value as McpEntityItem[]) {
+          if (entity.isSuppressed) continue;
+          if (!entity.path) continue;
+          byPath.set(entity.path, entity);
         }
       }
-      this.entities = allEntities.filter(
-        e => e.name.toLowerCase() !== this.sourceName.toLowerCase()
-      );
-      // Trigger re-render now that entities are loaded
-      this.inputEl.dispatchEvent(new Event('input'));
-    } catch {
-      new Notice('Failed to load entities');
-      this.close();
+    } catch (err) {
+      console.warn('Flywheel: entity index unavailable, showing vault-only picker', err);
+      new Notice('Entity index unavailable — showing all vault notes');
     }
+
+    for (const file of this.app.vault.getMarkdownFiles()) {
+      if (byPath.has(file.path)) continue;
+      byPath.set(file.path, {
+        name: file.basename,
+        path: file.path,
+        aliases: [],
+      });
+    }
+
+    const sourcePath = this.sourceFile?.path;
+    const sourceNameLower = this.sourceName.toLowerCase();
+
+    this.entities = Array.from(byPath.values()).filter(e => {
+      if (sourcePath) return e.path !== sourcePath;
+      return e.name.toLowerCase() !== sourceNameLower;
+    });
+
+    this.inputEl.dispatchEvent(new Event('input'));
   }
 
   getItems(): McpEntityItem[] {
@@ -871,6 +893,19 @@ class EntityPickerModal extends FuzzySuggestModal<McpEntityItem> {
 
   getItemText(item: McpEntityItem): string {
     return item.name;
+  }
+
+  renderSuggestion(match: FuzzyMatch<McpEntityItem>, el: HTMLElement): void {
+    const item = match.item;
+    el.addClass('flywheel-picker-item');
+    el.createDiv({ text: item.name, cls: 'flywheel-picker-name' });
+
+    const slashIdx = item.path.lastIndexOf('/');
+    const folder = slashIdx >= 0 ? item.path.slice(0, slashIdx) : '';
+    const sub = el.createDiv({ cls: 'flywheel-picker-subtitle' });
+    if (folder) sub.createSpan({ text: folder });
+    const fromEntityIndex = item.aliases.length > 0 || item.hubScore !== undefined;
+    if (fromEntityIndex) sub.createSpan({ text: 'Entity', cls: 'flywheel-picker-badge' });
   }
 
   onChooseItem(item: McpEntityItem): void {
