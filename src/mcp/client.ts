@@ -1497,10 +1497,9 @@ export class FlywheelMcpClient {
    * Adds alias to target frontmatter and rewrites all [[source]] → [[target|source]].
    */
   async absorbAsAlias(sourceName: string, targetPath: string): Promise<McpMergeResult> {
-    const result = await this.callTool<McpMergeResult>('entity', {
-      action: 'alias',
-      entity: targetPath,
-      alias: sourceName,
+    const result = await this.callTool<McpMergeResult>('absorb_as_alias', {
+      source_name: sourceName,
+      target_path: targetPath,
     });
     this.cache.invalidateTool('entity');
     this.cache.invalidatePath(targetPath);

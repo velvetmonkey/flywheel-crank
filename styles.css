@@ -4500,3 +4500,31 @@
 .theme-light .flywheel-entity-hub-badge[data-category="periodical"],
 .theme-light .flywheel-entity-hub-badge[data-category="finance"],
 .theme-light .flywheel-entity-hub-badge[data-category="other"] { color: #64748B; }
+
+/* Entity picker modal ("Merge as alias into...") */
+.flywheel-picker-item {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.flywheel-picker-name {
+  font-size: var(--font-ui-medium);
+  color: var(--text-normal);
+}
+.flywheel-picker-subtitle {
+  font-size: var(--font-ui-smaller);
+  color: var(--text-muted);
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+.flywheel-picker-badge {
+  display: inline-block;
+  padding: 0 6px;
+  border-radius: 8px;
+  background: var(--background-modifier-border);
+  color: var(--text-faint);
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
