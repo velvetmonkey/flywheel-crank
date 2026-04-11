@@ -866,6 +866,7 @@ export class FlywheelMcpClient {
   private transport: StdioClientTransport | null = null;
   private _connected = false;
   private cache = new McpCache();
+  private toolSet: Set<string> = new Set();
 
   // Connection state tracking
   private _connectionState: ConnectionState = 'disconnected';
@@ -1027,6 +1028,15 @@ export class FlywheelMcpClient {
   }
 
   /**
+   * Check if a tool is available on the connected server.
+   * Used for capability detection — prefer merged tool names when present,
+   * fall back to legacy standalone names for older server versions.
+   */
+  hasTool(name: string): boolean {
+    return this.toolSet.has(name);
+  }
+
+  /**
    * Connect to a flywheel-memory MCP server, spawning it as a child process.
    *
    * @param vaultPath - Absolute path to the Obsidian vault (native OS path)
@@ -1118,7 +1128,14 @@ export class FlywheelMcpClient {
       this.setConnectionState('connected');
       const serverInfo = this.client.getServerVersion();
       this._serverVersion = serverInfo?.version ?? null;
-      console.log(`[flywheel-crank] connected | flywheel-memory v${this._serverVersion ?? 'unknown'}`);
+      // Discover available tools for capability detection (hasTool)
+      try {
+        const toolList = await this.client.listTools();
+        this.toolSet = new Set(toolList.tools.map((t: { name: string }) => t.name));
+      } catch {
+        this.toolSet = new Set();
+      }
+      console.log(`[flywheel-crank] connected | flywheel-memory v${this._serverVersion ?? 'unknown'} | ${this.toolSet.size} tools`);
     } catch (err) {
       const stderrTail = this._stderrLines.slice(-10).join('\n');
       this._lastError = err instanceof Error
@@ -1316,6 +1333,9 @@ export class FlywheelMcpClient {
    * Get vault health check — note counts, config, index status.
    */
   async healthCheck(mode: 'summary' | 'full' = 'summary'): Promise<McpHealthCheckResponse> {
+    if (this.hasTool('doctor')) {
+      return this.callTool<McpHealthCheckResponse>('doctor', { action: 'health', detail: mode });
+    }
     return this.callTool<McpHealthCheckResponse>('flywheel_doctor', { report: 'health', detail: mode });
   }
 
@@ -1323,6 +1343,9 @@ export class FlywheelMcpClient {
    * Run comprehensive vault diagnostics (flywheel_doctor).
    */
   async runDoctor(): Promise<McpDoctorResponse> {
+    if (this.hasTool('doctor')) {
+      return this.callTool<McpDoctorResponse>('doctor', { action: 'health' });
+    }
     return this.callTool<McpDoctorResponse>('flywheel_doctor', { report: 'diagnosis' });
   }
 
@@ -1330,6 +1353,9 @@ export class FlywheelMcpClient {
    * Get live pipeline activity and recent runs.
    */
   async pipelineStatus(detail = false): Promise<McpPipelineStatusResponse> {
+    if (this.hasTool('doctor')) {
+      return this.callTool<McpPipelineStatusResponse>('doctor', { action: 'pipeline', detail });
+    }
     return this.callTool<McpPipelineStatusResponse>('pipeline_status', { detail });
   }
 
@@ -1592,12 +1618,12 @@ export class FlywheelMcpClient {
    * Toggle a task's completion status.
    */
   async toggleTask(path: string, task: string): Promise<McpToggleTaskResponse> {
-    const result = await this.callTool<McpToggleTaskResponse>('vault_toggle_task', {
-      path,
-      task,
-    });
+    // After T43 server update, vault_toggle_task is retired → tasks(action: toggle).
+    // While vault_toggle_task is still present (old server), use it directly.
+    const result = this.hasTool('vault_toggle_task')
+      ? await this.callTool<McpToggleTaskResponse>('vault_toggle_task', { path, task })
+      : await this.callTool<McpToggleTaskResponse>('tasks', { action: 'toggle', path, task });
     this.cache.invalidateTool('tasks');
-    this.cache.invalidateTool('vault_toggle_task');
     this.cache.invalidatePath(path);
     return result;
   }
@@ -1788,6 +1814,9 @@ export class FlywheelMcpClient {
    * Get the current FlywheelConfig from the MCP server.
    */
   async getFlywheelConfig(): Promise<McpFlywheelConfigResponse> {
+    if (this.hasTool('doctor')) {
+      return this.callTool<McpFlywheelConfigResponse>('doctor', { action: 'config', mode: 'get' });
+    }
     return this.callTool<McpFlywheelConfigResponse>('flywheel_config', { mode: 'get' });
   }
 
@@ -1795,6 +1824,9 @@ export class FlywheelMcpClient {
    * Update a single key in FlywheelConfig.
    */
   async setFlywheelConfig(key: string, value: unknown): Promise<McpFlywheelConfigResponse> {
+    if (this.hasTool('doctor')) {
+      return this.callTool<McpFlywheelConfigResponse>('doctor', { action: 'config', mode: 'set', key, value });
+    }
     return this.callTool<McpFlywheelConfigResponse>('flywheel_config', { mode: 'set', key, value });
   }
 
@@ -1806,6 +1838,9 @@ export class FlywheelMcpClient {
    * Query the server's in-memory activity log.
    */
   async getServerLog(options: { since?: number; component?: string; limit?: number } = {}): Promise<McpServerLogResponse> {
+    if (this.hasTool('doctor')) {
+      return this.callTool<McpServerLogResponse>('doctor', { action: 'log', ...options });
+    }
     return this.callTool<McpServerLogResponse>('server_log', options);
   }
 
