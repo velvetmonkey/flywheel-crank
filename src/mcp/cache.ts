@@ -11,12 +11,15 @@ interface CacheEntry {
 }
 
 // TTL tiers by tool name
+// Legacy standalone tool names kept for backward compat with pre-T43 servers.
+// Merged tool names added for T43+ servers.
 const SESSION_TOOLS = new Set([
-  'list_entities',
-  'flywheel_config',
+  'list_entities',   // legacy → entity(action: list)
+  'flywheel_config', // legacy → doctor(action: config)
 ]);
 
 const TTL_5S_TOOLS = new Set([
+  // Legacy standalone names (pre-T43 server compat)
   'vault_schema',
   'schema_conventions',
   'schema_validate',
@@ -29,17 +32,28 @@ const TTL_5S_TOOLS = new Set([
   'server_log',
   'validate_links',
   'flywheel_doctor',
+  'pipeline_status',
   'discover_cooccurrence_gaps',
   'predict_stale_notes',
   'track_concept_evolution',
+  // Merged tool names (T43+ server)
+  'doctor',   // health, pipeline, config, log actions (all diagnostic reads)
+  'schema',   // overview, conventions, folders, validate actions
+  'graph',    // analyse, backlinks, forward_links, path, neighbors, strength, cooccurrence_gaps
+  'link',     // suggest, validate, dashboard, timeline, layer_timeseries, snapshot_diff, unlinked
+  'insights', // evolution, staleness, context, note_intelligence, growth
+  'entity',   // list, suggest_aliases, suggest_merges (writes invalidate via invalidateTool)
+  'correct',  // list action (record/resolve/undo writes invalidate via invalidateTool)
 ]);
 
 const TTL_30S_TOOLS = new Set<string>([
 ]);
 
-// Tools that should never be cached
+// Tools that should never be cached (mutations and always-fresh reads)
 const NO_CACHE_TOOLS = new Set([
+  // Always-fresh reads
   'search',
+  // Legacy mutation tools (pre-T43 server compat)
   'vault_toggle_task',
   'vault_update_frontmatter',
   'vault_add_to_section',
@@ -60,6 +74,9 @@ const NO_CACHE_TOOLS = new Set([
   'vault_undo_last_mutation',
   'dismiss_merge_suggestion',
   'wikilink_feedback',
+  // Merged write-only tools (T43+ server)
+  'note',         // create, move, rename, delete — all mutations
+  'edit_section', // add, remove, replace — all mutations
 ]);
 
 function getTtl(tool: string): number {
