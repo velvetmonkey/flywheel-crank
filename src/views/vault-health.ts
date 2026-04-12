@@ -105,7 +105,7 @@ export class VaultHealthView extends ItemView {
 
     const content = container.createDiv('flywheel-health-content');
 
-    // Vault Config section — lazy-loaded via flywheel_config tool
+    // Vault Config section — lazy-loaded via Flywheel runtime config
     this.renderLazySection(content, 'Vault Config', 'settings', async (el) => {
       try {
         const cfg = await this.mcpClient.getFlywheelConfig() as Record<string, any> | undefined;
@@ -901,10 +901,9 @@ export class VaultHealthView extends ItemView {
       proactive_min_score: 'Proactive min score',
       proactive_max_per_file: 'Proactive max/file',
       proactive_max_per_day: 'Proactive max/day',
-      tool_tier_override: 'Tool tier override',
     };
     const skipKeys = new Set(['paths', 'templates', 'exclude', 'exclude_entity_folders', 'custom_categories',
-      'exclude_task_tags', 'exclude_analysis_tags', 'exclude_entities']);
+      'exclude_task_tags', 'exclude_analysis_tags', 'exclude_entities', 'tool_tier_override']);
     for (const [key, label] of Object.entries(scalarLabels)) {
       if (cfg[key] != null) {
         this.renderInfoRow(el, label, String(cfg[key]));
