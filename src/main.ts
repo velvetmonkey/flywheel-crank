@@ -499,7 +499,7 @@ export default class FlywheelCrankPlugin extends Plugin {
       // Include last pipeline detail if available
       if (health.last_pipeline) {
         const p = health.last_pipeline;
-        const stepNames = p.steps
+        const stepNames = (p.steps ?? [])
           .filter(s => !s.skipped)
           .map(s => s.name)
           .join(' → ');
