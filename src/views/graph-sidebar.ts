@@ -1511,8 +1511,7 @@ export class GraphSidebarView extends ItemView {
     for (const [family] of topFamilies) {
       const item = catRow.createEl('span', { cls: 'flywheel-legend-item' });
       const dot = item.createEl('span', { cls: 'flywheel-legend-dot' });
-      const isLight = document.body.classList.contains('theme-light');
-      dot.style.background = FAMILY_COLORS[family]?.[isLight ? 'light' : 'dark'] ?? FAMILY_COLORS.gray.dark;
+      dot.style.background = familyColor(family);
       item.createEl('span').setText(FAMILY_LABELS[family] ?? family);
     }
 
