@@ -1063,7 +1063,7 @@ export class FlywheelMcpClient {
       args = [serverPath];
     } else {
       command = isWindows ? 'npx.cmd' : 'npx';
-      args = ['-y', '@velvetmonkey/flywheel-memory@2.11.0']; // Pin version — bump when releasing new flywheel-memory
+      args = ['-y', '@velvetmonkey/flywheel-memory@2.11.2']; // Pin version — bump when releasing new flywheel-memory
     }
 
     console.log(`Flywheel Crank: spawning ${command} ${args.join(' ')}`);
@@ -1301,10 +1301,10 @@ export class FlywheelMcpClient {
    * Find notes similar to a given note.
    */
   async findSimilar(path: string, limit = 10): Promise<McpSimilarResponse> {
-    return this.callTool<McpSimilarResponse>('find_similar', {
+    return this.callTool<McpSimilarResponse>('search', {
+      action: 'similar',
       path,
       limit,
-      exclude_linked: true,
     });
   }
 
@@ -1344,7 +1344,7 @@ export class FlywheelMcpClient {
    */
   async runDoctor(): Promise<McpDoctorResponse> {
     if (this.hasTool('doctor')) {
-      return this.callTool<McpDoctorResponse>('doctor', { action: 'health' });
+      return this.callTool<McpDoctorResponse>('doctor', { action: 'diagnosis' });
     }
     return this.callTool<McpDoctorResponse>('flywheel_doctor', { report: 'diagnosis' });
   }
@@ -1413,6 +1413,9 @@ export class FlywheelMcpClient {
    * Get comprehensive vault statistics.
    */
   async vaultStats(): Promise<McpVaultStatsResponse> {
+    if (this.hasTool('doctor')) {
+      return this.callTool<McpVaultStatsResponse>('doctor', { action: 'stats' });
+    }
     return this.callTool<McpVaultStatsResponse>('flywheel_doctor', { report: 'stats' });
   }
 
@@ -1523,10 +1526,16 @@ export class FlywheelMcpClient {
    * Adds alias to target frontmatter and rewrites all [[source]] → [[target|source]].
    */
   async absorbAsAlias(sourceName: string, targetPath: string): Promise<McpMergeResult> {
-    const result = await this.callTool<McpMergeResult>('absorb_as_alias', {
-      source_name: sourceName,
-      target_path: targetPath,
-    });
+    const result = this.hasTool('entity')
+      ? await this.callTool<McpMergeResult>('entity', {
+          action: 'alias',
+          source_name: sourceName,
+          target_path: targetPath,
+        })
+      : await this.callTool<McpMergeResult>('absorb_as_alias', {
+          source_name: sourceName,
+          target_path: targetPath,
+        });
     this.cache.invalidateTool('entity');
     this.cache.invalidatePath(targetPath);
     return result;
@@ -1553,6 +1562,13 @@ export class FlywheelMcpClient {
     analysis: GraphAnalysisMode,
     options: McpGraphAnalysisOptions = {},
   ): Promise<McpGraphAnalysisResponse> {
+    if (this.hasTool('graph')) {
+      return this.callTool<McpGraphAnalysisResponse>('graph', {
+        action: 'analyse',
+        analysis,
+        ...options,
+      });
+    }
     return this.callTool<McpGraphAnalysisResponse>('graph_analysis', {
       analysis,
       ...options,
@@ -1650,8 +1666,8 @@ export class FlywheelMcpClient {
   async getCommonNeighbors(noteA: string, noteB: string): Promise<McpCommonNeighborsResponse> {
     return this.callTool<McpCommonNeighborsResponse>('graph', {
       action: 'neighbors',
-      note_a: noteA,
-      note_b: noteB,
+      path_a: noteA,
+      path_b: noteB,
     });
   }
 
@@ -1661,8 +1677,8 @@ export class FlywheelMcpClient {
   async getConnectionStrength(noteA: string, noteB: string): Promise<McpConnectionStrengthResponse> {
     return this.callTool<McpConnectionStrengthResponse>('graph', {
       action: 'strength',
-      note_a: noteA,
-      note_b: noteB,
+      path_a: noteA,
+      path_b: noteB,
     });
   }
 
@@ -1696,14 +1712,13 @@ export class FlywheelMcpClient {
     search: string,
     replacement: string,
   ): Promise<McpMutationResponse> {
-    const result = await this.callTool<McpMutationResponse>('vault_replace_in_section', {
+    const result = await this.callTool<McpMutationResponse>('edit_section', {
+      action: 'replace',
       path,
       section,
       search,
       replacement,
       skipWikilinks: true,
-      suggestOutgoingLinks: false,
-      validate: false,
     });
     this.cache.invalidatePath(path);
     this.cache.invalidateTool('graph');

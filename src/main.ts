@@ -193,14 +193,18 @@ export default class FlywheelCrankPlugin extends Plugin {
       this.app.vault.on('create', (file) => {
         this.mcpClient.invalidateForPath(file.path);
         this.mcpClient.invalidateTool('list_entities');
+        this.mcpClient.invalidateTool('entity');
         this.mcpClient.invalidateTool('flywheel_doctor');
+        this.mcpClient.invalidateTool('doctor');
       })
     );
     this.registerEvent(
       this.app.vault.on('delete', (file) => {
         this.mcpClient.invalidateForPath(file.path);
         this.mcpClient.invalidateTool('list_entities');
+        this.mcpClient.invalidateTool('entity');
         this.mcpClient.invalidateTool('flywheel_doctor');
+        this.mcpClient.invalidateTool('doctor');
       })
     );
     this.registerEvent(
@@ -208,7 +212,9 @@ export default class FlywheelCrankPlugin extends Plugin {
         this.mcpClient.invalidateForPath(file.path);
         this.mcpClient.invalidateForPath(oldPath);
         this.mcpClient.invalidateTool('list_entities');
+        this.mcpClient.invalidateTool('entity');
         this.mcpClient.invalidateTool('flywheel_doctor');
+        this.mcpClient.invalidateTool('doctor');
       })
     );
 
@@ -387,14 +393,16 @@ export default class FlywheelCrankPlugin extends Plugin {
     const pipelineTs = health.last_pipeline?.timestamp ?? 0;
     if (pipelineTs > this.lastPipelineTimestamp) {
       const isFirstPoll = this.lastPipelineTimestamp === 0;
-      this.lastPipelineTimestamp = pipelineTs;
-      // Pipeline includes entity_scan — aliases/entities may have changed
-      if (!isFirstPoll) {
-        this.mcpClient.invalidateTool('list_entities');
-        this.mcpClient.invalidateTool('suggest_wikilinks');
-        this.mcpClient.bustEntityCache();
-        this.wikilinkEntitiesLoaded = false;
-        this.mcpClient.notifyPipelineComplete();
+        this.lastPipelineTimestamp = pipelineTs;
+        // Pipeline includes entity_scan — aliases/entities may have changed
+        if (!isFirstPoll) {
+          this.mcpClient.invalidateTool('list_entities');
+          this.mcpClient.invalidateTool('entity');
+          this.mcpClient.invalidateTool('suggest_wikilinks');
+          this.mcpClient.invalidateTool('link');
+          this.mcpClient.bustEntityCache();
+          this.wikilinkEntitiesLoaded = false;
+          this.mcpClient.notifyPipelineComplete();
       }
     }
 
@@ -421,6 +429,7 @@ export default class FlywheelCrankPlugin extends Plugin {
     const rebuildTs = health.last_rebuild?.timestamp ?? 0;
     if (rebuildTs > this.lastRebuildTimestamp && this.lastRebuildTimestamp > 0) {
       this.mcpClient.invalidateTool('list_entities');
+      this.mcpClient.invalidateTool('entity');
       this.mcpClient.bustEntityCache();
       this.wikilinkEntitiesLoaded = false;
       this.updateGraphSidebar(true);
