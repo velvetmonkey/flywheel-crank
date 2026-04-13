@@ -155,7 +155,7 @@ export class VaultHealthView extends ItemView {
       return count;
     }, 'Aggregate statistics about your vault\'s link structure, most connected notes, and popular tags.');
 
-    // System Diagnostics section — flywheel_doctor
+    // System Diagnostics section — doctor(action: diagnosis)
     this.renderLazySection(content, 'System Diagnostics', 'stethoscope', async (el) => {
       this.renderInfoRow(el, 'Crank', `v${this.pluginVersion}`);
       this.renderInfoRow(el, 'Server', `flywheel-memory v${this.mcpClient.serverVersion ?? 'unknown'}`);
@@ -778,7 +778,7 @@ export class VaultHealthView extends ItemView {
       }
 
       return totalFeedback;
-    }, 'Tracks how often wikilink suggestions from the suggest_wikilinks tool were accepted vs rejected. Feedback accumulates as you use the wikilink suggestion feature in your notes.');
+    }, 'Tracks how often wikilink suggestions from link(action: suggest) were accepted vs rejected. Feedback accumulates as you use the wikilink suggestion feature in your notes.');
 
     // Suppressed & Boosted section — lazy-loaded from dashboard
     this.renderLazySection(content, 'Suppressed & Boosted', 'shield', async (el) => {
@@ -1096,7 +1096,7 @@ export class VaultHealthView extends ItemView {
     let lastPipelineTs = 0;
 
     const populateLog = async () => {
-      // Try pipeline_status first (new tool), fall back to health data
+      // Prefer doctor(action: pipeline), fall back to health data
       let pipelines: Array<{
         timestamp: number; trigger: string; duration_ms: number;
         files_changed: number | null;
@@ -1110,7 +1110,7 @@ export class VaultHealthView extends ItemView {
           pipelines = ps.recent_runs;
         }
       } catch {
-        // Fall back to health data (older server without pipeline_status)
+        // Fall back to health data if pipeline detail is unavailable
         const health = this.mcpClient.lastHealth;
         if (health) {
           pipelines = health.recent_pipelines?.length

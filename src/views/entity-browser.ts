@@ -3,7 +3,7 @@
  *
  * Shows all extracted entities grouped by 17 categories
  * with search/filter, hub scores, and click-to-navigate.
- * Fetches data via MCP list_entities tool.
+ * Fetches data via MCP entity(action: list).
  *
  * Features:
  * - Bulk re-categorize (select multiple entities, move to another category)

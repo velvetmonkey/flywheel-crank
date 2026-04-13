@@ -310,7 +310,7 @@ export interface McpSuggestWikilinksResponse {
   }>;
 }
 
-// Entity index (from list_entities)
+// Entity index (from entity action=list)
 export interface McpEntityItem {
   name: string;
   path: string;
@@ -993,7 +993,7 @@ export class FlywheelMcpClient {
     if (this.healthTimer) return;
     const poll = async () => {
       try {
-        this.cache.invalidateTool('flywheel_doctor'); // flywheel_doctor unchanged
+        this.cache.invalidateTool('flywheel_doctor'); // legacy fallback cache key
         const health = await this.healthCheck();
         this._healthFailCount = 0;
         this.lastHealth = health;
@@ -1269,7 +1269,7 @@ export class FlywheelMcpClient {
 
   /**
    * Wait for the server's vault index to become ready.
-   * Polls health_check until index_state === 'ready' or timeout.
+   * Polls the health endpoint until index_state === 'ready' or timeout.
    */
   async waitForIndex(timeoutMs = 60_000): Promise<void> {
     const start = Date.now();
@@ -1279,7 +1279,7 @@ export class FlywheelMcpClient {
         if (health.index_state === 'ready') return;
         console.log(`[Flywheel Crank] Index state: ${health.index_state}, waiting...`);
       } catch {
-        // health_check itself may fail during early startup
+        // Health requests may fail during early startup
       }
       await new Promise(r => setTimeout(r, 2000));
     }
@@ -1340,7 +1340,7 @@ export class FlywheelMcpClient {
   }
 
   /**
-   * Run comprehensive vault diagnostics (flywheel_doctor).
+   * Run comprehensive vault diagnostics.
    */
   async runDoctor(): Promise<McpDoctorResponse> {
     if (this.hasTool('doctor')) {
@@ -1634,8 +1634,7 @@ export class FlywheelMcpClient {
    * Toggle a task's completion status.
    */
   async toggleTask(path: string, task: string): Promise<McpToggleTaskResponse> {
-    // After T43 server update, vault_toggle_task is retired → tasks(action: toggle).
-    // While vault_toggle_task is still present (old server), use it directly.
+    // Prefer the merged tasks(action: toggle) path, but keep the legacy fallback.
     const result = this.hasTool('vault_toggle_task')
       ? await this.callTool<McpToggleTaskResponse>('vault_toggle_task', { path, task })
       : await this.callTool<McpToggleTaskResponse>('tasks', { action: 'toggle', path, task });

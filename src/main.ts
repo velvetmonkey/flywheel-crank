@@ -394,7 +394,7 @@ export default class FlywheelCrankPlugin extends Plugin {
     if (pipelineTs > this.lastPipelineTimestamp) {
       const isFirstPoll = this.lastPipelineTimestamp === 0;
         this.lastPipelineTimestamp = pipelineTs;
-        // Pipeline includes entity_scan — aliases/entities may have changed
+        // Pipeline includes entity scanning and link suggestion state changes.
         if (!isFirstPoll) {
           this.mcpClient.invalidateTool('list_entities');
           this.mcpClient.invalidateTool('entity');
