@@ -310,7 +310,7 @@ export interface McpSuggestWikilinksResponse {
   }>;
 }
 
-// Entity index (from list_entities)
+// Entity index (from entity action=list)
 export interface McpEntityItem {
   name: string;
   path: string;
@@ -993,7 +993,7 @@ export class FlywheelMcpClient {
     if (this.healthTimer) return;
     const poll = async () => {
       try {
-        this.cache.invalidateTool('flywheel_doctor'); // flywheel_doctor unchanged
+        this.cache.invalidateTool('flywheel_doctor'); // legacy fallback cache key
         const health = await this.healthCheck();
         this._healthFailCount = 0;
         this.lastHealth = health;
@@ -1269,7 +1269,7 @@ export class FlywheelMcpClient {
 
   /**
    * Wait for the server's vault index to become ready.
-   * Polls health_check until index_state === 'ready' or timeout.
+   * Polls the health endpoint until index_state === 'ready' or timeout.
    */
   async waitForIndex(timeoutMs = 60_000): Promise<void> {
     const start = Date.now();
@@ -1279,7 +1279,7 @@ export class FlywheelMcpClient {
         if (health.index_state === 'ready') return;
         console.log(`[Flywheel Crank] Index state: ${health.index_state}, waiting...`);
       } catch {
-        // health_check itself may fail during early startup
+        // Health requests may fail during early startup
       }
       await new Promise(r => setTimeout(r, 2000));
     }
@@ -1301,10 +1301,10 @@ export class FlywheelMcpClient {
    * Find notes similar to a given note.
    */
   async findSimilar(path: string, limit = 10): Promise<McpSimilarResponse> {
-    return this.callTool<McpSimilarResponse>('find_similar', {
+    return this.callTool<McpSimilarResponse>('search', {
+      action: 'similar',
       path,
       limit,
-      exclude_linked: true,
     });
   }
 
@@ -1340,11 +1340,11 @@ export class FlywheelMcpClient {
   }
 
   /**
-   * Run comprehensive vault diagnostics (flywheel_doctor).
+   * Run comprehensive vault diagnostics.
    */
   async runDoctor(): Promise<McpDoctorResponse> {
     if (this.hasTool('doctor')) {
-      return this.callTool<McpDoctorResponse>('doctor', { action: 'health' });
+      return this.callTool<McpDoctorResponse>('doctor', { action: 'diagnosis' });
     }
     return this.callTool<McpDoctorResponse>('flywheel_doctor', { report: 'diagnosis' });
   }
@@ -1413,6 +1413,9 @@ export class FlywheelMcpClient {
    * Get comprehensive vault statistics.
    */
   async vaultStats(): Promise<McpVaultStatsResponse> {
+    if (this.hasTool('doctor')) {
+      return this.callTool<McpVaultStatsResponse>('doctor', { action: 'stats' });
+    }
     return this.callTool<McpVaultStatsResponse>('flywheel_doctor', { report: 'stats' });
   }
 
@@ -1523,10 +1526,16 @@ export class FlywheelMcpClient {
    * Adds alias to target frontmatter and rewrites all [[source]] → [[target|source]].
    */
   async absorbAsAlias(sourceName: string, targetPath: string): Promise<McpMergeResult> {
-    const result = await this.callTool<McpMergeResult>('absorb_as_alias', {
-      source_name: sourceName,
-      target_path: targetPath,
-    });
+    const result = this.hasTool('entity')
+      ? await this.callTool<McpMergeResult>('entity', {
+          action: 'alias',
+          source_name: sourceName,
+          target_path: targetPath,
+        })
+      : await this.callTool<McpMergeResult>('absorb_as_alias', {
+          source_name: sourceName,
+          target_path: targetPath,
+        });
     this.cache.invalidateTool('entity');
     this.cache.invalidatePath(targetPath);
     return result;
@@ -1553,6 +1562,13 @@ export class FlywheelMcpClient {
     analysis: GraphAnalysisMode,
     options: McpGraphAnalysisOptions = {},
   ): Promise<McpGraphAnalysisResponse> {
+    if (this.hasTool('graph')) {
+      return this.callTool<McpGraphAnalysisResponse>('graph', {
+        action: 'analyse',
+        analysis,
+        ...options,
+      });
+    }
     return this.callTool<McpGraphAnalysisResponse>('graph_analysis', {
       analysis,
       ...options,
@@ -1618,8 +1634,7 @@ export class FlywheelMcpClient {
    * Toggle a task's completion status.
    */
   async toggleTask(path: string, task: string): Promise<McpToggleTaskResponse> {
-    // After T43 server update, vault_toggle_task is retired → tasks(action: toggle).
-    // While vault_toggle_task is still present (old server), use it directly.
+    // Prefer the merged tasks(action: toggle) path, but keep the legacy fallback.
     const result = this.hasTool('vault_toggle_task')
       ? await this.callTool<McpToggleTaskResponse>('vault_toggle_task', { path, task })
       : await this.callTool<McpToggleTaskResponse>('tasks', { action: 'toggle', path, task });
@@ -1650,8 +1665,8 @@ export class FlywheelMcpClient {
   async getCommonNeighbors(noteA: string, noteB: string): Promise<McpCommonNeighborsResponse> {
     return this.callTool<McpCommonNeighborsResponse>('graph', {
       action: 'neighbors',
-      note_a: noteA,
-      note_b: noteB,
+      path_a: noteA,
+      path_b: noteB,
     });
   }
 
@@ -1661,8 +1676,8 @@ export class FlywheelMcpClient {
   async getConnectionStrength(noteA: string, noteB: string): Promise<McpConnectionStrengthResponse> {
     return this.callTool<McpConnectionStrengthResponse>('graph', {
       action: 'strength',
-      note_a: noteA,
-      note_b: noteB,
+      path_a: noteA,
+      path_b: noteB,
     });
   }
 
@@ -1696,14 +1711,13 @@ export class FlywheelMcpClient {
     search: string,
     replacement: string,
   ): Promise<McpMutationResponse> {
-    const result = await this.callTool<McpMutationResponse>('vault_replace_in_section', {
+    const result = await this.callTool<McpMutationResponse>('edit_section', {
+      action: 'replace',
       path,
       section,
       search,
       replacement,
       skipWikilinks: true,
-      suggestOutgoingLinks: false,
-      validate: false,
     });
     this.cache.invalidatePath(path);
     this.cache.invalidateTool('graph');
