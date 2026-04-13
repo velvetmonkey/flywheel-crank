@@ -1,6 +1,6 @@
 {
   "name": "flywheel-crank",
-  "version": "2.11.0",
+  "version": "2.11.1",
   "description": "Graph intelligence & semantic search for your vault",
   "main": "main.js",
   "scripts": {
