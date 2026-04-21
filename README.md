@@ -92,7 +92,7 @@ Semantic embeddings build automatically on first startup (~23 MB model download,
 
 In Obsidian Settings > Flywheel Crank:
 
-- **Server path** — Leave empty (recommended). The plugin launches `npx @velvetmonkey/flywheel-memory@<pinned-version>` automatically (version pinned in each release for stability). Only set this for local development (e.g., a path to a locally built `dist/index.js`).
+- **Server path** — Leave empty (recommended). The plugin launches `npx @velvetmonkey/flywheel-memory@latest` automatically. Only set this for local development (e.g., a path to a locally built `dist/index.js`).
 - **Feature toggles** — Enable/disable individual views (graph sidebar, inline suggestions, etc.)
 - **Exclude folders** — Folders to skip during indexing
 

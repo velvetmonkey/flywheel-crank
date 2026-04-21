@@ -1063,7 +1063,7 @@ export class FlywheelMcpClient {
       args = [serverPath];
     } else {
       command = isWindows ? 'npx.cmd' : 'npx';
-      args = ['-y', '@velvetmonkey/flywheel-memory@2.12.4']; // Pin version — bump when releasing new flywheel-memory
+      args = ['-y', '@velvetmonkey/flywheel-memory@latest']; // Track npm latest when no local server path is set
     }
 
     console.log(`Flywheel Crank: spawning ${command} ${args.join(' ')}`);
