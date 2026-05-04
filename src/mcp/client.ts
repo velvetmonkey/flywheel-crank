@@ -748,7 +748,9 @@ export interface McpStaleNote {
   importance: number;
   staleness_risk: number;
   recommendation: 'archive' | 'update' | 'review' | 'low_priority';
-  signals: {
+  // Optional in flywheel-memory >=2.12.x because the merged `insights(action: 'staleness')`
+  // tool dropped the signals block during T43 tool collapse. Older servers still send it.
+  signals?: {
     backlink_count: number;
     hub_score: number;
     outlink_count: number;
