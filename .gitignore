@@ -7,4 +7,5 @@ dist/
 .claude/
 data.json
 .flywheel/
+.juno_task/
 *:Zone.Identifier
