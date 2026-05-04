@@ -453,15 +453,22 @@ export class VaultHealthView extends ItemView {
         const ageBadge = badges.createSpan('flywheel-health-badge flywheel-health-badge-out');
         ageBadge.setText(`${note.days_stale}d`);
 
-        // Tooltip with signal breakdown
+        // Tooltip with signal breakdown. Server-side `insights(action: 'staleness')`
+        // omits the `signals` block as of T43 tool collapse (flywheel-memory \u22642.12.7);
+        // fall back gracefully and only show lines we have real data for.
         const sig = note.signals;
-        setTooltip(item, [
+        const tooltipLines: string[] = [
           `Importance: ${note.importance} \u2022 Staleness risk: ${note.staleness_risk}`,
-          `Backlinks: ${sig.backlink_count} \u2022 Hub score: ${sig.hub_score}`,
-          `Outlinks: ${sig.outlink_count} \u2022 Active entity ratio: ${Math.round(sig.active_entity_ratio * 100)}%`,
-          sig.has_open_tasks ? 'Has open tasks' : '',
-          sig.status_active ? 'Status: active' : '',
-        ].filter(Boolean).join('\n'));
+        ];
+        if (sig) {
+          tooltipLines.push(
+            `Backlinks: ${sig.backlink_count} \u2022 Hub score: ${sig.hub_score}`,
+            `Outlinks: ${sig.outlink_count} \u2022 Active entity ratio: ${Math.round(sig.active_entity_ratio * 100)}%`,
+          );
+          if (sig.has_open_tasks) tooltipLines.push('Has open tasks');
+          if (sig.status_active) tooltipLines.push('Status: active');
+        }
+        setTooltip(item, tooltipLines.join('\n'));
 
         const reviewBtn = row.createEl('button', { cls: 'flywheel-health-action-btn', text: 'Review' });
         reviewBtn.addEventListener('click', (e) => {
